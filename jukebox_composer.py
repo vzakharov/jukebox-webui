@@ -130,28 +130,21 @@ elif sample_hps.mode == 'primed':
 
 x = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
 
-zs_filename =  f'{hps.name}/{project_name}.zs'
+def get_generation_id(seconds):
+  return f'{hps.name}/{project_name}-{str(seconds).zfill(3)}s-{timestamp()}'
 
-def write_files():
-  # Remove .zs for the id
-  generation_id = zs_filename[:-3]
-  j = 1
-  available_js=[]
-  for i in range(hps.n_samples):
-    filename = generation_id + '-'
-    # Increase j until we find a filename that doesn't exist
-    while os.path.exists(f'{filename}-{j}.wav'):
-      j += 1
-    available_js.append(j)
-    filename = f'{filename}-{j}.wav'
-    print(f'{filename}:')
-    librosa.output.write_wav(filename, x[i], sr=hps.sr)
-    display(Audio(filename))
-  # Save the zs as generation_id-{concated j's}.zs
-  zs_filename = f'{generation_id}-{",".join(map(str, available_js))}.zs'
+def write_files(seconds):
+  generation_id = get_generation_id(seconds)
+  zs_filename=f'{generation_id}-zs.t'
   t.save(zs, zs_filename)
 
-write_files()
+  for i in range(hps.n_samples):
+    filename = f'{generation_id}_{i+1}.wav'
+    librosa.output.write_wav(filename, x[i], sr=44100)
+    print(filename)
+    display(Audio(filename))
+
+write_files(initial_generation_in_seconds)
 
 """## Iterate"""
 
@@ -169,22 +162,13 @@ else:
 
 if custom_filename:
   if not retry:
-    custom_filename=f'{hps.name}/{custom_filename}.zs'
+    custom_filename=f'{hps.name}/{custom_filename}.t'
   print(f'Using {custom_filename}')
   zs = t.load(f'{custom_filename}')
   zs_filename = custom_filename
 
 print(f'Using choice {my_choice + 1}')
 zs[2]=zs[2][my_choice].repeat(hps.n_samples,1)
-
-zs_old_filename=zs_filename
-old_choice=my_choice
-
-# Take the three numbers after the last hyphen in the filename (excluding the extension) and split them by comma
-variations = zs_filename.split('.')[0].split('-')[-1].split(',')
-# Add the current choice to the filename
-zs_filename = f'{zs_filename.split(".")[0]}-{variations[my_choice]}.zs'
-
 
 empty_cache()
 
@@ -203,7 +187,7 @@ empty_cache()
 zs_old_filename=zs_filename
 old_choice=my_choice
 print(f'Previous zs: {zs_old_filename}')
-write_files()
+write_files(total_seconds)
 
 """# Upsample Co-Composition to Higher Audio Quality
 
