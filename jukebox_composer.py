@@ -132,9 +132,9 @@ x = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
 
 zs_filename =  f'{hps.name}/{project_name}.zs'
 
-def write_files():
+def write_files(base_filename):
   # Remove .zs for the id
-  generation_id = zs_filename[:-3]
+  generation_id = base_filename[:-3]
   j = 1
   available_js=[]
   for i in range(hps.n_samples):
@@ -148,10 +148,11 @@ def write_files():
     librosa.output.write_wav(filename, x[i], sr=hps.sr)
     display(Audio(filename))
   # Save the zs as generation_id-{concated j's}.zs
-  zs_filename = f'{generation_id}-{",".join(map(str, available_js))}.zs'
-  t.save(zs, zs_filename)
+  base_filename = f'{generation_id}-{",".join(map(str, available_js))}.zs'
+  t.save(zs, base_filename)
+  return base_filename
 
-write_files()
+zs_filename = write_files(zs_filename)
 
 """## Iterate"""
 
@@ -181,9 +182,10 @@ zs_old_filename=zs_filename
 old_choice=my_choice
 
 # Take the three numbers after the last hyphen in the filename (excluding the extension) and split them by comma
-variations = zs_filename.split('.')[0].split('-')[-1].split(',')
+splitted = zs_filename.split('.')[0].split('-')
+variations = splitted[-1].split(',')
 # Add the current choice to the filename
-zs_filename = f'{zs_filename.split(".")[0]}-{variations[my_choice]}.zs'
+zs_filename = f'{'-'.join(splitted[:-1])}-{variations[my_choice]}.zs'
 
 
 empty_cache()
@@ -203,7 +205,7 @@ empty_cache()
 zs_old_filename=zs_filename
 old_choice=my_choice
 print(f'Previous zs: {zs_old_filename}')
-write_files()
+zs_filename = write_files(zs_filename)
 
 """# Upsample Co-Composition to Higher Audio Quality
 
