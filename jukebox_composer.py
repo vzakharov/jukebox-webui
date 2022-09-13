@@ -165,6 +165,10 @@ if custom_filename:
     custom_filename=f'{hps.name}/{custom_filename}.t'
   print(f'Using {custom_filename}')
   zs = t.load(f'{custom_filename}')
+  # If the number of samples in zs doesn't match the number of samples in the model, we need to reshape zs
+  if zs[2].shape[0] > hps.n_samples:
+    print(f'Reshaping zs from {zs[2].shape[0]} to {hps.n_samples}')
+    zs[2] = zs[2][:hps.n_samples]
   zs_filename = custom_filename
 
 print(f'Using choice {my_choice + 1}')
