@@ -45,10 +45,10 @@ if True:
           level = i
       
       # Print the number of seconds already generated at this level
-      print(f'Generated {seconds_to_tokens(zs[level].shape[1], hps.sr, priors[level], chunk_size) / hps.sr} seconds at level {level}')
+      print(f'Generated {seconds_to_tokens(zs[level].shape[1], hps.sr, None, chunk_size) / hps.sr} seconds at level {level}')
       # Print the remaining number of seconds to be generated at this level
       tokens_left = hps.n_ctx - zs[level].shape[1]
-      print(f'Remaining: {seconds_to_tokens(tokens_left, hps.sr, priors[level], chunk_size) / hps.sr} seconds')
+      print(f'Remaining: {seconds_to_tokens(tokens_left, hps.sr, None, chunk_size) / hps.sr} seconds')
 
       if last_sampled:
         # Calculate the time elapsed since the last sample
@@ -112,7 +112,8 @@ if True:
 if True:
 
   def seconds_to_tokens(sec, sr, prior, chunk_size):
-    tokens = sec * hps.sr // prior.raw_to_tokens
+    global hps, raw_to_tokens
+    tokens = sec * hps.sr // raw_to_tokens
     tokens = ((tokens // chunk_size) + 1) * chunk_size
     # assert tokens <= prior.n_ctx, 'Choose a shorter generation length to stay within the top prior context'
     tokens = int(tokens)
@@ -205,8 +206,8 @@ if True:
         # Concatenate the previous part minus the last second, the overlap, and the next part minus the first second
         x = np.concatenate((x[:, :-seconds_to_tokens(1, hps.sr, top_prior, chunk_size)], overlap, xs[i][:, seconds_to_tokens(1, hps.sr, top_prior, hps.chunk_size):]), axis=1)
 
-      else:
-        x = vqvae.decode(zs[level:level+1], start_level=level, end_level=level+1).cpu().numpy()
+    else:
+      x = vqvae.decode(zs[level:level+1], start_level=level, end_level=level+1).cpu().numpy()
 
     for i in range(zs[level].shape[0]):
       filename = f'{id}-{i+1}.wav'
@@ -327,6 +328,11 @@ if True:
     elif t.is_tensor(object):  
       print(f'{"  "*(depth+2)}{key}: {object.size()}')
 
+  def keep_alive():
+    # Keep the Colab session alive
+    while True:
+      time.sleep(60)
+
 #### PARAMETERS ####
 
 if True:
@@ -343,10 +349,8 @@ if True:
 
   print(lyrics)
 
-
-  sample_length_in_seconds = 120         #@param{type:'number'}
-  hps.sample_length = (int(sample_length_in_seconds*hps.sr)//top_prior.raw_to_tokens)*top_prior.raw_to_tokens
-  assert hps.sample_length >= top_prior.n_ctx*top_prior.raw_to_tokens, f'Please choose a larger sampling rate'
+  n_samples = 3 #@param {type:"integer"}
+  hps.n_samples = n_samples
 
   metas = [dict(artist = artist,
               genre = genre,
@@ -354,11 +358,9 @@ if True:
               offset = 0,
               lyrics = lyrics,
               ),
-            ] * hps.n_samples
+            ] * n_samples
   labels = top_prior.labeller.get_batch_labels(metas, 'cuda')
 
-
-  n_samples = 3 #@param {type:"integer"}
 
   sampling_temperature = .98 #@param{type:'number'}
   sampling_kwargs = dict(temp=sampling_temperature, fp16=True, max_batch_size=lower_batch_size,
@@ -381,7 +383,16 @@ if True:
 
 #### CHOOSE STEP ####
 
-step = 'GENERATE' #@param ['GENERATE', 'ITERATE', 'UPSAMPLE']
+step = 'GENERATE' #@param ['NONE', 'MAKE WAV', 'GENERATE', 'ITERATE', 'UPSAMPLE']
+
+#### MAKE WAV ####
+
+if step == 'MAKE WAV':
+  id = 'nihil-0-0' #@param{type:'string'}
+  filename = f'{hps.name}/{project_name}/{id}.zs'
+  zs_to_wavs(filename)
+else:
+  print('skipping MAKE WAV')
 
 #### GENERATE ####
 
@@ -411,14 +422,17 @@ if step == 'GENERATE':
   zs_filename =  f'{hps.name}/{project_name}.zs'
 
   zs_filename = write_files(zs_filename)
+else:
+  print('skipping GENERATE')
 
-"""## Iterate"""
+#### ITERATE ####
 
-if creation_mode == "Iterate":
+if step == "ITERATE":
 
   custom_filename = "samael-1,2.zs" #@param{type:'string'}
   my_choice = "2" #@param ["RETRY", "1", "2", "3"]
-  continue_generation_in_seconds=3 #@param{type:'number'}    
+  continue_generation_in_seconds=3 #@param{type:'number'}
+  loop = True #@param{type:'boolean'}
 
   retry = my_choice == 'RETRY'
   zs_old_filename = None
@@ -432,99 +446,103 @@ if creation_mode == "Iterate":
   else:
     my_choice = int(my_choice)-1
 
-  if custom_filename:
-    if not retry:
-      # If only the filename is given (without path), add the path
-      if '/' not in custom_filename:
-        custom_filename=f'{hps.name}/{custom_filename}'
-      # If extension is missing, add .zs
-      if not custom_filename.endswith('.zs'):
-        custom_filename += '.zs'
-    zs = t.load(f'{custom_filename}')
-    zs_filename = custom_filename
+  while True:
 
-  z = zs[2][my_choice]
+    if custom_filename:
+      if not retry:
+        # If only the filename is given (without path), add the path
+        if '/' not in custom_filename:
+          custom_filename=f'{hps.name}/{custom_filename}'
+        # If extension is missing, add .zs
+        if not custom_filename.endswith('.zs'):
+          custom_filename += '.zs'
+      zs = t.load(f'{custom_filename}')
+      zs_filename = custom_filename
 
-  cut_before_seconds = None #@param{type:'number'}
-  cut_after_seconds = None #@param{type:'number'}
-  if cut_after_seconds:
-    cut_after_tokens = seconds_to_tokens(cut_after_seconds, hps.sr, top_prior, chunk_size)
-    z = z[:cut_after_tokens]
-  if cut_before_seconds:
-    cut_before_tokens = seconds_to_tokens(cut_before_seconds, hps.sr, top_prior, chunk_size)
-    z = z[cut_before_tokens:]
+    z = zs[2][my_choice]
 
-  print(f'Using {zs_filename}')
-  print(f'  Choice {my_choice + 1}')
-  zs[2]=z.repeat(hps.n_samples,1)
+    cut_before_seconds = None #@param{type:'number'}
+    cut_after_seconds = None #@param{type:'number'}
+    if cut_after_seconds:
+      cut_after_tokens = seconds_to_tokens(cut_after_seconds, hps.sr, top_prior, chunk_size)
+      z = z[:cut_after_tokens]
+    if cut_before_seconds:
+      cut_before_tokens = seconds_to_tokens(cut_before_seconds, hps.sr, top_prior, chunk_size)
+      z = z[cut_before_tokens:]
 
-  zs_old_filename=zs_filename
-  old_choice=my_choice
+    print(f'Using {zs_filename}')
+    print(f'  Choice {my_choice + 1}')
+    zs[2]=z.repeat(hps.n_samples,1)
 
-  # Take the three numbers after the last hyphen in the filename (excluding the extension) and split them by comma
-  splitted = zs_filename.split('.')[0].split('-')
-  variations = splitted[-1].split(',')
-  # Add the current choice to the filename
-  zs_filename = f'{"-".join(splitted[:-1])}-{variations[my_choice]}.zs'
+    zs_old_filename=zs_filename
+    old_choice=my_choice
+
+    # Take the three numbers after the last hyphen in the filename (excluding the extension) and split them by comma
+    splitted = zs_filename.split('.')[0].split('-')
+    variations = splitted[-1].split(',')
+    # Add the current choice to the filename
+    zs_filename = f'{"-".join(splitted[:-1])}-{variations[my_choice]}.zs'
 
 
-  empty_cache()
+    empty_cache()
 
 
-  tokens_to_sample = seconds_to_tokens(continue_generation_in_seconds, hps.sr, top_prior, chunk_size)
-  total_seconds = zs[2].shape[1]//344 + continue_generation_in_seconds
-  print(total_seconds)
-  # if sampling_kwargs doesn't have a 'max_batch_size' key, it will use the default value
-  if not 'max_batch_size' in sampling_kwargs:
-    sampling_kwargs['max_batch_size']=16
-  print(sampling_kwargs)
-  print(hps)
+    tokens_to_sample = seconds_to_tokens(continue_generation_in_seconds, hps.sr, top_prior, chunk_size)
+    total_seconds = zs[2].shape[1]//344 + continue_generation_in_seconds
+    print(total_seconds)
+    # if sampling_kwargs doesn't have a 'max_batch_size' key, it will use the default value
+    if not 'max_batch_size' in sampling_kwargs:
+      sampling_kwargs['max_batch_size']=16
+    print(sampling_kwargs)
+    print(hps)
 
-  zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
-  x = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
-  empty_cache()
+    zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
+    x = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
+    empty_cache()
 
-  zs_old_filename=zs_filename
-  old_choice=my_choice
-  print(f'Previous zs: {zs_old_filename}')
-  zs_filename = write_files(zs_filename)
+    print(f'Previous zs: {zs_old_filename}')
+    zs_filename = write_files(zs_filename)
 
-"""## Upsample"""
+    if not loop:
+      break
+    else:
+      print('Looping')
+else:
+  print('skipping ITERATE')
 
-if creation_mode == "Upsample":
+#### UPSAMPLE ####
 
-  choice = 0
-  select_best_sample = True  # Set false if you want to upsample all your samples 
-                            # upsampling sometimes yields subtly different results on multiple runs,
-                            # so this way you can choose your favorite upsampling
+if step == 'UPSAMPLE':
 
-  if select_best_sample:
-    zs[2]=zs[2][choice].repeat(zs[2].shape[0],1)
+  filename = '' #@param{type:'string'}
+  choice = 1 #@param{type:'number'}
+  choice -= 1
 
-  t.save(zs, 'zs-top-level-final.t')
+  zs = t.load(f'{hps.name}/{filename}.zs')
 
-  """Note: If you are using a CoLab hosted runtime on the free tier, you may want to download this zs-top-level-final.t file, and then restart an instance and load it in the next cell.  The free tier will last a maximum of 12 hours, and the upsampling stage can take many hours, depending on how long a sample you have generated."""
+  # We always upsample 3 samples
 
-  if True:
-    zs = t.load('zs-checkpoint2 (6).t')
-    # print(zs[2])
-    # print(zs[2].shape[1])
-    # zs[2] = zs[2][:1]
-    # print(zs[2])
-    # print(zs[2].shape[1])
+  zs[2]=zs[2][choice].repeat(3, 1)
+  zs[0] = t.empty((3,0), dtype=t.int64).cuda()
+  zs[1] = t.empty((3,0), dtype=t.int64).cuda()
+
+  metas = [ metas[0], metas[0], metas[0] ]
+
+  # Set genre to Metalcore for metas[0], Rock for metas[1] and Metal for metas[2]
+  metas[0]['genre'] = 'Metalcore' #@param {type:'string'}
+  metas[1]['genre'] = 'Rock' #@param {type:'string'}
+  metas[2]['genre'] = 'Metal' #@param {type:'string'}
+
+  labels = top_prior.labeller.get_batch_labels(metas, 'cuda')
 
   assert zs[2].shape[1]>=2048, f'Please first generate at least 2048 tokens at the top level, currently you have {zs[2].shape[1]}'
-  hps.sample_length = zs[2].shape[1]*128 #top_prior.raw_to_tokens
+  hps.sample_length = zs[2].shape[1]*raw_to_tokens
 
-  # Set this False if you are on a local machine that has enough memory (this allows you to do the
-  # lyrics alignment visualization). For a hosted runtime, we'll need to go ahead and delete the top_prior
-  # if you are using the 5b_lyrics model.
-  if True:
-    del top_prior
-    empty_cache()
-    top_prior=None
+  del top_prior
+  empty_cache()
+  top_prior=None
 
-  upsamplers = [make_prior(setup_hparams(prior, dict()), vqvae, 'cpu') for prior in priors[:-1]]
+  upsamplers = [ make_prior(setup_hparams(prior, dict()), vqvae, 'cpu') for prior in priors[:-1] ]
 
   sampling_kwargs = [dict(temp=.99, fp16=True, max_batch_size=16, chunk_size=32),
                       dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
@@ -542,5 +560,5 @@ if creation_mode == "Upsample":
 
   print(sampling_kwargs)
   zs = upsample(zs, labels, sampling_kwargs, [*upsamplers, top_prior], hps)
-
-  Audio(f'{hps.name}/level_0/item_0.wav')
+else:
+  print('skipping UPSAMPLE')
