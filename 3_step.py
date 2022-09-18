@@ -1,0 +1,1 @@
+step = 'GENERATE' #@param ['NONE', 'MAKE WAV', 'GENERATE', 'ITERATE', 'UPSAMPLE']
