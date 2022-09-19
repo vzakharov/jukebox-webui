@@ -40,22 +40,22 @@ if True:
         if zs[i].size != 0:
           level = i
       
-      # Print the number of seconds already generated at this level
-      print(f'Generated {seconds_to_tokens(zs[level].shape[1], hps.sr, None, chunk_size) / hps.sr} seconds at level {level}')
-      # Print the remaining number of seconds to be generated at this level
-      tokens_left = hps.n_ctx - zs[level].shape[1]
-      print(f'Remaining: {seconds_to_tokens(tokens_left, hps.sr, None, chunk_size) / hps.sr} seconds')
+      # # Print the number of seconds already generated at this level
+      # print(f'Generated {seconds_to_tokens(zs[level].shape[1], hps.sr, None, chunk_size) / hps.sr} seconds at level {level}')
+      # # Print the remaining number of seconds to be generated at this level
+      # tokens_left = hps.n_ctx - zs[level].shape[1]
+      # print(f'Remaining: {seconds_to_tokens(tokens_left, hps.sr, None, chunk_size) / hps.sr} seconds')
 
-      if last_sampled:
-        # Calculate the time elapsed since the last sample
-        time_elapsed = datetime.now() - last_sampled
-        # Calculate the time per token
-        time_per_token = time_elapsed / hps.n_ctx
-        # Calculate the remaining time
-        remaining_time = time_per_token * tokens_left
-        print(f'Estimated time remaining: {remaining_time}')
+      # if last_sampled:
+      #   # Calculate the time elapsed since the last sample
+      #   time_elapsed = datetime.now() - last_sampled
+      #   # Calculate the time per token
+      #   time_per_token = time_elapsed / hps.n_ctx
+      #   # Calculate the remaining time
+      #   remaining_time = time_per_token * tokens_left
+      #   print(f'Estimated time remaining: {remaining_time}')
 
-      last_sampled = datetime.now()
+      # last_sampled = datetime.now()
 
       # Save with a timestamp
       filename = f'{project_name}-tmp-{datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S")}.zs'
