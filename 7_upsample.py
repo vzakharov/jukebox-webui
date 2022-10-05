@@ -3,16 +3,30 @@ if step == 'UPSAMPLE':
   filename = '' #@param{type:'string'}
   choice = 1 #@param{type:'number'}
   choice -= 1
+  cut_from_seconds = 0 #@param{type:'number'}
 
-  zs = t.load(f'{hps.name}/{filename}.zs')
+  if filename:
+    zs = t.load(f'{hps.name}/{filename}.zs')
+  else:
+    assert zs is not None, 'No filename given and no zs loaded'
+    
+  print(f'Loaded zs of shape {zs[2].shape} from {filename}.zs')
+
+  if cut_from_seconds:
+    cut_from_tokens = seconds_to_tokens(cut_from_seconds, hps.sr, top_prior, chunk_size)
+    print(f'Cutting from {cut_from_seconds} seconds ({cut_from_tokens} tokens)')
+    zs[2] = zs[2][:, cut_from_tokens:]
+    print(f'New zs shape: {zs[2].shape}')
+    metas[0]['offset'] = cut_from_tokens
 
   # We always upsample 3 samples
 
-  zs[2]=zs[2][choice].repeat(3, 1)
+  zs[2] = zs[2][choice].repeat(3, 1)
   zs[0] = t.empty((3,0), dtype=t.int64).cuda()
   zs[1] = t.empty((3,0), dtype=t.int64).cuda()
 
-  metas = [ metas[0], metas[0], metas[0] ]
+  # Make metas[2] and metas[1] same as metas[0] (shallow copy)
+  metas = [metas[0], dict(metas[0]), dict(metas[0])]
 
   # Set genre to Metalcore for metas[0], Rock for metas[1] and Metal for metas[2]
   metas[0]['genre'] = 'Metalcore' #@param {type:'string'}

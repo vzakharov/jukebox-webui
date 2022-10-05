@@ -11,21 +11,29 @@ if True:
   def timestamp():
     return datetime.now().astimezone(timezone(timedelta(hours=3))).strftime("%Y%m%d-%H%M%S")
 
-  def write_files(base_filename):
+  def write_files(base_filename, display_audio=False, write_wavs=True):
     # Remove .zs for the id
     generation_id = base_filename[:-3]
-    j = 1
+    j = 0
     available_js=[]
     for i in range(hps.n_samples):
       filename = generation_id
       # Increase j until we find a filename that doesn't exist
+      j += 1
       while os.path.exists(f'{filename}-{j}.wav'):
         j += 1
       available_js.append(j)
-      filename = f'{filename}-{j}.wav'
-      print(f'{filename}:')
-      librosa.output.write_wav(filename, x[i], sr=hps.sr)
-      display(Audio(filename))
+      if write_wavs:
+        filename = f'{filename}-{j}.wav'
+        print(f'{filename}:')
+        librosa.output.write_wav(filename, x[i], sr=hps.sr)
+        if display_audio:
+          display(Audio(filename))
+      else:
+        # Print once that we are not writing wavs
+        if i == 0:
+          print('Not writing wavs')
+
     # Save the zs as generation_id-{concated j's}.zs
     base_filename = f'{generation_id}-{",".join(map(str, available_js))}.zs'
     t.save(zs, base_filename)
@@ -34,39 +42,18 @@ if True:
   def timestamp():
     return datetime.now().astimezone(timezone(timedelta(hours=3))).strftime("%Y%m%d-%H%M%S")
 
-  # Function to write current zs/x to respective files
-  def write_files(base_filename):
-    # Remove .zs for the id
-    generation_id = base_filename[:-3]
-    j = 1
-    available_js=[]
-    for i in range(hps.n_samples):
-      filename = generation_id
-      # Increase j until we find a filename that doesn't exist
-      while os.path.exists(f'{filename}-{j}.wav'):
-        j += 1
-      available_js.append(j)
-      filename = f'{filename}-{j}.wav'
-      print(f'{filename}:')
-      librosa.output.write_wav(filename, x[i], sr=hps.sr)
-      display(Audio(filename))
-    # Save the zs as generation_id-{concated j's}.zs
-    base_filename = f'{generation_id}-{",".join(map(str, available_js))}.zs'
-    t.save(zs, base_filename)
-    return base_filename
-
   # Function to convert a zs file to several wav files (according to the shape of the zs[index]). Default index is 2.
-  def zs_to_wavs(id=None, level=2, write_wavs=True, split_into_seconds=None, out={}):
+  def zs_to_wavs(id=None, level=2, write_wavs=True, split_into_seconds=None, include_level=True, out={}):
     global vqvae, hps, raw_to_tokens, chunk_size, top_prior
     # if no id is given, use the latest zs formatted as project_name-tmp-yyyy-mm-dd-hh-mm-ss.zs
     if not id:
-      filter = f'{hps.name}/{project_name}-tmp-*.zs'
+      filter = f'{hps.name}/tmp/{project_name}-tmp-*.zs'
       print(f'No id given, using latest file matching {filter}')
       results = sorted(glob.glob(filter))
       assert len(results) > 0, f'No files matching {filter}'
       id = results[-1]
-      # Remove the path and extension (of any length) to get the id
-      id = re.sub(r'.*/', '', re.sub(r'\..*$', '', id))
+      # Remove hps.name and extension (of any length) to get the id
+      id = re.sub(f'^{hps.name}/', '', re.sub(r'\.[^.]*$', '', id))
       out['id'] = id
     # if id is of the format hh-mm-ss, add project_name, 'tmp', and current date (yyyy-mm-dd format) to the left
     elif re.match(r'^\d{2}-\d{2}-\d{2}$', id):
@@ -96,15 +83,48 @@ if True:
         x = np.concatenate((x[:, :-seconds_to_tokens(1, hps.sr, top_prior, chunk_size)], overlap, xs[i][:, seconds_to_tokens(1, hps.sr, top_prior, hps.chunk_size):]), axis=1)
 
     else:
-      x = vqvae.decode(zs[level:level+1], start_level=level, end_level=level+1).cpu().numpy()
+      x = vqvae.decode(zs[level:level+1], start_level=level, end_level=level+1).cpu().numpy()    
+
+    # Remove -1,2,... (or other numerals) from the end of the id
+    id = re.sub(r'-\d+$', '', id)
 
     for i in range(zs[level].shape[0]):
-      filename = f'{id}-{i+1}.wav'
-      print(f'{filename}:')
+      filename = f'{id}-{i+1}'
+      if include_level:
+        filename += f' (L{level})'
+      filename += '.wav'
       if write_wavs:
         librosa.output.write_wav(f'{hps.name}/{filename}', x[i], sr=hps.sr)
-        display(Audio(f'{hps.name}/{filename}'))
+        # display(Audio(f'{hps.name}/{filename}'))
     return x
+
+  # Monitor the folder for new zs files and convert them to wavs when they appear
+  def monitor_for_new_zs(immediate=False):
+    global hps, project_name
+    latest_zs_filename = None
+
+    def get_latest_zs_filename():
+      _filter = f'{hps.name}/{project_name}-*.zs'
+      # Filter and sort by modification time (descending)
+      results = sorted(glob.glob(_filter), key=os.path.getmtime, reverse=True)
+      if len(results) > 0:
+        return results[0]
+      else:
+        return None
+
+    print(f'Monitoring {hps.name} for new zs files matching {project_name}-*.zs')
+
+    if not immediate:
+      latest_zs_filename = get_latest_zs_filename()
+      print(f'Currrent latest zs filename (not processing): {latest_zs_filename}')
+
+    while True:
+      time.sleep(1)
+      new_latest_zs_filename = get_latest_zs_filename()
+      if new_latest_zs_filename != latest_zs_filename:
+        print(f'New zs file: {new_latest_zs_filename}')
+        zs_to_wavs(new_latest_zs_filename)
+        latest_zs_filename = new_latest_zs_filename
 
   # Function to convert wavs to a single wav file by panning the x[index] across the stereo channels
   def wavs_to_stereo(wavs, id, order=None):
@@ -166,7 +186,12 @@ if True:
     for piece in pieces:
       zs = t.load(f'{hps.name}/{piece["filename"]}.zs')
       start = seconds_to_tokens(piece.get('start', 0), hps.sr, top_prior, chunk_size)
-      length = seconds_to_tokens(piece.get('length', None), hps.sr, top_prior, chunk_size)
+      # If there's no length, use the whole z
+      if piece.get('length'):
+        length = seconds_to_tokens(piece['length'], hps.sr, top_prior, chunk_size)
+      else:
+        length = zs[2].shape[1]
+      
       z = zs[2][piece['index']][start:start+length]
       print(f'z: {z.shape}')
       if combined_z is None:
@@ -189,11 +214,9 @@ if True:
   #   nihil-A-2-1-2-1-2-4-2-1,2.zs at index 1, start at 1.688, length 42.280
   #   nihil-90s-1-1-1-1-2-2-1-2-2-1-2-1-1,2 at index 0, start at 23.953, length 89.356
   # concat_zs_multiple([
-  #   {'filename': 'nihil-0-0', 'index': 0, 'start': 0, 'length': 38},
-  #   {'filename': 'nihil-5-1-1-1,2', 'index': 0, 'start': 1, 'length': 10.719},
-  #   {'filename': 'nihil-A-2-1-2-1-2-4-2-1,2', 'index': 1, 'start': 1.688, 'length': 42.280},
-  #   {'filename': 'nihil-90s-1-1-1-1-2-2-1-2-2-1-2-1-1,2', 'index': 0, 'start': 23.953, 'length': 89.356},
-  # ], 'nihil-combined')
+  #   {'filename': 'nihil3-A-1,2', 'index': 1, 'start': 0, 'length': 49},
+  #   {'filename': 'nihil3-A-2-1,2', 'index': 0, 'start': 19, 'length': 3.18}
+  # ], 'nihil-A-3,4')
 
 
   def check_gpu_usage(object = None, key = None, depth = 0, processed = []):
@@ -221,3 +244,40 @@ if True:
     # Keep the Colab session alive
     while True:
       time.sleep(60)
+  
+  def save_nested(object, dirname, indent = 0):
+    path = f'{hps.name}/{dirname}'
+    # Try to save the object. If it fails due to AttributeError, save its children while going deeper in the directory structure
+    try:
+      # Create the directory if it doesn't exist
+      if not os.path.exists(path):
+        print(f'{"  "*indent}Creating directory {path}')
+        os.makedirs(path)
+      t.save(object, f'{path}/data.bin')
+      print(f'{"  "*indent}Saved {path}/data.bin')
+      # Clear the object from memory
+      del object
+      empty_cache()
+    except AttributeError:
+      print(f'{"  "*indent}Saving {path} failed, trying to save its children')
+      # Delete data.bin in case it was already created
+      if os.path.exists(f'{path}/data.bin'):
+        os.remove(f'{path}/data.bin')
+      for key, value in object.__dict__.items():
+        print(f'{"  "*indent}Saving {key}')
+        save_nested(value, f'{dirname}/{key}', indent + 1)
+
+  def load_nested(object, dirname, indent = 0):
+    path = f'{hps.name}/{dirname}'
+    # Try to load the object. If it fails due to FileNotFoundError, load its children while going deeper in the directory structure
+    try:
+      object = t.load(f'{path}/data.bin')
+      print(f'{"  "*indent}Loaded {path}/data.bin')
+      return object
+    except FileNotFoundError:
+      print(f'{"  "*indent}Loading {path} failed, trying to load its children')
+      # Scan the directory for children, naming every child after the name of its directory
+      for child in os.listdir(path):
+        print(f'{"  "*indent}Loading {child}')
+        setattr(object, child, load_nested(f'{dirname}/{child}', indent + 1))
+      return object

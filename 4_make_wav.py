@@ -1,6 +1,12 @@
 if step == 'MAKE WAV':
-  id = 'nihil-0-0' #@param{type:'string'}
-  filename = f'{hps.name}/{project_name}/{id}.zs'
-  zs_to_wavs(filename)
+  try:
+    del top_prior
+    empty_cache()
+  except:
+    pass
+  id = '' #@param{type:'string'}
+  level = "0" #@param[0,1,2]
+  level = int(level)
+  zs_to_wavs(id, level=level)
 else:
   print('skipping MAKE WAV')

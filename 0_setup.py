@@ -15,6 +15,7 @@ if True:
   from IPython.display import Audio, display
   from jukebox.make_models import make_vqvae, make_prior, MODELS, make_model
   from jukebox.hparams import Hyperparams, setup_hparams
+  from jukebox.prior.prior import SimplePrior
   from jukebox import sample
   from jukebox.sample import sample_single_window, _sample, \
                             sample_partial_window, upsample, \
@@ -91,14 +92,46 @@ if True:
 
   raw_to_tokens = 128
   sample_length_in_seconds = 200         #@param{type:'number'}
+  redownload_models = False              #@param{type:'boolean'}
 
   hps.sample_length = (int(sample_length_in_seconds*hps.sr)//raw_to_tokens)*raw_to_tokens
 
+  datasets_path = '/content/gdrive/My Drive/AI music/_datasets'
+
+  # Check if /root/.cache/jukebox/models/5b/ has vqvae.pth.tar and/or prior_level_2.pth.tar
+  # If not, try and copy them from the gdrive (AI music/_datasets)
+  # If that fails, proceed (it will be downloaded automatically)
+  for model_name in ['5b/vqvae.pth.tar', '5b_lyrics/prior_level_2.pth.tar']:
+    if not redownload_models:
+      if not os.path.exists(f'/root/.cache/jukebox/models/{model_name}'):
+        if os.path.exists(f'{datasets_path}/{model_name}'):
+          print(f'Copying {model_name} from gdrive...')
+          # Create the directory if it doesn't exist
+          directory = f'/root/.cache/jukebox/models/{"/".join(model_name.split("/")[:-1])}'
+          if not os.path.exists(directory):
+            os.makedirs(directory)
+          !cp '{datasets_path}/{model_name}' '{directory}'
+          print(f'Done.')
+        else:
+          print(f'{model_name} not found in cache or gdrive')
+    else:
+      print(f'Deleing {model_name} from cache...')
+      !rm -rf '/root/.cache/jukebox/models/{model_name}'
+
+
   vqvae, *priors = MODELS[model]
   vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
-  top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
 
-  assert hps.sample_length >= top_prior.n_ctx*top_prior.raw_to_tokens, f'Please choose a larger sampling rate'
+  load_top_prior = True #@param{type:'boolean'}
+  if load_top_prior:
+    top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
+  else:
+    top_prior = None  
+
+
+  # assert hps.sample_length >= hps.n_ctx*raw_to_tokens, f'Please choose a larger sampling rate'
 
   zs_old_filename = None
   old_choice = None
+
+  rewrite_wavs = False
