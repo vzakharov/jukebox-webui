@@ -80,7 +80,7 @@ def update_project_data(base_folder, project_name):
 
   return out_dict
 
-def save_project_data(base_folder, project_name, artist, genre, lyrics, duration, sample_id, prime_id, generation_length):
+def save_project_data(base_folder, project_name, artist, genre, lyrics, duration, step, sample_id, prime_id, generation_length):
   # Dump all arguments except base_folder and project_name
   data = {key: value for key, value in locals().items() if key not in ['base_folder', 'project_name']}
   filename = f'{base_folder}/{project_name}/settings.yaml'
@@ -100,20 +100,22 @@ class UI:
   genre = gr.Dropdown(label='Genre', choices=get_list('genre'))
   lyrics = gr.Textbox(label='Lyrics', max_lines=8)
   duration = gr.Slider(label='Duration', minimum=60, maximum=600, step=10)
-  sample_id = gr.Dropdown(label='Sample Id')
+
+  step = gr.Radio(label='Step', choices=['Start', 'Continue'])
+
   prime_id = gr.Dropdown(label='Prime Id')
+  sample_id = gr.Dropdown(label='Sample Id')
 
   generation_length = gr.Slider(label='Generation length', minimum=1, maximum=10, step=0.25)
 
   sample_audio = gr.Audio(visible=False)
   sample_children_audios = [ gr.Audio(visible=False) for i in range(10) ]
-  
 
   all_inputs = [ input for input in locals().values() if isinstance(input, gr.Interface) ]
 
   project_defining_inputs = [ base_folder, project_name ]
   project_specific_inputs = [ artist, genre, lyrics, duration ]
-  generation_specific_inputs = [ sample_id, prime_id, generation_length ]
+  generation_specific_inputs = [ step, sample_id, prime_id, generation_length ]
 
   with gr.Blocks() as ui:
 
@@ -134,14 +136,12 @@ class UI:
 
       with gr.Column(scale=3, visible=False) as generation_box:
 
-        with gr.Tab('Start'):
-          # (Tab for initial sample generation)
+        step.render()
 
+        with gr.Box(visible=False) as start_box:
           prime_id.render()
 
-        with gr.Tab('Continue'):
-          # (Tab for continuation of existing sample)
-
+        with gr.Box(visible=False) as continue_box:
           sample_id.render()
 
           # Button to go to parent sample
@@ -202,13 +202,18 @@ class UI:
         outputs = sample_id,
       )
 
-      # Whenever a project-specific input changes, save the project data
-      for input in project_specific_inputs + generation_specific_inputs:
-        input.change(save_project_data, 
-          inputs = project_defining_inputs + project_specific_inputs + generation_specific_inputs,
-          outputs = [],
-        )
-        
+    # Whenever a project-specific input changes, save the project data
+    for input in project_specific_inputs + generation_specific_inputs:
+      input.change(save_project_data, 
+        inputs = project_defining_inputs + project_specific_inputs + generation_specific_inputs,
+        outputs = [],
+      )
+    
+    step.change(
+      lambda step: [ gr.update(visible=step==current_step) for current_step in ['Start', 'Continue'] ],
+      inputs=step, outputs=[start_box, continue_box]
+    )      
+
     # When the sample changes, unhide if [project_name]-[sample_id].wav exists and point it to that file
     def update_sample_wavs(base_folder, project_name, sample_id):
       filename = f'{base_folder}/{project_name}/{project_name}-{sample_id}.wav'
@@ -265,8 +270,12 @@ class UI:
   genre.value = 'Unknown'                     #@param {type:"string"}
   lyrics.value = ''                           #@param {type:"string"}
   duration.value = 200                        #@param {type:"number"}
+
+  step.value = 'Start'                        #@param ['Start', 'Continue']
+
   sample_id.value = ''                        #@param {type:"string"}
   prime_id.value = ''                         #@param {type:"string"}
+
   generation_length.value = 3                 #@param {type:"number"}
     
 
