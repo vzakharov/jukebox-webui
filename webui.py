@@ -1,4 +1,5 @@
 import gradio as gr
+import json
 import os
 import glob
 import urllib.request
@@ -87,7 +88,7 @@ def save_project_data(base_folder, project_name, artist, genre, lyrics, duration
   with open(filename, 'w') as f:
     yaml.dump(data, f)
     # print(f'Settings updated.')
-    print(data) 
+    # print(data) 
 
 class UI:
 
@@ -116,6 +117,8 @@ class UI:
   project_defining_inputs = [ base_folder, project_name ]
   project_specific_inputs = [ artist, genre, lyrics, duration ]
   generation_specific_inputs = [ step, sample_id, prime_id, generation_length ]
+
+  general_inputs = project_defining_inputs
 
   with gr.Blocks() as ui:
 
@@ -181,7 +184,7 @@ class UI:
       outputs = [ project_box, generation_box ],
     )
 
-    # Whenever the base folder or project name changes, update the project data
+    # Whenever the base folder or project name changes, update the project data and save general inputs to settings.json (in root folder)
     for input in project_defining_inputs:
 
       # Update input values
@@ -201,6 +204,27 @@ class UI:
         inputs = project_defining_inputs,
         outputs = sample_id,
       )
+
+      # Write general data to settings.json
+      def save_general_data(*args):
+        print('Saving general data')
+        data = {}
+        items = UI.__dict__.items()
+        print(f'Items: {items}')
+        for i, input in enumerate(UI.general_inputs):
+          print(f'Input {i}: {input}')
+          name = [ key for key, value in items if value == input ][0]
+          value = args[i]
+          print(f'{name}: {value}')
+          data[name] = value
+        with open('settings.json', 'w') as f:
+          json.dump(data, f)
+      
+      input.change(save_general_data,
+        inputs = general_inputs,
+        outputs = None,
+      )      
+
 
     # Whenever a project-specific input changes, save the project data
     for input in project_specific_inputs + generation_specific_inputs:
@@ -256,6 +280,29 @@ class UI:
       outputs = [ sample_audio ] + sample_children_audios,
     )
 
+    # On load, load general data from server
+    def load_general_data(*args):
+      print('Loading general data')
+      # Convert general inputs to a dict so we can return it
+      out = {}
+      for i, value in enumerate(args):
+        print(f'Loading {i} = {value}')
+        out[UI.general_inputs[i]] = value
+      print(f'General data: {out}')
+      # Read 'settings.json' from root folder if it exists
+      if os.path.exists('settings.json'):
+        print('Found settings.json')
+        with open('settings.json', encoding='utf-8') as f:
+          # For every key, find the corresponding input and set its value
+          for key, value in json.load(f).items():
+            out[UI.__dict__[key]] = value
+      else:
+        print('No settings.json found')
+      return out
+    
+    ui.load(load_general_data, inputs=general_inputs, outputs=general_inputs)
+
+
 
   def __init__(self):
     self.ui.launch()
@@ -277,7 +324,6 @@ class UI:
   prime_id.value = ''                         #@param {type:"string"}
 
   generation_length.value = 3                 #@param {type:"number"}
-    
 
 if __name__ == '__main__':
   UI()
