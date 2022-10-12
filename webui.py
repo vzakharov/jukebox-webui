@@ -132,6 +132,28 @@ class UI:
 
           with gr.Tab('Open a project'):
             project_name.render()
+          
+          with gr.Tab('Create a new project'):
+
+            new_project_name = gr.Textbox(label='New project name')
+
+            def create_new_project(base_folder, new_project_name):
+              print(f'Creating new project {new_project_name}...')
+              path = f'{base_folder}/{new_project_name}'
+              # If the project folder already exists, throw an error
+              assert not os.path.exists(path), f'Project folder {path} already exists!'
+              os.mkdir(f'{base_folder}/{new_project_name}')
+              return gr.update(
+                choices = get_project_names(base_folder),
+                value = new_project_name,
+              )
+
+            gr.Button('Create').click(
+              inputs = [ base_folder, new_project_name ],
+              outputs = project_name,
+              fn = create_new_project,
+            )
+
         
         with gr.Box(visible=False) as project_box:
           
