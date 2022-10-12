@@ -67,7 +67,8 @@ def update_samples(base_folder, project_name):
 
 def update_project_data(base_folder, project_name):
 
-  out_dict = {}
+  # By default, take values from the inputs in the project-specific settings
+  out_dict = { input: input.value for input in UI.project_specific_inputs }
 
   # Load data from settings.yaml in the project folder, if it exists
   data_filename = f'{base_folder}/{project_name}/settings.yaml'
@@ -97,8 +98,6 @@ class UI:
   base_folder = gr.Textbox(label='Base folder')
   project_name = gr.Dropdown(label='Project name')
 
-  create_project_button = gr.Button('Create')
-
   artist = gr.Dropdown(label='Artist', choices=get_list('artist'))
   genre = gr.Dropdown(label='Genre', choices=get_list('genre'))
   lyrics = gr.Textbox(label='Lyrics', max_lines=8)
@@ -114,7 +113,7 @@ class UI:
   sample_audio = gr.Audio(visible=False)
   sample_children_audios = [ gr.Audio(visible=False) for i in range(10) ]
 
-  all_inputs = [ input for input in locals().values() if isinstance(input, gr.Interface) ]
+  all_inputs = [ input for input in locals().values() if isinstance(input, gr.components.IOComponent) ]
 
   project_defining_inputs = [ base_folder, project_name ]
   project_specific_inputs = [ artist, genre, lyrics, duration ]
@@ -139,7 +138,7 @@ class UI:
             value='Open'
           )
 
-          with gr.Box(visible=False) as open_project_box:
+          with gr.Box(visible=True) as open_project_box:
             # Open a project
             project_name.render()
           
@@ -163,14 +162,17 @@ class UI:
                 UI.create_project_box: gr.update(visible=False),
                 UI.open_or_create_project: 'Open'
               }
+            
+            create_project_button = gr.Button('Create')
 
-            create_project_button.render()
+            create_project_args = {
+              'inputs': [ base_folder, new_project_name ],
+              'outputs': [ project_name, open_project_box, create_project_box, open_or_create_project ],
+              'fn': create_new_project
+            }
 
-            create_project_button.click(
-              inputs = [ base_folder, new_project_name ],
-              outputs = [ project_name, open_project_box, create_project_box, open_or_create_project ],
-              fn = create_new_project,
-            )
+            create_project_button.click(**create_project_args)
+            new_project_name.submit(**create_project_args)
 
           open_or_create_project.change(
             inputs = open_or_create_project,
