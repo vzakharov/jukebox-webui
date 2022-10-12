@@ -97,6 +97,8 @@ class UI:
   base_folder = gr.Textbox(label='Base folder')
   project_name = gr.Dropdown(label='Project name')
 
+  create_project_button = gr.Button('Create')
+
   artist = gr.Dropdown(label='Artist', choices=get_list('artist'))
   genre = gr.Dropdown(label='Genre', choices=get_list('genre'))
   lyrics = gr.Textbox(label='Lyrics', max_lines=8)
@@ -130,10 +132,19 @@ class UI:
           
           base_folder.render()
 
-          with gr.Tab('Open a project'):
+          # Radio buttons to either open an existing project or create a new one
+          open_or_create_project = gr.Radio(
+            label='Project',
+            choices=['Open', 'New'],
+            value='Open'
+          )
+
+          with gr.Box(visible=False) as open_project_box:
+            # Open a project
             project_name.render()
           
-          with gr.Tab('Create a new project'):
+          with gr.Box(visible=False) as create_project_box:
+            # Create a new project
 
             new_project_name = gr.Textbox(label='New project name')
 
@@ -143,17 +154,31 @@ class UI:
               # If the project folder already exists, throw an error
               assert not os.path.exists(path), f'Project folder {path} already exists!'
               os.mkdir(f'{base_folder}/{new_project_name}')
-              return gr.update(
-                choices = get_project_names(base_folder),
-                value = new_project_name,
-              )
+              return {
+                UI.project_name: gr.update(
+                  choices = get_project_names(base_folder),
+                  value = new_project_name,
+                ),
+                UI.open_project_box: gr.update(visible=True),
+                UI.create_project_box: gr.update(visible=False),
+                UI.open_or_create_project: 'Open'
+              }
 
-            gr.Button('Create').click(
+            create_project_button.render()
+
+            create_project_button.click(
               inputs = [ base_folder, new_project_name ],
-              outputs = project_name,
+              outputs = [ project_name, open_project_box, create_project_box, open_or_create_project ],
               fn = create_new_project,
             )
 
+          open_or_create_project.change(
+            inputs = open_or_create_project,
+            outputs = [ open_project_box, create_project_box ],
+            fn = lambda action: [
+              gr.update(visible=a==action) for a in ['Open', 'New']
+            ]
+          )
         
         with gr.Box(visible=False) as project_box:
           
