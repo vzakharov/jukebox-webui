@@ -12,11 +12,12 @@ yaml.add_representer(str, lambda dumper, value: dumper.represent_scalar('tag:yam
 def get_project_names(base_folder):
   project_names = []
   for folder in os.listdir(base_folder):
-    if os.path.isdir(base_folder+'/'+folder) and not folder.startswith('.'):
+    if os.path.isdir(base_folder+'/'+folder) and not folder.startswith('_'):
       project_names.append(folder)
   # Sort project names alphabetically
   project_names.sort()
-  return project_names
+  # Add "CREATE NEW" option in the beginning
+  return ['CREATE NEW'] + project_names
 
 def get_list(name):
   items = []
@@ -139,6 +140,7 @@ class UI:
           )
 
           with gr.Box(visible=True) as open_project_box:
+
             # Open a project
             project_name.render()
           
@@ -226,54 +228,44 @@ class UI:
       outputs=project_name,
     )
 
-    # If project_name changes, make project and generation boxes visible
-    project_name.change(
-      lambda: [ gr.update(visible=True), gr.update(visible=True) ],
-      inputs = None,
-      outputs = [ project_box, generation_box ],
-    )
+    def update_project(base_folder, project_name):
 
-    # Whenever the base folder or project name changes, update the project data and save general inputs to settings.json (in root folder)
-    for input in project_defining_inputs:
+      # If project_name is 'CREATE NEW', show the create project box and hide the project/generation boxes
+      if project_name == 'CREATE NEW':
+        return {
+          UI.create_project_box: gr.update(visible=True),
+          UI.project_box: gr.update(visible=False),
+          UI.generation_box: gr.update(visible=False),
+        }
 
-      # Update input values
-      input.change(update_project_data, 
-        inputs = project_defining_inputs,
-        outputs = project_specific_inputs + generation_specific_inputs,
-      )
+      else:
 
-      # Update prime file choices
-      input.change(update_list('.wav'), 
-        inputs = project_defining_inputs,
-        outputs = prime_id,
-      )
-
-      # Update sample choices
-      input.change(update_samples,
-        inputs = project_defining_inputs,
-        outputs = sample_id,
-      )
-
-      # Write general data to settings.json
-      def save_general_data(*args):
+        # Write general data to settings.json
         print('Saving general data')
         data = {}
         items = UI.__dict__.items()
-        print(f'Items: {items}')
         for i, input in enumerate(UI.general_inputs):
           print(f'Input {i}: {input}')
           name = [ key for key, value in items if value == input ][0]
-          value = args[i]
+          value = [ base_folder, project_name ][i]
           print(f'{name}: {value}')
           data[name] = value
         with open('settings.json', 'w') as f:
           json.dump(data, f)
-      
-      input.change(save_general_data,
-        inputs = general_inputs,
-        outputs = None,
-      )      
 
+        return {
+          UI.project_box: gr.update(visible=True),
+          UI.generation_box: gr.update(visible=True),
+          **update_project_data(base_folder, project_name),
+          UI.prime_id: update_list('*.wav')(base_folder, project_name),
+          UI.sample_id: update_samples(base_folder, project_name),
+        }
+
+    project_name.change(
+      inputs = general_inputs,
+      outputs = all_inputs + [ project_box, generation_box ],
+      fn = update_project
+    )
 
     # Whenever a project-specific input changes, save the project data
     for input in project_specific_inputs + generation_specific_inputs:
