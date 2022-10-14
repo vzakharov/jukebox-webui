@@ -112,7 +112,7 @@ class UI:
   generation_length = gr.Slider(label='Generation length', minimum=1, maximum=10, step=0.25)
 
   sample_audio = gr.Audio(visible=False)
-  sample_children_audios = [ gr.Audio(visible=False) for i in range(10) ]
+  sample_children_audios = [ gr.Audio() for i in range(10) ]
 
   all_inputs = [ input for input in locals().values() if isinstance(input, gr.components.IOComponent) ]
 
@@ -216,8 +216,17 @@ class UI:
         sample_audio.render()
 
         gr.Markdown('**Children**')
-        
-        [ audio.render() for audio in sample_children_audios ]
+
+
+        child_boxes = []
+
+        for i in range(10):
+
+          with gr.Box(visible=False) as child_box:
+
+            sample_children_audios[i].render()
+
+            child_boxes += [ child_box ]
 
     # Event logic
 
@@ -283,10 +292,15 @@ class UI:
     def update_sample_wavs(base_folder, project_name, sample_id):
       filename = f'{base_folder}/{project_name}/{project_name}-{sample_id}.wav'
       print(f'Looking for {filename}')
+
       if os.path.exists(filename):
+
         print(f'Found {filename}')
         children = []
+        visibilities = []
+
         for file in glob.glob(f'{base_folder}/{project_name}/{project_name}-{sample_id}-*.wav'):
+
           # Remove project name and extension
           match = re.match(f'.*{project_name}-{sample_id}-(\d+)\.wav', file)
           if not match:
@@ -294,31 +308,32 @@ class UI:
           child_id = match.group(1)
           if child_id:
             print(f'Found child {child_id}')
-            children.append(
+            visibilities += [ gr.update(visible=True) ]
+            children += [ 
               gr.update(
-                visible=True,
                 value=file,
                 label=f'{sample_id}-{child_id}',
               )
-            )
+            ]
             # If already at max children, stop
             if len(children) == 10:
               break
         
         # If length is less than 10, hide the rest
         for i in range(len(children), 10):
-          children.append(
-            gr.update(visible=False)
-          )
+          children += [ gr.update() ]
+          visibilities += [ gr.update(visible=False) ]
 
-        return [ gr.update(visible=True, value=filename, label=sample_id) ] + [ child for child in children ]
+
+        return [ gr.update(visible=True, value=filename, label=sample_id) ] + children + visibilities
 
       else:
-        return [ gr.update(visible=False) ] * 11
+
+        return [ gr.update(visible=False) ] + [ gr.update() for i in range(10) ] + [ gr.update(visible=False) for i in range(10) ]
     
     sample_id.change(update_sample_wavs,
       inputs = project_defining_inputs + [sample_id],
-      outputs = [ sample_audio ] + sample_children_audios,
+      outputs = [ sample_audio ] + sample_children_audios + child_boxes,
     )
 
     # On load, load general data from server
