@@ -38,15 +38,6 @@ def get_files(path, extension):
   files.sort(reverse=True)
   return files
 
-def update_list(extension):
-  def update_function(base_folder, project_name):
-    print(f'Updating {extension} list for {project_name}...')
-    return gr.update(
-      choices = get_files(f'{base_folder}/{project_name}', extension),
-    )
-  print(f'Created update function for {extension}')
-  return update_function
-
 def update_samples(base_folder, project_name):
   print(f'Updating samples list for {project_name}...')
   # If the filename is 'project-part1-1-3-2-4,5,6.zs', sample ids will be 'part1-1-3-2-4', 'part1-1-3-2-5', and 'part1-1-3-2-6'
@@ -66,6 +57,22 @@ def update_samples(base_folder, project_name):
     choices = sample_ids,
   )
 
+def update_primes(base_folder, project_name):
+  print(f'Updating prime wavs list for {project_name}...')
+  # Search for files formatted as [project name]-prime[-optional suffix].wav
+  prime_wavs = get_files(f'{base_folder}/{project_name}', '.wav')
+  prime_wavs = [wav for wav in prime_wavs if re.match(f'^{project_name}-prime(-.*)?\.wav$', wav)]
+  return {
+    UI.prime_id: gr.update(
+      choices = prime_wavs,
+      visible = len(prime_wavs) > 0,
+    ),
+    UI.prime_tip: gr.update(
+      visible = len(prime_wavs) == 0,
+    ),
+  }
+
+
 def update_project_data(base_folder, project_name):
 
   # By default, take values from the inputs in the project-specific settings
@@ -83,7 +90,7 @@ def update_project_data(base_folder, project_name):
 
   return out_dict
 
-def save_project_data(base_folder, project_name, artist, genre, lyrics, duration, step, sample_id, prime_id, generation_length):
+def save_project_data(base_folder, project_name, artist, genre, lyrics, duration, step, sample_id, use_prime, prime_id, generation_length):
   # Dump all arguments except base_folder and project_name
   data = {key: value for key, value in locals().items() if key not in ['base_folder', 'project_name']}
   filename = f'{base_folder}/{project_name}/settings.yaml'
@@ -106,19 +113,23 @@ class UI:
 
   step = gr.Radio(label='Step', choices=['Start', 'Continue'])
 
+  use_prime = gr.Checkbox(label='Start with an existing audio sample')
   prime_id = gr.Dropdown(label='Prime Id')
+  prime_tip = gr.Markdown('To start with an existing audio, upload it to the project folder, name it as `[project name]-prime[-optional suffix].wav` and refresh this page.', visible=False)
+
   sample_id = gr.Dropdown(label='Sample Id')
 
   generation_length = gr.Slider(label='Generation length', minimum=1, maximum=10, step=0.25)
 
   sample_audio = gr.Audio(visible=False)
+
   sample_children_audios = [ gr.Audio() for i in range(10) ]
 
   all_inputs = [ input for input in locals().values() if isinstance(input, gr.components.IOComponent) ]
 
   project_defining_inputs = [ base_folder, project_name ]
   project_specific_inputs = [ artist, genre, lyrics, duration ]
-  generation_specific_inputs = [ step, sample_id, prime_id, generation_length ]
+  generation_specific_inputs = [ step, sample_id, use_prime, prime_id, generation_length ]
 
   general_inputs = project_defining_inputs
 
@@ -193,7 +204,19 @@ class UI:
         step.render()
 
         with gr.Box(visible=False) as start_box:
-          prime_id.render()
+
+          use_prime.render()
+
+          with gr.Box(visible=False) as prime_box:
+
+            prime_id.render()
+            prime_tip.render()
+          
+          use_prime.change(
+            inputs = use_prime,
+            outputs = prime_box,
+            fn = lambda use_prime: gr.update(visible=use_prime)
+          )
 
         with gr.Box(visible=False) as continue_box:
           sample_id.render()
@@ -215,28 +238,29 @@ class UI:
         generation_length.render()
         sample_audio.render()
 
-        gr.Markdown('**Children**')
+        with gr.Box(visible=False) as children_box:
 
+          gr.Markdown('**Children**')
 
-        child_boxes = []
-        child_ids = []
+          child_boxes = []
+          child_ids = []
 
-        for i in range(10):
+          for i in range(10):
 
-          with gr.Box(visible=False) as child_box:
+            with gr.Box(visible=False) as child_box:
 
-            sample_children_audios[i].render()
+              sample_children_audios[i].render()
 
-            child_id = gr.Textbox(visible=False)
+              child_id = gr.Textbox(visible=False)
 
-            gr.Button('Go to').click(
-              inputs = child_id,
-              outputs = sample_id,
-              fn = lambda child_id: child_id
-            )
+              gr.Button('Go to').click(
+                inputs = child_id,
+                outputs = sample_id,
+                fn = lambda child_id: child_id
+              )
 
-            child_boxes += [ child_box ]
-            child_ids += [ child_id ]
+              child_boxes += [ child_box ]
+              child_ids += [ child_id ]
 
     # Event logic
 
@@ -276,7 +300,7 @@ class UI:
           UI.project_box: gr.update(visible=True),
           UI.generation_box: gr.update(visible=True),
           **update_project_data(base_folder, project_name),
-          UI.prime_id: update_list('*.wav')(base_folder, project_name),
+          **update_primes(base_folder, project_name),
           UI.sample_id: update_samples(base_folder, project_name),
         }
 
@@ -336,16 +360,19 @@ class UI:
           child_audios += [ gr.update() ]
           visibilities += [ gr.update(visible=False) ]
           child_ids += [ gr.update() ]
+        
+        # Hide the entire children box if there are no children
+        children_box_visible = gr.update(visible=len(child_audios) > 0)
 
-        return [ gr.update(visible=True, value=filename, label=sample_id) ] + child_audios + child_ids + visibilities
+        return [ children_box_visible, gr.update(visible=True, value=filename, label=sample_id) ] + child_audios + child_ids + visibilities
 
       else:
 
-        return [ gr.update(visible=False) ] + [ gr.update() for i in range(20) ] + [ gr.update(visible=False) for i in range(10) ]
+        return [ gr.update(visible=False) ] * 2 + [ gr.update() for i in range(20) ] + [ gr.update(visible=False) for i in range(10) ]
     
     sample_id.change(update_sample_wavs,
       inputs = project_defining_inputs + [sample_id],
-      outputs = [ sample_audio ] + sample_children_audios + child_ids + child_boxes,
+      outputs = [ children_box, sample_audio ] + sample_children_audios + child_ids + child_boxes,
     )
 
     # On load, load general data from server
@@ -386,7 +413,7 @@ class UI:
   lyrics.value = ''                           #@param {type:"string"}
   duration.value = 200                        #@param {type:"number"}
 
-  step.value = 'Start'                        #@param ['Start', 'Continue']
+  # step.value = 'Start'                        #@param ['Start', 'Continue']
 
   sample_id.value = ''                        #@param {type:"string"}
   prime_id.value = ''                         #@param {type:"string"}
