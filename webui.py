@@ -1,3 +1,4 @@
+import random
 import gradio as gr
 import json
 import os
@@ -5,9 +6,154 @@ import glob
 import urllib.request
 import yaml
 import re
+import torch as t
+import librosa
+
+import jukebox
+
+from jukebox.make_models import make_vqvae, make_prior, MODELS
+from jukebox.hparams import Hyperparams, setup_hparams
+from jukebox.utils.dist_utils import setup_dist_from_mpi
+from jukebox.sample import load_prompts, sample_partial_window
 
 # Dump strings as literal blocks in YAML
 yaml.add_representer(str, lambda dumper, value: dumper.represent_scalar('tag:yaml.org,2002:str', value, style='|'))
+
+### Model
+
+hps = Hyperparams()
+hps.sr = 44100
+hps.levels = 3
+hps.hop_fraction = [ 0.5, 0.5, 0.125 ]
+
+raw_to_tokens = 128
+chunk_size = 16
+model = '5b_lyrics'
+lower_batch_size = 16
+lower_level_chunk_size = 32
+
+vqvae = None
+priors = None
+top_prior = None
+
+# If there is no file named 'dist_installed' in the root folder, install the package
+if not os.path.isfile('dist_installed'):
+  rank, local_rank, device = setup_dist_from_mpi()
+
+# Create a 'dist_installed' file to avoid installing the package again when the app is restarted
+open('dist_installed', 'a').close()
+
+metas = None
+labels = None
+
+def calculate_model(duration, duration_used_by_model, artist, genre, lyrics, n_samples):
+
+  global hps, raw_to_tokens, chunk_size
+  global vqvae, priors, top_prior, device
+  global metas, labels
+
+  if duration != duration_used_by_model:
+
+    print(f'Duration {duration} is not equal to duration used by model {duration_used_by_model}; recalculating vqvae and priors...')
+
+    hps.sample_length = int(duration * hps.sr // raw_to_tokens) * raw_to_tokens
+
+    vqvae, *priors = MODELS[model]
+    vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
+
+    top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
+  
+  metas = [dict(
+    artist = artist,
+    genre = genre,
+    total_length = hps.sample_length,
+    offset = 0,
+    lyrics = lyrics,
+  )] * n_samples
+
+  labels = top_prior.labeller.get_batch_labels(metas, device)
+
+  return {
+    UI.duration_used_by_model: duration
+  }
+
+
+def seconds_to_tokens(sec):
+
+  global hps, raw_to_tokens, chunk_size
+
+  tokens = sec * hps.sr // raw_to_tokens
+  tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
+  return int(tokens)
+
+def generate(base_folder, project_name, prime_file, parent_sample_id, generation_length, trim_prime_seconds, n_samples, temperature):
+
+  global hps, raw_to_tokens, chunk_size, lower_batch_size, lower_level_chunk_size
+  global top_prior
+
+  sample_hps = Hyperparams(dict(
+    mode = 'primed' if prime_file else 'ancestral',
+    codes_file = None,
+    audio_file = prime_file,
+    prompt_length_in_seconds = trim_prime_seconds,
+  ))
+
+  if prime_file:
+    trim_prime_samples = int( trim_prime_seconds * hps.sr // raw_to_tokens ) * raw_to_tokens
+    wav = load_prompts([ prime_file], trim_prime_samples, hps)
+    zs = top_prior.encode(wav, start_level=0, end_level=len(priors), bs_chunks=wav.shape[0])
+  
+  else:
+    zs = [ t.zeros(hps.n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
+  
+  zs = [ z.repeat(n_samples, 1) for z in zs ]
+
+  tokens_to_sample = seconds_to_tokens(generation_length)
+  sampling_kwargs = dict(
+    temp=temperature, fp16=True, max_batch_size=lower_batch_size,
+    chunk_size=lower_level_chunk_size
+  )
+
+  zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
+  wav = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
+
+  write_files(base_folder, project_name, zs, wav, parent_sample_id)
+
+
+def write_files(base_folder, project_name, zs, wav, parent_sample_id=''):
+
+  # 1. Scan project folder for [project_name][-parent_sample_id]-[comma-separated child ids].zs
+  # 2. Take the highest child id and add 1 to it (call it first_new_child_id)
+  # 3. Create [project_name][-parent_sample_id]-[first_new_child_id,first_new_child_id+1,first_new_child_id+2,etc.].zs depending on how many samples we have (based on the shape of zs)
+
+  global hps
+  n_samples = wav.shape[0]
+
+  base_filename = f'{base_folder}/{project_name}/{project_name}'
+  if parent_sample_id:
+    base_filename += f'-{parent_sample_id}'
+
+  files = glob.glob(f'{base_filename}-*.zs')
+  if not files:
+    first_new_child_id = 1
+  else:
+    existing_ids = []
+    for f in files:
+      # Extract the child ids from the filename by splitting the part after the last dash by the comma
+      child_ids = f.split('-')[-1].split('.')[0].split(',')
+      child_ids = [ int(c) for c in child_ids ]
+      existing_ids += child_ids
+    first_new_child_id = max(existing_ids) + 1
+
+    zs_filename = f"{base_filename}-{','.join([ str(i+first_new_child_id) for i in range(n_samples) ])}"
+    t.save(zs, zs_filename)
+
+    for i in range(n_samples):
+      wav_filename = f"{base_filename}-{first_new_child_id+i}.wav"
+      librosa.output.write_wav(wav_filename, wav[i], hps.sr)
+
+
+### UX
 
 def get_project_names(base_folder):
   project_names = []
@@ -63,7 +209,7 @@ def update_primes(base_folder, project_name):
   prime_wavs = get_files(f'{base_folder}/{project_name}', '.wav')
   prime_wavs = [wav for wav in prime_wavs if re.match(f'^{project_name}-prime(-.*)?\.wav$', wav)]
   return {
-    UI.prime_id: gr.update(
+    UI.prime_file: gr.update(
       choices = prime_wavs,
       visible = len(prime_wavs) > 0,
     ),
@@ -90,7 +236,7 @@ def update_project_data(base_folder, project_name):
 
   return out_dict
 
-def save_project_data(base_folder, project_name, artist, genre, lyrics, duration, step, sample_id, use_prime, prime_id, generation_length):
+def save_project_data(base_folder, project_name, artist, genre, lyrics, duration, duration_used_by_model, step, sample_id, use_prime, prime_file, generation_length):
   # Dump all arguments except base_folder and project_name
   data = {key: value for key, value in locals().items() if key not in ['base_folder', 'project_name']}
   filename = f'{base_folder}/{project_name}/settings.yaml'
@@ -109,12 +255,14 @@ class UI:
   artist = gr.Dropdown(label='Artist', choices=get_list('artist'))
   genre = gr.Dropdown(label='Genre', choices=get_list('genre'))
   lyrics = gr.Textbox(label='Lyrics', max_lines=8)
+
   duration = gr.Slider(label='Duration', minimum=60, maximum=600, step=10)
+  duration_used_by_model = gr.Number(visible=False)
 
   step = gr.Radio(label='Step', choices=['Start', 'Continue'])
 
   use_prime = gr.Checkbox(label='Start with an existing audio sample')
-  prime_id = gr.Dropdown(label='Prime Id')
+  prime_file = gr.Dropdown(label='Prime filename')
   prime_tip = gr.Markdown('To start with an existing audio, upload it to the project folder, name it as `[project name]-prime[-optional suffix].wav` and refresh this page.', visible=False)
 
   sample_id = gr.Dropdown(label='Sample Id')
@@ -129,7 +277,7 @@ class UI:
 
   project_defining_inputs = [ base_folder, project_name ]
   project_specific_inputs = [ artist, genre, lyrics, duration ]
-  generation_specific_inputs = [ step, sample_id, use_prime, prime_id, generation_length ]
+  generation_specific_inputs = [ step, sample_id, use_prime, prime_file, generation_length ]
 
   general_inputs = project_defining_inputs
 
@@ -198,6 +346,23 @@ class UI:
         with gr.Box(visible=False) as project_box:
           
           [ input.render() for input in project_specific_inputs ]
+        
+          # If duration changes and is not equal to the duration used by the model, show a button to recalculate the model
+
+          caculate_model_button = gr.Button(visible=False).click(
+            inputs = duration,
+            outputs = duration_used_by_model,
+            fn = calculate_model
+          )
+
+          duration.change(
+            inputs = [ duration, duration_used_by_model ],
+            outputs = caculate_model_button,
+            fn = lambda duration, duration_used_by_model: gr.update(
+              visible=duration!=duration_used_by_model,
+              label='Recalculate model' if duration_used_by_model else 'Calculate model'
+            )
+          )
 
       with gr.Column(scale=3, visible=False) as generation_box:
 
@@ -209,7 +374,7 @@ class UI:
 
           with gr.Box(visible=False) as prime_box:
 
-            prime_id.render()
+            prime_file.render()
             prime_tip.render()
           
           use_prime.change(
@@ -236,6 +401,9 @@ class UI:
           )
           
         generation_length.render()
+
+        generate_button = gr.Button('Generate')
+
         sample_audio.render()
 
         with gr.Box(visible=False) as children_box:
@@ -400,23 +568,23 @@ class UI:
 
 
   def __init__(self):
-    self.ui.launch()
+    self.ui.launch(share=True, debug=True)
 
   # Set default values directly
-  base_folder.value = 'G:/Мой диск/AI music'  #@param {type:"string"}
+  base_folder.value = '/content/drive/MyDrive/AI music'  #@param {type:"string"}
 
   project_name.value = ''                     #@param {type:"string"}
-  project_name.choices = get_project_names(base_folder.value)
+  # project_name.choices = get_project_names(base_folder.value)
 
   artist.value = 'Unknown'                    #@param {type:"string"}
   genre.value = 'Unknown'                     #@param {type:"string"}
   lyrics.value = ''                           #@param {type:"string"}
-  duration.value = 200                        #@param {type:"number"}
+  # duration.value = 200                        #@param {type:"number"}
 
   # step.value = 'Start'                        #@param ['Start', 'Continue']
 
   sample_id.value = ''                        #@param {type:"string"}
-  prime_id.value = ''                         #@param {type:"string"}
+  prime_file.value = ''                         #@param {type:"string"}
 
   generation_length.value = 3                 #@param {type:"number"}
 
