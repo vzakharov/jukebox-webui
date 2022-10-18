@@ -89,18 +89,6 @@ def get_projects():
   # Add "CREATE NEW" option in the beginning
   return ['CREATE NEW'] + project_names
 
-def create_project(name):
-
-  global base_path
-
-  print(f'Creating project {name}...')
-
-  os.makedirs(f'{base_path}/{name}')
-
-  print(f'Project {name} created!')
-
-  return get_projects()
-
 calculated_metas = {}
 loaded_settings = {}
 
@@ -109,7 +97,7 @@ class UI:
   ### General
 
   project_name = gr.Dropdown(
-    label = 'Project name',
+    label = 'Project',
     choices = get_projects()
   )
 
@@ -118,7 +106,8 @@ class UI:
   )
 
   new_project_name = gr.Textbox(
-    label = 'New project name'
+    label = 'Project name',
+    placeholder = 'lowercase-digits-and-dashes-only'
   )
 
   project_box = gr.Box(
@@ -142,11 +131,12 @@ class UI:
 
   lyrics = gr.Textbox(
     label = 'Lyrics',
-    max_lines = 5
+    max_lines = 5,
+    placeholder = 'Shift+Enter for new line'
   )
 
   total_duration = gr.Slider(
-    label = 'Duration',
+    label = 'Duration, sec',
     minimum = 60,
     maximum = 600,
     step = 10
@@ -246,13 +236,39 @@ with gr.Blocks() as app:
 
         UI.new_project_name.render()
 
-        # When a project is created, create a subfolder for it and update the project list.
+        # Wehn the new project name is unfocused, convert it to lowercase and replace non-alphanumeric characters with dashes
+        def convert_name(name):
+          return re.sub(r'[^a-z0-9]+', '-', name.lower())
 
-        create_args = {
-          'inputs': UI.new_project_name,
-          'outputs': UI.project_name,
-          'fn': lambda name: gr.update( choices = create_project(name), value = name )
-        }
+        UI.new_project_name.blur(
+          inputs = UI.new_project_name,
+          outputs = UI.new_project_name,
+          fn = convert_name,
+        )
+
+        def create_project(name):
+
+          global base_path
+
+          name = convert_name(name)
+
+          print(f'Creating project {name}...')
+
+          os.makedirs(f'{base_path}/{name}')
+
+          print(f'Project {name} created!')
+
+          return gr.update(
+            choices = get_projects(),
+            value = name
+          )
+
+        # When a project is created, create a subfolder for it and update the project list.
+        create_args = dict(
+          inputs = UI.new_project_name,
+          outputs = UI.project_name,
+          fn = create_project,
+        )
 
         UI.new_project_name.submit( **create_args )
         gr.Button('Create project').click( **create_args )
