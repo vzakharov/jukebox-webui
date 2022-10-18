@@ -38,6 +38,7 @@ if is_colab:
   from jukebox.make_models import make_vqvae, make_prior, MODELS
   from jukebox.hparams import Hyperparams, setup_hparams
   from jukebox.utils.dist_utils import setup_dist_from_mpi
+  from jukebox.utils.torch_utils import empty_cache
   from jukebox.sample import load_prompts, sample_partial_window
 
   ### Model
@@ -57,13 +58,14 @@ if is_colab:
   priors = None
   top_prior = None
 
-  # If there is no file named 'dist_installed' in the root folder, install the package
-  if not os.path.isfile('dist_installed'):
+  # If rank, local_rank, device are not defined, load them from MPI
+  try:
+    rank, local_rank, device
+    print('Using existing rank, local_rank, device')
+  except:
+    print('Loading rank, local_rank, device from MPI')
     rank, local_rank, device = setup_dist_from_mpi()
-
-    # Create a 'dist_installed' file to avoid installing the package again when the app is restarted
-    open('dist_installed', 'a').close()
-
+    print(f'rank={rank}, local_rank={local_rank}, device={device}')
 
 # If the base folder doesn't exist, create it
 if not os.path.isdir(base_path):
@@ -101,7 +103,12 @@ def get_meta(what):
   print(f'Loaded {len(items)} {what}s.')
   return items
 
-calculated_metas = {}
+try:
+  calculated_metas
+  print('Using existing calculated_metas')
+except:
+  calculated_metas = {}
+
 loaded_settings = {}
 
 class UI:
@@ -170,6 +177,10 @@ class UI:
   project_inputs = [ *metas ]
 
   print('Project inputs:', project_inputs)
+
+  status_bar = gr.Textbox(
+    label = 'Status',
+  )
 
   # Combine all IO components as a list in 'all'
   all_inputs = general_inputs + project_inputs
@@ -366,9 +377,47 @@ with gr.Blocks() as app:
         def calculate_model(artist, genre, lyrics, total_duration):
 
           global calculated_metas
+          global hps, raw_to_tokens, chunk_size
+          global vqvae, priors, top_prior, device
+          global metas, labels
 
-          # Calculate the model
-          # (to be implemented)
+          n_samples = 1
+
+          try:
+            calculated_duration = calculated_metas['total_duration']
+          except:
+            calculated_duration = None
+
+          if total_duration != calculated_duration:
+
+            print(f'Duration {total_duration} is not equal to duration used by model {calculated_duration}, recalculating model...')
+
+            try:
+              print('Deleting vqvae/top_prior...')
+              del vqvae
+              del top_prior
+              empty_cache()
+              print('Deleted.')
+            except:
+              print('vqvae/top_prior not found, skipping deletion.')
+
+            hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
+
+            vqvae, *priors = MODELS[model]
+            
+            vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
+
+            top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
+          
+          metas = [dict(
+            artist = artist,
+            genre = genre,
+            total_length = hps.sample_length,
+            offset = 0,
+            lyrics = lyrics,
+          )] * n_samples
+
+          labels = top_prior.labeller.get_batch_labels(metas, device)
 
           calculated_metas = {
             'artist': artist,
@@ -379,13 +428,16 @@ with gr.Blocks() as app:
 
           return {
             UI.calculate_model_button: gr.update( visible = False, value = 'Recalculate model' ),
-            UI.generation_box: gr.update( visible = True )
+            UI.generation_box: gr.update( visible = True ),
+            UI.status_bar: 'Model calculated'
           }
         
         UI.calculate_model_button.click(
           inputs = UI.metas,
-          outputs = [ UI.calculate_model_button, UI.generation_box ],
-          fn = calculate_model
+          outputs = [ UI.calculate_model_button, UI.generation_box, UI.status_bar ],
+          fn = calculate_model,
+          show_progress = True,
+          api_name = 'calculate-model',
         )
     
     with gr.Column( scale = 3 ):
@@ -396,6 +448,11 @@ with gr.Blocks() as app:
 
         gr.Markdown('Generation inputs will go here')
         # (to be implemented)
+
+  with gr.Row():
+
+    UI.status_bar.render()
+
 
   # If the app is loaded and the list of projects is empty, set the project list to CREATE NEW. Otherwise, load the last project from settings.yaml, if it exists.
   def get_last_project():
