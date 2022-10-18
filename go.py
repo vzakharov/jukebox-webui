@@ -82,7 +82,7 @@ def create_project(name):
 
 class UI:
 
-  project_list = gr.Dropdown(
+  projects_list = gr.Dropdown(
     label = 'Pick a project',
     choices = get_project_list()
   )
@@ -101,10 +101,10 @@ class UI:
 
 with gr.Blocks() as app:
 
-  UI.project_list.render()
+  UI.projects_list.render()
 
   # If "CREATE NEW" is selected, show the create_project_box. Otherwise, show the project_box  
-  def toggle_boxes(name):
+  def create_or_open_project(name):
 
     print(f'Toggling boxes for {name}...')
 
@@ -113,10 +113,10 @@ with gr.Blocks() as app:
       UI.project_box: gr.update( visible = name != 'CREATE NEW' and name != '' )
     }
   
-  UI.project_list.change(
-    inputs = UI.project_list,
+  UI.projects_list.change(
+    inputs = UI.projects_list,
     outputs = [ UI.create_project_box, UI.project_box ],
-    fn = toggle_boxes
+    fn = create_or_open_project
   )
 
   UI.create_project_box.render()
@@ -129,7 +129,7 @@ with gr.Blocks() as app:
 
     create_args = {
       'inputs': UI.new_project_name,
-      'outputs': UI.project_list,
+      'outputs': UI.projects_list,
       'fn': lambda name: gr.update( choices = create_project(name), value = name )
     }
 
@@ -144,13 +144,13 @@ with gr.Blocks() as app:
 
   def create_new_if_no_projects():
     # If app is loaded and the list of projects is empty, set the project list to CREATE NEW  
-    if len(UI.project_list.choices) == 1:
+    if len(UI.projects_list.choices) == 1:
       
       return 'CREATE NEW'
 
   app.load(
     inputs = [],
-    outputs = UI.project_list,
+    outputs = UI.projects_list,
     fn = create_new_if_no_projects
   )
 
