@@ -145,23 +145,21 @@ with gr.Blocks() as app:
 
     gr.Markdown('## Project')
 
-  # If app is loaded and the list of projects is empty, set the project list to CREATE NEW  
-  # def create_new_if_no_projects():
-  #   if len(UI.projects_list.choices) == 1:
-      
-  #     return 'CREATE NEW'
+  # If app is loaded and the list of projects is empty, set the project list to CREATE NEW. Otherwise, load the last project from settings.json, if it exists.
+  def get_last_project():
+
+    if len(UI.projects_list.choices) == 1:
+      return 'CREATE NEW'
+
+    elif os.path.isfile(f'{base_path}/settings.json'):
+      with open(f'{base_path}/settings.json', 'r') as f:
+        settings = json.load(f)
+        return settings['last_project']
 
   app.load(
     inputs = [],
     outputs = UI.projects_list,
-    fn = lambda: 'CREATE NEW' if len(UI.projects_list.choices) == 1 else None
-  )
-  
-  # When loaded, load the latest project from settings.json (if it exists)
-  app.load(
-    inputs = [],
-    outputs = UI.projects_list,
-    fn = lambda: json.load(open(f'{base_path}/settings.json'))['project'] if os.path.isfile(f'{base_path}/settings.json') else None,
+    fn = get_last_project,
     api_name = 'get-last-project'
   )
 
