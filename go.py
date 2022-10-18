@@ -1,4 +1,12 @@
-is_colab = False
+# Check if it's a Colab notebookby checking if google.colab package is available
+try:
+  import google.colab
+  print('Running on Colab')
+  is_colab = True
+except:
+  print('Not running on Colab')
+  is_colab = False
+  
 
 colab_path = '/content/drive/My Drive/JukeboxGo' #@param{type:'string'}
 local_path = 'G:/Мой диск/JukeboxGo'
@@ -146,12 +154,9 @@ class UI:
 
   metas = [ artist, genre, lyrics, total_duration ]
 
-  metas_changed = gr.Checkbox(
-    visible = False
-  )
-
   calculate_model_button = gr.Button(
-    'Calculate model'
+    'Calculate model',
+    variant = 'primary'
   )
 
   generation_box = gr.Box(
@@ -221,12 +226,12 @@ with gr.Blocks() as app:
     return {
       UI.create_project_box: gr.update( visible = is_new ),
       UI.project_box: gr.update( visible = not is_new and project_name != '' ),
-      # **settings_out_dict
+      **settings_out_dict
     }
   
   UI.project_name.change(
     inputs = UI.project_name,
-    outputs = [ UI.create_project_box, UI.project_box ],
+    outputs = [ UI.create_project_box, UI.project_box, *UI.project_inputs ],
     fn = set_project,
     api_name = 'set-project'
   )
@@ -276,17 +281,6 @@ with gr.Blocks() as app:
       else:
         print('Settings are the same as loaded settings, not saving.')
 
-    def set_metas_changed(artist, genre, lyrics, total_duration):
-
-      global calculated_metas
-
-      return calculated_metas != {
-        'artist': artist,
-        'genre': genre,
-        'lyrics': lyrics,
-        'total_duration': total_duration
-      }
-
     for component in UI.project_inputs:
 
       component.render()
@@ -303,23 +297,29 @@ with gr.Blocks() as app:
         fn = save_project_settings
       )
 
-      # # When a meta setting is changed, set the metas_changed flag to True if calculated_metas is different from the current settings
-      # if component in UI.metas:
-      #   component.change(
-      #     inputs = UI.metas,
-      #     outputs = UI.metas_changed,
-      #     fn = set_metas_changed,
-      #   )
-    
-    # Depending on the metas_changed flag, show/hide the calculate model button and generation box
-    UI.metas_changed.change(
-      inputs = UI.metas_changed,
-      outputs = [ UI.calculate_model_button, UI.generation_box ],
-      fn = lambda metas_changed: {
+    def set_metas_changed(artist, genre, lyrics, total_duration):
+
+      global calculated_metas
+
+      metas_changed = calculated_metas != {
+        'artist': artist,
+        'genre': genre,
+        'lyrics': lyrics,
+        'total_duration': total_duration
+      }
+
+      return {
         UI.calculate_model_button: gr.update( visible = metas_changed ),
         UI.generation_box: gr.update( visible = not metas_changed )
       }
-    )
+
+    # When a meta setting is changed, show the calculate model button and hide the generation box
+    for component in UI.metas:
+      component.change(
+        inputs = UI.metas,
+        outputs = [ UI.calculate_model_button, UI.generation_box ],
+        fn = set_metas_changed,
+      )
 
     UI.calculate_model_button.render()
 
@@ -339,21 +339,22 @@ with gr.Blocks() as app:
       }
 
       return {
-        UI.metas_changed: False
+        UI.calculate_model_button: gr.update( visible = False, value = 'Recalculate model' ),
+        UI.generation_box: gr.update( visible = True )
       }
     
     UI.calculate_model_button.click(
       inputs = UI.metas,
-      outputs = UI.metas_changed,
+      outputs = [ UI.calculate_model_button, UI.generation_box ],
       fn = calculate_model
     )
 
-    UI.generation_box.render()
+  UI.generation_box.render()
 
-    with UI.generation_box:
+  with UI.generation_box:
 
-      gr.Markdown('Generation inputs will go here')
-      # (to be implemented)
+    gr.Markdown('Generation inputs will go here')
+    # (to be implemented)
 
   # If the app is loaded and the list of projects is empty, set the project list to CREATE NEW. Otherwise, load the last project from settings.yaml, if it exists.
   def get_last_project():
