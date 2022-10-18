@@ -104,19 +104,22 @@ with gr.Blocks() as app:
   UI.projects_list.render()
 
   # If "CREATE NEW" is selected, show the create_project_box. Otherwise, show the project_box  
-  def create_or_open_project(name):
+  # def create_or_open_project(name):
 
-    print(f'Toggling boxes for {name}...')
+  #   print(f'Toggling boxes for {name}...')
 
-    return {
-      UI.create_project_box: gr.update( visible = name == 'CREATE NEW' ),
-      UI.project_box: gr.update( visible = name != 'CREATE NEW' and name != '' )
-    }
+  #   return {
+  #     UI.create_project_box: gr.update( visible = name == 'CREATE NEW' ),
+  #     UI.project_box: gr.update( visible = name != 'CREATE NEW' and name != '' )
+  #   }
   
   UI.projects_list.change(
     inputs = UI.projects_list,
     outputs = [ UI.create_project_box, UI.project_box ],
-    fn = create_or_open_project
+    fn = lambda name: {
+      UI.create_project_box: gr.update( visible = name == 'CREATE NEW' ),
+      UI.project_box: gr.update( visible = name != 'CREATE NEW' and name != '' )
+    }
   )
 
   UI.create_project_box.render()
@@ -142,16 +145,24 @@ with gr.Blocks() as app:
 
     gr.Markdown('## Project')
 
-  def create_new_if_no_projects():
-    # If app is loaded and the list of projects is empty, set the project list to CREATE NEW  
-    if len(UI.projects_list.choices) == 1:
+  # If app is loaded and the list of projects is empty, set the project list to CREATE NEW  
+  # def create_new_if_no_projects():
+  #   if len(UI.projects_list.choices) == 1:
       
-      return 'CREATE NEW'
+  #     return 'CREATE NEW'
 
   app.load(
     inputs = [],
     outputs = UI.projects_list,
-    fn = create_new_if_no_projects
+    fn = lambda: 'CREATE NEW' if len(UI.projects_list.choices) == 1 else None
+  )
+  
+  # When loaded, load the latest project from settings.json (if it exists)
+  app.load(
+    inputs = [],
+    outputs = UI.projects_list,
+    fn = lambda: json.load(open(f'{base_path}/settings.json'))['project'] if os.path.isfile(f'{base_path}/settings.json') else None,
+    api_name = 'get-last-project'
   )
 
   app.launch( share = share_gradio, debug = debug_gradio )
