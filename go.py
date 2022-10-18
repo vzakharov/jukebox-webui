@@ -89,6 +89,18 @@ def get_projects():
   # Add "CREATE NEW" option in the beginning
   return ['CREATE NEW'] + project_names
 
+def get_meta(what):
+  items = []
+  print(f'Getting {what} list...')
+  with urllib.request.urlopen(f'https://raw.githubusercontent.com/openai/jukebox/master/jukebox/data/ids/v2_{what}_ids.txt') as f:
+    for line in f:
+      item = line.decode('utf-8').split(';')[0]
+      item = item.replace('_', ' ').title()
+      items.append(item)
+  items.sort()
+  print(f'Loaded {len(items)} {what}s.')
+  return items
+
 calculated_metas = {}
 loaded_settings = {}
 
@@ -122,11 +134,13 @@ class UI:
 
   ## Metas (artist, genre, lyrics)
   artist = gr.Dropdown(
-    label = 'Artist'
+    label = 'Artist',
+    choices = get_meta('artist')
   )
 
   genre = gr.Dropdown(
-    label = 'Genre'
+    label = 'Genre',
+    choices = get_meta('genre')
   )
 
   lyrics = gr.Textbox(
