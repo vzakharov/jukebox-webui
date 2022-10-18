@@ -179,182 +179,188 @@ class UI:
 
 
 with gr.Blocks() as app:
-
-  UI.project_name.render()
-
-  def set_project(project_name):
-
-    global base_path, loaded_settings
-
-    is_new = project_name == 'CREATE NEW'
-
-    # Start with default values for project settings
-    settings_out_dict = {
-      UI.artist: 'Unknown',
-      UI.genre: 'Unknown',
-      UI.lyrics: '',
-      UI.total_duration: 200,
-    }
-
-    # If not new, load the settings from settings.yaml in the project folder, if it exists
-    if not is_new:
-
-      print(f'Loading settings for {project_name}...')
-
-      settings_path = f'{base_path}/{project_name}/{project_name}.yaml'
-      if os.path.isfile(settings_path):
-        with open(settings_path, 'r') as f:
-          loaded_settings = yaml.load(f, Loader=yaml.FullLoader)
-          print(f'Loaded settings for {project_name}: {loaded_settings}')
-
-          # Go through all the settings and set the value for settings_out_dict where the key is the element itself
-          for key, value in loaded_settings.items():
-            if key in UI.inputs_by_name and UI.inputs_by_name[key] in UI.project_inputs:
-              print(f'Found setting {key} with value {value}')
-              settings_out_dict[getattr(UI, key)] = value
-            else:
-              print(f'Warning: {key} is not a valid project setting')
-    
-      print('Valid settings:', settings_out_dict)
-
-      # Write the last project name to settings.yaml
-      with open(f'{base_path}/settings.yaml', 'w') as f:
-        print(f'Saving {project_name} as last project...')
-        yaml.dump({'last_project': project_name}, f)
-        print('Saved to settings.yaml')
-
-    return {
-      UI.create_project_box: gr.update( visible = is_new ),
-      UI.project_box: gr.update( visible = not is_new and project_name != '' ),
-      **settings_out_dict
-    }
   
-  UI.project_name.change(
-    inputs = UI.project_name,
-    outputs = [ UI.create_project_box, UI.project_box, *UI.project_inputs ],
-    fn = set_project,
-    api_name = 'set-project'
-  )
+  with gr.Row():
 
-  UI.create_project_box.render()
+    with gr.Column( scale = 1 ):
 
-  with UI.create_project_box:
+      UI.project_name.render()
 
-    UI.new_project_name.render()
+      def set_project(project_name):
 
-    # When a project is created, create a subfolder for it and update the project list.
+        global base_path, loaded_settings
 
-    create_args = {
-      'inputs': UI.new_project_name,
-      'outputs': UI.project_name,
-      'fn': lambda name: gr.update( choices = create_project(name), value = name )
-    }
+        is_new = project_name == 'CREATE NEW'
 
-    UI.new_project_name.submit( **create_args )
-    gr.Button('Create project').click( **create_args )
+        # Start with default values for project settings
+        settings_out_dict = {
+          UI.artist: 'Unknown',
+          UI.genre: 'Unknown',
+          UI.lyrics: '',
+          UI.total_duration: 200,
+        }
 
-  UI.project_box.render()
+        # If not new, load the settings from settings.yaml in the project folder, if it exists
+        if not is_new:
 
-  with UI.project_box:
+          print(f'Loading settings for {project_name}...')
 
-    def save_project_settings(project_name, *project_input_values):
+          settings_path = f'{base_path}/{project_name}/{project_name}.yaml'
+          if os.path.isfile(settings_path):
+            with open(settings_path, 'r') as f:
+              loaded_settings = yaml.load(f, Loader=yaml.FullLoader)
+              print(f'Loaded settings for {project_name}: {loaded_settings}')
 
-      print(f'Saving settings for {project_name}...')
-      print(f'Project input values: {project_input_values}')
+              # Go through all the settings and set the value for settings_out_dict where the key is the element itself
+              for key, value in loaded_settings.items():
+                if key in UI.inputs_by_name and UI.inputs_by_name[key] in UI.project_inputs:
+                  print(f'Found setting {key} with value {value}')
+                  settings_out_dict[getattr(UI, key)] = value
+                else:
+                  print(f'Warning: {key} is not a valid project setting')
+        
+          print('Valid settings:', settings_out_dict)
 
-      # Go through all UI attributes and add the ones that are in the project settings to a dictionary
-      settings = {}
+          # Write the last project name to settings.yaml
+          with open(f'{base_path}/settings.yaml', 'w') as f:
+            print(f'Saving {project_name} as last project...')
+            yaml.dump({'last_project': project_name}, f)
+            print('Saved to settings.yaml')
 
-      for i in range(len(UI.project_inputs)):
-        settings[UI.input_names[UI.project_inputs[i]]] = project_input_values[i]
+        return {
+          UI.create_project_box: gr.update( visible = is_new ),
+          UI.project_box: gr.update( visible = not is_new and project_name != '' ),
+          **settings_out_dict
+        }
       
-      print(f'Settings: {settings}')
-
-      # If the settings are different from the loaded settings, save them to the project folder
-
-      if settings != loaded_settings:
-
-        with open(f'{base_path}/{project_name}/{project_name}.yaml', 'w') as f:
-          yaml.dump(settings, f)
-          print(f'Saved settings to {base_path}/{project_name}/{project_name}.yaml')
-      
-      else:
-        print('Settings are the same as loaded settings, not saving.')
-
-    for component in UI.project_inputs:
-
-      component.render()
-
-      # Whenever a project setting is changed, save all the settings to settings.yaml in the project folder
-      # Use the "blur" method if available, otherwise use "change"
-      inputs = [ UI.project_name, *UI.project_inputs ]
-
-      print(f'Inputs for {component}: {inputs}')
-
-      getattr(component, 'blur', component.change)(
-        inputs = inputs,
-        outputs = None,
-        fn = save_project_settings
+      UI.project_name.change(
+        inputs = UI.project_name,
+        outputs = [ UI.create_project_box, UI.project_box, *UI.project_inputs ],
+        fn = set_project,
+        api_name = 'set-project'
       )
 
-    def set_metas_changed(artist, genre, lyrics, total_duration):
+      UI.create_project_box.render()
 
-      global calculated_metas
+      with UI.create_project_box:
 
-      metas_changed = calculated_metas != {
-        'artist': artist,
-        'genre': genre,
-        'lyrics': lyrics,
-        'total_duration': total_duration
-      }
+        UI.new_project_name.render()
 
-      return {
-        UI.calculate_model_button: gr.update( visible = metas_changed ),
-        UI.generation_box: gr.update( visible = not metas_changed )
-      }
+        # When a project is created, create a subfolder for it and update the project list.
 
-    # When a meta setting is changed, show the calculate model button and hide the generation box
-    for component in UI.metas:
-      component.change(
-        inputs = UI.metas,
-        outputs = [ UI.calculate_model_button, UI.generation_box ],
-        fn = set_metas_changed,
-      )
+        create_args = {
+          'inputs': UI.new_project_name,
+          'outputs': UI.project_name,
+          'fn': lambda name: gr.update( choices = create_project(name), value = name )
+        }
 
-    UI.calculate_model_button.render()
+        UI.new_project_name.submit( **create_args )
+        gr.Button('Create project').click( **create_args )
 
-    # When the calculate model button is clicked, calculate the model and set the metas_changed flag to False
-    def calculate_model(artist, genre, lyrics, total_duration):
+      UI.project_box.render()
 
-      global calculated_metas
+      with UI.project_box:
 
-      # Calculate the model
-      # (to be implemented)
+        def save_project_settings(project_name, *project_input_values):
 
-      calculated_metas = {
-        'artist': artist,
-        'genre': genre,
-        'lyrics': lyrics,
-        'total_duration': total_duration
-      }
+          print(f'Saving settings for {project_name}...')
+          print(f'Project input values: {project_input_values}')
 
-      return {
-        UI.calculate_model_button: gr.update( visible = False, value = 'Recalculate model' ),
-        UI.generation_box: gr.update( visible = True )
-      }
+          # Go through all UI attributes and add the ones that are in the project settings to a dictionary
+          settings = {}
+
+          for i in range(len(UI.project_inputs)):
+            settings[UI.input_names[UI.project_inputs[i]]] = project_input_values[i]
+          
+          print(f'Settings: {settings}')
+
+          # If the settings are different from the loaded settings, save them to the project folder
+
+          if settings != loaded_settings:
+
+            with open(f'{base_path}/{project_name}/{project_name}.yaml', 'w') as f:
+              yaml.dump(settings, f)
+              print(f'Saved settings to {base_path}/{project_name}/{project_name}.yaml')
+          
+          else:
+            print('Settings are the same as loaded settings, not saving.')
+
+        for component in UI.project_inputs:
+
+          component.render()
+
+          # Whenever a project setting is changed, save all the settings to settings.yaml in the project folder
+          # Use the "blur" method if available, otherwise use "change"
+          inputs = [ UI.project_name, *UI.project_inputs ]
+
+          print(f'Inputs for {component}: {inputs}')
+
+          getattr(component, 'blur', component.change)(
+            inputs = inputs,
+            outputs = None,
+            fn = save_project_settings
+          )
+
+        def set_metas_changed(artist, genre, lyrics, total_duration):
+
+          global calculated_metas
+
+          metas_changed = calculated_metas != {
+            'artist': artist,
+            'genre': genre,
+            'lyrics': lyrics,
+            'total_duration': total_duration
+          }
+
+          return {
+            UI.calculate_model_button: gr.update( visible = metas_changed ),
+            UI.generation_box: gr.update( visible = not metas_changed )
+          }
+
+        # When a meta setting is changed, show the calculate model button and hide the generation box
+        for component in UI.metas:
+          component.change(
+            inputs = UI.metas,
+            outputs = [ UI.calculate_model_button, UI.generation_box ],
+            fn = set_metas_changed,
+          )
+
+        UI.calculate_model_button.render()
+
+        # When the calculate model button is clicked, calculate the model and set the metas_changed flag to False
+        def calculate_model(artist, genre, lyrics, total_duration):
+
+          global calculated_metas
+
+          # Calculate the model
+          # (to be implemented)
+
+          calculated_metas = {
+            'artist': artist,
+            'genre': genre,
+            'lyrics': lyrics,
+            'total_duration': total_duration
+          }
+
+          return {
+            UI.calculate_model_button: gr.update( visible = False, value = 'Recalculate model' ),
+            UI.generation_box: gr.update( visible = True )
+          }
+        
+        UI.calculate_model_button.click(
+          inputs = UI.metas,
+          outputs = [ UI.calculate_model_button, UI.generation_box ],
+          fn = calculate_model
+        )
     
-    UI.calculate_model_button.click(
-      inputs = UI.metas,
-      outputs = [ UI.calculate_model_button, UI.generation_box ],
-      fn = calculate_model
-    )
+    with gr.Column( scale = 3 ):
 
-  UI.generation_box.render()
+      UI.generation_box.render()
 
-  with UI.generation_box:
+      with UI.generation_box:
 
-    gr.Markdown('Generation inputs will go here')
-    # (to be implemented)
+        gr.Markdown('Generation inputs will go here')
+        # (to be implemented)
 
   # If the app is loaded and the list of projects is empty, set the project list to CREATE NEW. Otherwise, load the last project from settings.yaml, if it exists.
   def get_last_project():
