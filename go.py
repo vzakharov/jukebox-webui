@@ -290,40 +290,45 @@ with gr.Blocks() as app:
           component.render()
 
           # Whenever a project setting is changed, save all the settings to settings.yaml in the project folder
-          # Use the "blur" method if available, otherwise use "change"
           inputs = [ UI.project_name, *UI.project_inputs ]
 
           print(f'Inputs for {component}: {inputs}')
 
-          getattr(component, 'blur', component.change)(
+          # Use the "blur" method if available, otherwise use "change"
+          handler_name = 'blur' if hasattr(component, 'blur') else 'change'
+          handler = getattr(component, handler_name)
+          print(f'Using {handler_name} handler for {component}')
+
+          handler(
             inputs = inputs,
             outputs = None,
             fn = save_project_settings
           )
 
-        def set_metas_changed(artist, genre, lyrics, total_duration):
+          def set_metas_changed(artist, genre, lyrics, total_duration):
 
-          global calculated_metas
+            global calculated_metas
 
-          metas_changed = calculated_metas != {
-            'artist': artist,
-            'genre': genre,
-            'lyrics': lyrics,
-            'total_duration': total_duration
-          }
+            metas_changed = calculated_metas != {
+              'artist': artist,
+              'genre': genre,
+              'lyrics': lyrics,
+              'total_duration': total_duration
+            }
 
-          return {
-            UI.calculate_model_button: gr.update( visible = metas_changed ),
-            UI.generation_box: gr.update( visible = not metas_changed )
-          }
+            return {
+              UI.calculate_model_button: gr.update( visible = metas_changed ),
+              UI.generation_box: gr.update( visible = not metas_changed )
+            }
 
-        # When a meta setting is changed, show the calculate model button and hide the generation box
-        for component in UI.metas:
-          component.change(
-            inputs = UI.metas,
-            outputs = [ UI.calculate_model_button, UI.generation_box ],
-            fn = set_metas_changed,
-          )
+          # When a meta setting is changed, show the calculate model button and hide the generation box
+          # Use blur/change depending on the component
+          if component in UI.metas:
+            handler(
+              inputs = UI.metas,
+              outputs = [ UI.calculate_model_button, UI.generation_box ],
+              fn = set_metas_changed,
+            )
 
         UI.calculate_model_button.render()
 
