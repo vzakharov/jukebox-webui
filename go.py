@@ -237,7 +237,12 @@ class UI:
     step = 0.25
   )
 
-  project_inputs = [ *metas ]
+  generated_audio = gr.Audio(
+    label = 'Generated audio',
+    visible = False
+  )
+
+  project_inputs = [ *metas, generation_length ]
 
   print('Project inputs:', project_inputs)
 
@@ -386,9 +391,10 @@ with gr.Blocks() as app:
           else:
             print('Settings are the same as loaded settings, not saving.')
 
-        for component in UI.project_inputs:
-
+        for component in UI.metas:
           component.render()
+
+        for component in UI.project_inputs:
 
           # Whenever a project setting is changed, save all the settings to settings.yaml in the project folder
           inputs = [ UI.project_name, *UI.project_inputs ]
@@ -446,6 +452,8 @@ with gr.Blocks() as app:
           except:
             calculated_duration = None
 
+          hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
+
           if total_duration != calculated_duration:
 
             print(f'Duration {total_duration} is not equal to duration used by model {calculated_duration}, recalculating model...')
@@ -458,8 +466,6 @@ with gr.Blocks() as app:
               print('Deleted.')
             except:
               print('Not found; skipping.')
-
-            hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
 
             vqvae, *priors = MODELS[model]
             
@@ -515,21 +521,91 @@ with gr.Blocks() as app:
         )
 
         generating_spinner = gr.Markdown('')
+        UI.generated_audio.render()
+
+        def seconds_to_tokens(sec):
+
+          global hps, raw_to_tokens, chunk_size
+
+          tokens = sec * hps.sr // raw_to_tokens
+          tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
+          return int(tokens)
+
+        def write_files(base_path, project_name, zs, wav, parent_sample_id=''):
+
+          # 1. Scan project folder for [project_name][-parent_sample_id]-[comma-separated child ids].zs
+          # 2. Take the highest child id and add 1 to it (call it first_new_child_id)
+          # 3. Create [project_name][-parent_sample_id]-[first_new_child_id,first_new_child_id+1,first_new_child_id+2,etc.].zs depending on how many samples we have (based on the shape of zs)
+
+          global hps
+          n_samples = wav.shape[0]
+
+          base_filename = f'{base_path}/{project_name}/{project_name}'
+          if parent_sample_id:
+            base_filename += f'-{parent_sample_id}'
+
+          files = glob.glob(f'{base_filename}-*.zs')
+          if not files:
+            first_new_child_id = 1
+          else:
+            existing_ids = []
+            for f in files:
+              # Extract the child ids from the filename by splitting the part after the last dash by the comma
+              child_ids = f.split('-')[-1].split('.')[0].split(',')
+              child_ids = [ int(c) for c in child_ids ]
+              existing_ids += child_ids
+            first_new_child_id = max(existing_ids) + 1
+
+            zs_filename = f"{base_filename}-{','.join([ str(i+first_new_child_id) for i in range(n_samples) ])}"
+            t.save(zs, zs_filename)
+
+            for i in range(n_samples):
+              wav_filename = f"{base_filename}-{first_new_child_id+i}.wav"
+              librosa.output.write_wav(wav_filename, wav[i], hps.sr)
+            
+            # Return all the new filenames
+            return [ f'{zs_filename}.zs', *[ f'{base_filename}-{first_new_child_id+i}.wav' for i in range(n_samples) ] ]
 
         def generate(project_name, generation_length):
 
-          print(f'Generating {generation_length} seconds of music for {project_name}...')
-          sleep(5)
-          print('Done!')
+          print(f'Generating {generation_length} seconds for {project_name}...')
+
+          n_samples = 1
+          temperature = 0.98
+          # The above is to be moved to parameters/the UI
+
+          global base_path
+          global hps, raw_to_tokens, chunk_size, lower_batch_size, lower_level_chunk_size
+          global top_prior
+
+          zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
+          
+          tokens_to_sample = seconds_to_tokens(generation_length)
+          sampling_kwargs = dict(
+            temp=temperature, fp16=True, max_batch_size=lower_batch_size,
+            chunk_size=lower_level_chunk_size
+          )
+
+          zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
+          print('- zs generated.')
+
+          wav = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
+          print('- wav generated.')
+
+          filenames = write_files(base_path, project_name, zs, wav)
+          print(f'- Files written: {filenames}')
+
           return {
             generating_spinner: gr.update(),
+            UI.generated_audio: gr.update(
+              visible = True,
+              value = filenames[1],
+            ),
           }
-          # To be implemented
-
 
         generate_button.click(
           inputs = [ UI.project_name, UI.generation_length ],
-          outputs = [ generating_spinner ],
+          outputs = [ generating_spinner, UI.generated_audio ],
           fn = generate,
           api_name = 'generate',
         )
