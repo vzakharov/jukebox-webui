@@ -73,26 +73,6 @@ except:
   print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
 # Monkey patch jukebox.make_models.load_checkpoint to load cached checkpoints from local_data_path instead of '~/.cache'
-# The original function goes like this (from jukebox/make_models.py):
-# def load_checkpoint(path):
-#     restore = path
-#     if restore.startswith(REMOTE_PREFIX):
-#         remote_path = restore
-#         local_path = os.path.join(os.path.expanduser("~/.cache"), remote_path[len(REMOTE_PREFIX):])
-#         if dist.get_rank() % 8 == 0:
-#             print("Downloading from azure")
-#             if not os.path.exists(os.path.dirname(local_path)):
-#                 os.makedirs(os.path.dirname(local_path))
-#             if not os.path.exists(local_path):
-#                 download(remote_path, local_path)
-#         restore = local_path
-#     dist.barrier()
-#     checkpoint = t.load(restore, map_location=t.device('cpu'))
-#     print("Restored from {}".format(restore))
-#     return checkpoint
-
-# Monkey patch below
-
 try:
   monkey_patched_load_checkpoint
   print('load_checkpoint already monkey patched')
@@ -117,7 +97,6 @@ except:
         remote_path = restore
         local_path = os.path.join(data_path, remote_path[len(REMOTE_PREFIX):])
         if dist.get_rank() % 8 == 0:
-            print("Downloading from azure")
             download_to_cache(remote_path, local_path)
         restore = local_path
     dist.barrier()
@@ -460,13 +439,13 @@ with gr.Blocks() as app:
             print(f'Duration {total_duration} is not equal to duration used by model {calculated_duration}, recalculating model...')
 
             try:
-              print('Deleting vqvae/top_prior...')
+              print('Deleting vqvae & top_prior...')
               del vqvae
               del top_prior
               empty_cache()
               print('Deleted.')
             except:
-              print('vqvae/top_prior not found, skipping deletion.')
+              print('Not found; skipping.')
 
             hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
 
