@@ -8,8 +8,8 @@ except:
   is_colab = False
   
 
-colab_path = '/content/drive/My Drive/JukeboxGo' #@param{type:'string'}
-local_path = 'G:/Мой диск/JukeboxGo'
+colab_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
+local_path = 'G:/Мой диск/jukebox-webui'
 base_path = colab_path if is_colab else local_path
 
 share_gradio = True #@param{type:'boolean'}
@@ -19,6 +19,7 @@ import random
 import gradio as gr
 import json
 import os
+import shutil
 import glob
 import urllib.request
 import re
@@ -66,6 +67,17 @@ if is_colab:
     print('Loading rank, local_rank, device from MPI')
     rank, local_rank, device = setup_dist_from_mpi()
     print(f'rank={rank}, local_rank={local_rank}, device={device}')
+
+# Check if /root/.cache/jukebox/models/ has 5b/vqvae.pth.tar and/or 5b_lyrics/prior_level_2.pth.tar
+# If not, see if they are at {base_path}/_data/ and copy them from there if they are
+for model in ['5b/vqvae.pth.tar', '5b_lyrics/prior_level_2.pth.tar']:
+  if not os.path.isfile(f'/root/.cache/jukebox/models/{model}'):
+    if os.path.isfile(f'{base_path}/_data/{model}'):
+      path = os.path.dirname(f'/root/.cache/jukebox/models/{model}')
+      os.makedirs(path, exist_ok=True)
+      assert os.path.isdir(path), f'Failed to create {path}'
+      shutil.copy(f'{base_path}/_data/{model}', path)
+      assert os.path.isfile(f'/root/.cache/jukebox/models/{model}'), f'Failed to copy {base_path}/_data/{model} to {path}'
 
 # If the base folder doesn't exist, create it
 if not os.path.isdir(base_path):
