@@ -10,7 +10,11 @@ except:
 
 colab_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
 local_path = 'G:/Мой диск/jukebox-webui'
+colab_data_path = '/content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
+local_data_path = 'G:/Мой диск/jukebox-webui/_data'
+
 base_path = colab_path if is_colab else local_path
+data_path = colab_data_path if is_colab else local_data_path
 
 share_gradio = True #@param{type:'boolean'}
 debug_gradio = True #@param{type:'boolean'}
@@ -35,10 +39,12 @@ yaml.add_representer(str, lambda dumper, value: dumper.represent_scalar('tag:yam
 if is_colab:
 
   import jukebox
+  import jukebox.utils.dist_adapter as dist
 
   from jukebox.make_models import make_vqvae, make_prior, MODELS
-  from jukebox.hparams import Hyperparams, setup_hparams
+  from jukebox.hparams import Hyperparams, setup_hparams, REMOTE_PREFIX
   from jukebox.utils.dist_utils import setup_dist_from_mpi
+  from jukebox.utils.remote_utils import download
   from jukebox.utils.torch_utils import empty_cache
   from jukebox.sample import load_prompts, sample_partial_window
 
@@ -59,25 +65,74 @@ if is_colab:
   priors = None
   top_prior = None
 
-  # If rank, local_rank, device are not defined, load them from MPI
-  try:
-    rank, local_rank, device
-    print('Using existing rank, local_rank, device')
-  except:
-    print('Loading rank, local_rank, device from MPI')
-    rank, local_rank, device = setup_dist_from_mpi()
-    print(f'rank={rank}, local_rank={local_rank}, device={device}')
+try:
+  rank, local_rank, device
+  print('Dist already setup')
+except:
+  rank, local_rank, device = setup_dist_from_mpi()
+  print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
-# Check if /root/.cache/jukebox/models/ has 5b/vqvae.pth.tar and/or 5b_lyrics/prior_level_2.pth.tar
-# If not, see if they are at {base_path}/_data/ and copy them from there if they are
-for model in ['5b/vqvae.pth.tar', '5b_lyrics/prior_level_2.pth.tar']:
-  if not os.path.isfile(f'/root/.cache/jukebox/models/{model}'):
-    if os.path.isfile(f'{base_path}/_data/{model}'):
-      path = os.path.dirname(f'/root/.cache/jukebox/models/{model}')
-      os.makedirs(path, exist_ok=True)
-      assert os.path.isdir(path), f'Failed to create {path}'
-      shutil.copy(f'{base_path}/_data/{model}', path)
-      assert os.path.isfile(f'/root/.cache/jukebox/models/{model}'), f'Failed to copy {base_path}/_data/{model} to {path}'
+# Monkey patch jukebox.make_models.load_checkpoint to load cached checkpoints from local_data_path instead of '~/.cache'
+# The original function goes like this (from jukebox/make_models.py):
+# def load_checkpoint(path):
+#     restore = path
+#     if restore.startswith(REMOTE_PREFIX):
+#         remote_path = restore
+#         local_path = os.path.join(os.path.expanduser("~/.cache"), remote_path[len(REMOTE_PREFIX):])
+#         if dist.get_rank() % 8 == 0:
+#             print("Downloading from azure")
+#             if not os.path.exists(os.path.dirname(local_path)):
+#                 os.makedirs(os.path.dirname(local_path))
+#             if not os.path.exists(local_path):
+#                 download(remote_path, local_path)
+#         restore = local_path
+#     dist.barrier()
+#     checkpoint = t.load(restore, map_location=t.device('cpu'))
+#     print("Restored from {}".format(restore))
+#     return checkpoint
+
+# Monkey patch below
+
+try:
+  monkey_patched_load_checkpoint
+  print('load_checkpoint already monkey patched')
+except:
+
+  def download_to_cache(remote_path, local_path):
+    print(f'Caching {remote_path} to {local_path}')
+    if not os.path.exists(os.path.dirname(local_path)):
+      print(f'Creating directory {os.path.dirname(local_path)}')
+      os.makedirs(os.path.dirname(local_path))
+    if not os.path.exists(local_path):
+      print('Downloading...')
+      download(remote_path, local_path)
+      print('Done.')
+    else:
+      print('Already cached.')
+
+  def monkey_patched_load_checkpoint(path):
+    global data_path
+    restore = path
+    if restore.startswith(REMOTE_PREFIX):
+        remote_path = restore
+        local_path = os.path.join(data_path, remote_path[len(REMOTE_PREFIX):])
+        if dist.get_rank() % 8 == 0:
+            print("Downloading from azure")
+            download_to_cache(remote_path, local_path)
+        restore = local_path
+    dist.barrier()
+    checkpoint = t.load(restore, map_location=t.device('cpu'))
+    print("Restored from {}".format(restore))
+    return checkpoint
+
+  # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
+  for model in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
+    download_to_cache(f'{REMOTE_PREFIX}{model}', os.path.join(data_path, model))
+
+  jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
+
+  print('Monkey patched load_checkpoint and downloaded the checkpoints')
+
 
 # If the base folder doesn't exist, create it
 if not os.path.isdir(base_path):
