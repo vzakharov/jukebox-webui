@@ -20,6 +20,7 @@ share_gradio = True #@param{type:'boolean'}
 debug_gradio = True #@param{type:'boolean'}
 
 import random
+from time import sleep
 import gradio as gr
 import json
 import os
@@ -65,7 +66,10 @@ if is_colab:
   priors = None
   top_prior = None
 
+reload_all = False #@param{type:'boolean'}
+reload_dist = False #@param{type:'boolean'}
 try:
+  assert not reload_dist and not reload_all
   rank, local_rank, device
   print('Dist already setup')
 except:
@@ -73,7 +77,9 @@ except:
   print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
 # Monkey patch jukebox.make_models.load_checkpoint to load cached checkpoints from local_data_path instead of '~/.cache'
+reload_monkey_patch = False #@param{type:'boolean'}
 try:
+  assert not reload_monkey_patch and not reload_all
   monkey_patched_load_checkpoint
   print('load_checkpoint already monkey patched')
 except:
@@ -216,27 +222,35 @@ class UI:
     variant = 'primary'
   )
 
+  generation_text = gr.Markdown(
+    'Calculate the model to start creating.'
+  )
+
   generation_box = gr.Box(
     visible = False
+  )
+
+  generation_length = gr.Slider(
+    label = 'Generation length, sec',
+    minimum = 0.5,
+    maximum = 10,
+    step = 0.25
   )
 
   project_inputs = [ *metas ]
 
   print('Project inputs:', project_inputs)
 
-  status_bar = gr.Textbox(
-    label = 'Status',
-  )
+  # status_bar = gr.Textbox(
+  #   label = 'Status',
+  # )
 
   # Combine all IO components as a list in 'all'
   all_inputs = general_inputs + project_inputs
 
-  # Create input_names where keys are the attributes and values are the names
   input_names = { input: name for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
-  print('Input names:', input_names)
 
   inputs_by_name = { name: input for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
-  print('Inputs by name:', inputs_by_name)
 
 
 with gr.Blocks() as app:
@@ -379,12 +393,9 @@ with gr.Blocks() as app:
           # Whenever a project setting is changed, save all the settings to settings.yaml in the project folder
           inputs = [ UI.project_name, *UI.project_inputs ]
 
-          print(f'Inputs for {component}: {inputs}')
-
           # Use the "blur" method if available, otherwise use "change"
           handler_name = 'blur' if hasattr(component, 'blur') else 'change'
           handler = getattr(component, handler_name)
-          print(f'Using {handler_name} handler for {component}')
 
           handler(
             inputs = inputs,
@@ -405,6 +416,7 @@ with gr.Blocks() as app:
 
             return {
               UI.calculate_model_button: gr.update( visible = metas_changed ),
+              UI.generation_text: gr.update( visible = metas_changed ),
               UI.generation_box: gr.update( visible = not metas_changed )
             }
 
@@ -413,7 +425,7 @@ with gr.Blocks() as app:
           if component in UI.metas:
             handler(
               inputs = UI.metas,
-              outputs = [ UI.calculate_model_button, UI.generation_box ],
+              outputs = [ UI.calculate_model_button, UI.generation_text, UI.generation_box ],
               fn = set_metas_changed,
             )
 
@@ -474,30 +486,57 @@ with gr.Blocks() as app:
 
           return {
             UI.calculate_model_button: gr.update( visible = False, value = 'Recalculate model' ),
-            UI.generation_box: gr.update( visible = True ),
-            UI.status_bar: 'Model calculated'
+            UI.generation_text: gr.update( 
+              visible = False,
+              value = 'You need to recalculate the model if you change the artist, genre, lyrics or total duration.'
+            ),
+            UI.generation_box: gr.update( visible = True )
           }
         
         UI.calculate_model_button.click(
           inputs = UI.metas,
-          outputs = [ UI.calculate_model_button, UI.generation_box, UI.status_bar ],
+          outputs = [ UI.calculate_model_button, UI.generation_text, UI.generation_box ],
           fn = calculate_model,
-          show_progress = True,
           api_name = 'calculate-model',
         )
     
     with gr.Column( scale = 3 ):
 
+      UI.generation_text.render()
       UI.generation_box.render()
 
       with UI.generation_box:
 
-        gr.Markdown('Generation inputs will go here')
-        # (to be implemented)
+        UI.generation_length.render()
 
-  with gr.Row():
+        generate_button = gr.Button(
+          'Generate',
+          variant = 'primary',
+        )
 
-    UI.status_bar.render()
+        generating_spinner = gr.Markdown('')
+
+        def generate(project_name, generation_length):
+
+          print(f'Generating {generation_length} seconds of music for {project_name}...')
+          sleep(5)
+          print('Done!')
+          return {
+            generating_spinner: gr.update(),
+          }
+          # To be implemented
+
+
+        generate_button.click(
+          inputs = [ UI.project_name, UI.generation_length ],
+          outputs = [ generating_spinner ],
+          fn = generate,
+          api_name = 'generate',
+        )
+
+  # with gr.Row():
+
+  #   UI.status_bar.render()
 
 
   # If the app is loaded and the list of projects is empty, set the project list to CREATE NEW. Otherwise, load the last project from settings.yaml, if it exists.
