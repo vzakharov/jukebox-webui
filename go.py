@@ -446,6 +446,7 @@ with gr.Blocks() as app:
           global metas, labels
 
           n_samples = 1
+          hps.n_samples = n_samples
 
           try:
             calculated_duration = calculated_metas['total_duration']
@@ -545,8 +546,10 @@ with gr.Blocks() as app:
             base_filename += f'-{parent_sample_id}'
 
           files = glob.glob(f'{base_filename}-*.zs')
+          print(f'Found {len(files)} files matching {base_filename}-*.zs: {files}')
           if not files:
             first_new_child_id = 1
+            print(f'No files found, starting at {first_new_child_id}')
           else:
             existing_ids = []
             for f in files:
@@ -555,16 +558,19 @@ with gr.Blocks() as app:
               child_ids = [ int(c) for c in child_ids ]
               existing_ids += child_ids
             first_new_child_id = max(existing_ids) + 1
+            print(f'Found existing files, starting at {first_new_child_id}')
 
             zs_filename = f"{base_filename}-{','.join([ str(i+first_new_child_id) for i in range(n_samples) ])}"
             t.save(zs, zs_filename)
+            print(f'Wrote {zs_filename}')
 
             for i in range(n_samples):
               wav_filename = f"{base_filename}-{first_new_child_id+i}.wav"
               librosa.output.write_wav(wav_filename, wav[i], hps.sr)
+              print(f'Wrote {wav_filename}')
             
-            # Return all the new filenames
-            return [ f'{zs_filename}.zs', *[ f'{base_filename}-{first_new_child_id+i}.wav' for i in range(n_samples) ] ]
+          # Return all the new filenames
+          return [ f'{zs_filename}.zs', *[ f'{base_filename}-{first_new_child_id+i}.wav' for i in range(n_samples) ] ]
 
         def generate(project_name, generation_length):
 
@@ -599,7 +605,7 @@ with gr.Blocks() as app:
             generating_spinner: gr.update(),
             UI.generated_audio: gr.update(
               visible = True,
-              value = filenames[1],
+              value = ( hps.sr, wav[0] )
             ),
           }
 
