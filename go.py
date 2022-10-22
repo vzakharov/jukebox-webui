@@ -8,8 +8,11 @@ except:
   is_colab = False
   
 
+total_duration = 200 #@param {type:"slider", min:60, max:300, step:10}
+
 colab_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
 local_path = 'G:/Мой диск/jukebox-webui'
+
 colab_data_path = '/content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
 local_data_path = 'G:/Мой диск/jukebox-webui/_data'
 
@@ -49,25 +52,28 @@ if is_colab:
   from jukebox.utils.torch_utils import empty_cache
   from jukebox.sample import load_prompts, sample_partial_window
 
-  ### Model
+### Model
 
-  hps = Hyperparams()
-  hps.sr = 44100
-  hps.levels = 3
-  hps.hop_fraction = [ 0.5, 0.5, 0.125 ]
+raw_to_tokens = 128
+chunk_size = 16
+model = '5b_lyrics'
+lower_batch_size = 16
+lower_level_chunk_size = 32
 
-  raw_to_tokens = 128
-  chunk_size = 16
-  model = '5b_lyrics'
-  lower_batch_size = 16
-  lower_level_chunk_size = 32
+hps = Hyperparams()
+hps.sr = 44100
+hps.levels = 3
+hps.hop_fraction = [ 0.5, 0.5, 0.125 ]
+hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
 
-  vqvae = None
-  priors = None
-  top_prior = None
+vqvae = None
+priors = None
+top_prior = None
+
 
 reload_all = False #@param{type:'boolean'}
 reload_dist = False #@param{type:'boolean'}
+
 try:
   assert not reload_dist and not reload_all
   rank, local_rank, device
@@ -75,6 +81,43 @@ try:
 except:
   rank, local_rank, device = setup_dist_from_mpi()
   print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
+
+reload_prior = False #@param{type:'boolean'}
+
+try:
+  calculated_duration
+except:
+  calculated_duration = 0
+
+try:
+  vqvae, top_prior
+  assert vqvae is not None and top_prior is not None
+  print('vqvae and top_prior already loaded')
+except:
+  print('Loading vqvae and top_prior')
+  reload_prior = True
+
+if total_duration != calculated_duration or reload_prior or reload_all:
+
+  print(f'Loading vqvae and top_prior for duration {total_duration}...')
+
+  try:
+    del vqvae
+    print('Deleted vqvae')
+    del top_prior
+    print('Deleted top_prior')
+    empty_cache()
+    print('Emptied cache')
+  except:
+    print('Either vqvae or top_prior is not defined; skipping deletion')
+
+  vqvae, *priors = MODELS[model]
+
+  vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
+
+  top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
+
+  calculated_duration = total_duration
 
 # Monkey patch jukebox.make_models.load_checkpoint to load cached checkpoints from local_data_path instead of '~/.cache'
 reload_monkey_patch = False #@param{type:'boolean'}
@@ -208,14 +251,7 @@ class UI:
     placeholder = 'Shift+Enter for new line'
   )
 
-  total_duration = gr.Slider(
-    label = 'Duration, sec',
-    minimum = 60,
-    maximum = 600,
-    step = 10
-  )
-
-  metas = [ artist, genre, lyrics, total_duration ]
+  metas = [ artist, genre, lyrics ]
 
   calculate_model_button = gr.Button(
     'Calculate model',
@@ -276,8 +312,7 @@ with gr.Blocks() as app:
         settings_out_dict = {
           UI.artist: 'Unknown',
           UI.genre: 'Unknown',
-          UI.lyrics: '',
-          UI.total_duration: 200,
+          UI.lyrics: ''
         }
 
         # If not new, load the settings from settings.yaml in the project folder, if it exists
@@ -409,15 +444,14 @@ with gr.Blocks() as app:
             fn = save_project_settings
           )
 
-          def set_metas_changed(artist, genre, lyrics, total_duration):
+          def set_metas_changed(artist, genre, lyrics):
 
             global calculated_metas
 
             metas_changed = calculated_metas != {
               'artist': artist,
               'genre': genre,
-              'lyrics': lyrics,
-              'total_duration': total_duration
+              'lyrics': lyrics
             }
 
             return {
@@ -438,8 +472,9 @@ with gr.Blocks() as app:
         UI.calculate_model_button.render()
 
         # When the calculate model button is clicked, calculate the model and set the metas_changed flag to False
-        def calculate_model(artist, genre, lyrics, total_duration):
+        def calculate_model(artist, genre, lyrics):
 
+          global total_duration
           global calculated_metas
           global hps, raw_to_tokens, chunk_size
           global vqvae, priors, top_prior, device
@@ -448,32 +483,6 @@ with gr.Blocks() as app:
           n_samples = 1
           hps.n_samples = n_samples
 
-          try:
-            calculated_duration = calculated_metas['total_duration']
-          except:
-            calculated_duration = None
-
-          hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
-
-          if total_duration != calculated_duration:
-
-            print(f'Duration {total_duration} is not equal to duration used by model {calculated_duration}, recalculating model...')
-
-            try:
-              print('Deleting vqvae & top_prior...')
-              del vqvae
-              del top_prior
-              empty_cache()
-              print('Deleted.')
-            except:
-              print('Not found; skipping.')
-
-            vqvae, *priors = MODELS[model]
-            
-            vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
-
-            top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
-          
           metas = [dict(
             artist = artist,
             genre = genre,
@@ -487,8 +496,7 @@ with gr.Blocks() as app:
           calculated_metas = {
             'artist': artist,
             'genre': genre,
-            'lyrics': lyrics,
-            'total_duration': total_duration
+            'lyrics': lyrics
           }
 
           return {
@@ -560,14 +568,14 @@ with gr.Blocks() as app:
             first_new_child_id = max(existing_ids) + 1
             print(f'Found existing files, starting at {first_new_child_id}')
 
-            zs_filename = f"{base_filename}-{','.join([ str(i+first_new_child_id) for i in range(n_samples) ])}"
-            t.save(zs, zs_filename)
-            print(f'Wrote {zs_filename}')
+          zs_filename = f"{base_filename}-{','.join([ str(i+first_new_child_id) for i in range(n_samples) ])}"
+          t.save(zs, zs_filename)
+          print(f'Wrote {zs_filename}')
 
-            for i in range(n_samples):
-              wav_filename = f"{base_filename}-{first_new_child_id+i}.wav"
-              librosa.output.write_wav(wav_filename, wav[i], hps.sr)
-              print(f'Wrote {wav_filename}')
+          for i in range(n_samples):
+            wav_filename = f"{base_filename}-{first_new_child_id+i}.wav"
+            librosa.output.write_wav(wav_filename, wav[i], hps.sr)
+            print(f'Wrote {wav_filename}')
             
           # Return all the new filenames
           return [ f'{zs_filename}.zs', *[ f'{base_filename}-{first_new_child_id+i}.wav' for i in range(n_samples) ] ]
