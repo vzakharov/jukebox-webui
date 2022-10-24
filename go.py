@@ -261,7 +261,7 @@ class UI:
     step = 0.25
   )
 
-  child_samples = gr.Radio(
+  child_sample = gr.Radio(
     label = 'Child samples',
   )
 
@@ -453,7 +453,7 @@ with gr.Blocks() as app:
 
         with gr.Column( scale = 1 ):
           UI.parent_sample.render()
-          
+
         with gr.Column( scale = 1 ):
           UI.generation_length.render()
 
@@ -462,7 +462,7 @@ with gr.Blocks() as app:
         variant = 'primary',
       )
 
-      UI.child_samples.render()
+      UI.child_sample.render()
       UI.generated_audio.render()
 
       def seconds_to_tokens(sec):
@@ -571,28 +571,55 @@ with gr.Blocks() as app:
           child_ids += [ id ]
 
         return {
-          UI.generated_audio: gr.update(
-            visible = True,
-            value = ( hps.sr, wavs[0] )
-          ),
-          UI.child_samples: gr.update(
+          UI.child_sample: gr.update(
             visible = True,
             choices = child_ids,
             value = child_ids[-1]
           )
         }
 
+      # When the parent sample is changed, update the child samples
       UI.parent_sample.change(
         inputs = [ UI.project_name, UI.parent_sample ],
-        outputs = UI.child_samples,
+        outputs = UI.child_sample,
         fn = lambda project_name, parent_sample_id: gr.update(
           choices = get_child_samples(project_name, parent_sample_id)
         )
       )
 
+      # When a child sample is selected, update the generated audio
+      def get_audio(project_name, sample_id):
+
+        global base_path
+
+        # If there is a wav file, use that
+        filename = f'{base_path}/{project_name}/{sample_id}'
+
+        if os.path.isfile(f'{filename}.wav'):
+          print(f'Found {filename}.wav')
+          return ( hps.sr, librosa.load(f'{filename}.wav', sr=hps.sr)[0] )
+        
+        # Otherwise, generate the audio from the z file
+        print(f'No {filename}.wav found, generating from {filename}.z')
+        z = t.load(f'{filename}.z', map_location='cpu')
+        print(f'Loaded {filename}.z: {z.shape}')
+        wav = vqvae.decode(z[None], start_level=2).cpu().numpy()[0]
+        print(f'Generated audio: {wav.shape}')
+
+        return ( hps.sr, wav )
+
+      UI.child_sample.change(
+        inputs = [ UI.project_name, UI.child_sample ],
+        outputs = UI.generated_audio,
+        fn = lambda project_name, sample_id: gr.update(
+          value = get_audio(project_name, sample_id),
+          visible = True
+        )
+      )
+
       generate_button.click(
         inputs = [ UI.project_name, UI.artist, UI.genre, UI.lyrics, UI.generation_length ],
-        outputs = [ UI.generated_audio, UI.child_samples ],
+        outputs = UI.child_sample,
         fn = generate,
         api_name = 'generate',
       )
