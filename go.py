@@ -251,7 +251,7 @@ class UI:
   metas = [ artist, genre, lyrics ]
 
   parent_sample = gr.Dropdown(
-    label = 'Parent sample'
+    label = 'Sample to continue from'
   )
 
   generation_length = gr.Slider(
@@ -261,8 +261,16 @@ class UI:
     step = 0.25
   )
 
+  generate_button = gr.Button(
+    'Generate'
+  )
+
   child_sample = gr.Radio(
     label = 'Child samples',
+  )
+
+  child_sample_box = gr.Box(
+    visible = False
   )
 
   generated_audio = gr.Audio(
@@ -286,7 +294,14 @@ class UI:
   inputs_by_name = { name: input for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
 
 
-with gr.Blocks() as app:
+with gr.Blocks(
+  css = """
+    .gr-button {
+      /* add margin to the button */
+      margin: 5px 5px 5px 5px;
+    }
+  """
+) as app:
   
   with gr.Row():
 
@@ -328,17 +343,6 @@ with gr.Blocks() as app:
         
           print('Valid settings:', settings_out_dict)
 
-          # For parent sample, also load the choices, which is all files with extension .z(s) in the project folder
-          parent_sample_choices = ['NONE']
-          for filename in os.listdir(f'{base_path}/{project_name}'):
-            if re.match(r'.*\.zs?$', filename):
-              id = filename.split('.')[0]
-              parent_sample_choices.append(id)
-          settings_out_dict[ UI.parent_sample ] = gr.update(
-            choices = parent_sample_choices,
-            value = settings_out_dict[ UI.parent_sample ] if UI.parent_sample in settings_out_dict else 'NONE'
-          )
-
           # Write the last project name to settings.yaml
           with open(f'{base_path}/settings.yaml', 'w') as f:
             print(f'Saving {project_name} as last project...')
@@ -351,12 +355,32 @@ with gr.Blocks() as app:
           **settings_out_dict
         }
       
+      def get_project_samples(project_name):
+
+        parent_sample_choices = ['NONE']
+        for filename in os.listdir(f'{base_path}/{project_name}'):
+          if re.match(r'.*\.zs?$', filename):
+            id = filename.split('.')[0]
+            parent_sample_choices += [ id ]
+        
+        return gr.update(
+          choices = parent_sample_choices,
+        )
+      
       UI.project_name.change(
         inputs = UI.project_name,
         outputs = [ UI.create_project_box, UI.project_box, *UI.project_inputs ],
         fn = set_project,
         api_name = 'set-project'
       )
+
+      UI.project_name.change(
+        inputs = UI.project_name,
+        outputs = UI.parent_sample,
+        fn = get_project_samples,
+        api_name = 'get-project-samples'
+      )
+
 
       UI.create_project_box.render()
 
@@ -457,13 +481,12 @@ with gr.Blocks() as app:
         with gr.Column( scale = 1 ):
           UI.generation_length.render()
 
-      generate_button = gr.Button(
+      UI.generate_button = gr.Button(
         'Generate',
         variant = 'primary',
       )
 
       UI.child_sample.render()
-      UI.generated_audio.render()
 
       def seconds_to_tokens(sec):
 
@@ -473,8 +496,11 @@ with gr.Blocks() as app:
         tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
         return int(tokens)
 
+      def is_none_ish(string):
+        return not string or string == 'NONE'
+
       def get_prefix(project_name, parent_sample_id):
-        return f'{project_name}-{parent_sample_id}-' if parent_sample_id and parent_sample_id != 'NONE' else f'{project_name}-'
+        return f'{project_name}-{parent_sample_id}-' if not is_none_ish(parent_sample_id) else f'{project_name}-'
 
       def get_child_samples(project_name, parent_sample_id):
 
@@ -576,16 +602,27 @@ with gr.Blocks() as app:
             visible = True,
             choices = child_ids,
             value = child_ids[-1]
-          )
+          ),
+          UI.parent_sample: get_project_samples(project_name)
         }
 
       # When the parent sample is changed, update the child samples
+      def change_parent_sample(project_name, parent_sample_id):
+        child_choices = get_child_samples(project_name, parent_sample_id)
+        return {
+          UI.child_sample: gr.update(
+            choices = child_choices,
+            value = child_choices[-1] if child_choices else None
+          ),
+          UI.child_sample_box: gr.update(
+            visible = len(child_choices) > 0
+          )
+        }
+
       UI.parent_sample.change(
         inputs = [ UI.project_name, UI.parent_sample ],
-        outputs = UI.child_sample,
-        fn = lambda project_name, parent_sample_id: gr.update(
-          choices = get_child_samples(project_name, parent_sample_id)
-        )
+        outputs = [ UI.child_sample, UI.child_sample_box, UI.generate_button ],
+        fn = change_parent_sample
       )
 
       # When a child sample is selected, update the generated audio
@@ -615,20 +652,60 @@ with gr.Blocks() as app:
 
       UI.child_sample.change(
         inputs = [ UI.project_name, UI.child_sample ],
-        outputs = UI.generated_audio,
-        fn = lambda project_name, sample_id: gr.update(
-          value = get_audio(project_name, sample_id),
-          visible = True,
-          label = sample_id
-        )
+        outputs = [ UI.child_sample_box, UI.generated_audio ],
+        fn = lambda project_name, sample_id: {
+          UI.child_sample_box: gr.update(
+            visible = True,
+          ),
+          UI.generated_audio: gr.update(
+            value = get_audio(project_name, sample_id),
+            visible = True,
+            label = sample_id
+          )
+        }
       )
 
-      generate_button.click(
+      # When the generate button is clicked, generate the z and update the child samples
+      UI.generate_button.click(
         inputs = [ UI.project_name, UI.artist, UI.genre, UI.lyrics, UI.generation_length ],
-        outputs = UI.child_sample,
+        outputs = [ UI.child_sample, UI.parent_sample ],
         fn = generate,
         api_name = 'generate',
       )
+
+      UI.child_sample_box.render()
+
+      with UI.child_sample_box:
+
+        UI.generated_audio.render()
+
+        gr.Button('Set as parent').click(
+          inputs = UI.child_sample,
+          outputs = UI.parent_sample,
+          fn = lambda child_sample: child_sample
+        )
+
+        def delete_child_sample(project_name, parent_sample_id, child_sample_id):
+          filename = f'{base_path}/{project_name}/{child_sample_id}'
+          for extenstion in [ '.z', '.wav' ]:
+            if os.path.isfile(f'{filename}{extenstion}'):
+              os.remove(f'{filename}{extenstion}')
+              print(f'Deleted {filename}{extenstion}')
+            else:
+              print(f'No {filename}{extenstion} found')
+          child_samples = get_child_samples(project_name, parent_sample_id)
+          return {
+            UI.child_sample: child_samples,
+            UI.child_sample_box: gr.update(
+              visible = len(child_samples) > 0
+            ),            
+          }
+        
+        gr.Button('Delete').click(
+          inputs = [ UI.project_name, UI.parent_sample, UI.child_sample ],
+          outputs = [ UI.child_sample, UI.child_sample_box ],
+          fn = delete_child_sample
+        )
 
   # with gr.Row():
 
