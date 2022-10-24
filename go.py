@@ -457,8 +457,6 @@ with gr.Blocks() as app:
         variant = 'primary',
       )
 
-      generating_spinner = gr.Markdown('')
-
       UI.child_samples.render()
       UI.generated_audio.render()
 
@@ -568,7 +566,6 @@ with gr.Blocks() as app:
           child_ids += [ id ]
 
         return {
-          generating_spinner: gr.update(),
           UI.generated_audio: gr.update(
             visible = True,
             value = ( hps.sr, wavs[0] )
@@ -590,7 +587,7 @@ with gr.Blocks() as app:
 
       generate_button.click(
         inputs = [ UI.project_name, UI.artist, UI.genre, UI.lyrics, UI.generation_length ],
-        outputs = [ generating_spinner, UI.generated_audio, UI.child_samples ],
+        outputs = [ UI.generated_audio, UI.child_samples ],
         fn = generate,
         api_name = 'generate',
       )
