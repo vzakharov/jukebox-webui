@@ -270,7 +270,7 @@ class UI:
     visible = False
   )
 
-  project_inputs = [ *metas, parent_sample, generation_length ]
+  project_inputs = [ *metas, parent_sample, generation_length, child_sample ]
 
   print('Project inputs:', project_inputs)
 
@@ -545,10 +545,10 @@ with gr.Blocks() as app:
         )
 
         zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
-        print('- zs generated.')
+        print(f'Generated zs of shape {zs[2].shape}')
 
         wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
-        print('- wav generated.')
+        print(f'Generated wavs of shape {wavs.shape}')
 
         # filenames = write_files(base_path, project_name, zs, wav)
         # print(f'- Files written: {filenames}')
@@ -564,8 +564,9 @@ with gr.Blocks() as app:
         for i in range(n_samples):
           id = f'{prefix}{first_new_child_index + i}'
           filename = f'{base_path}/{project_name}/{id}'
-          t.save(zs[i], f'{filename}.z')
+          t.save(zs, f'{filename}.z')
           print(f'Wrote {filename}.z')
+          # TODO: Account for n_samples > 1
           librosa.output.write_wav(f'{filename}.wav', wavs[i], hps.sr)
           print(f'Wrote {filename}.wav')
           child_ids += [ id ]
@@ -597,14 +598,18 @@ with gr.Blocks() as app:
 
         if os.path.isfile(f'{filename}.wav'):
           print(f'Found {filename}.wav')
-          return ( hps.sr, librosa.load(f'{filename}.wav', sr=hps.sr)[0] )
+          wav = librosa.load(f'{filename}.wav', sr=hps.sr)[0]
+          print(f'Loaded {filename}.wav: {wav.shape}')
         
         # Otherwise, generate the audio from the z file
-        print(f'No {filename}.wav found, generating from {filename}.z')
-        z = t.load(f'{filename}.z', map_location='cpu')
-        print(f'Loaded {filename}.z: {z.shape}')
-        wav = vqvae.decode(z[None], start_level=2).cpu().numpy()[0]
-        print(f'Generated audio: {wav.shape}')
+        else:
+          print(f'No {filename}.wav found, generating from {filename}.z')
+          z = t.load(f'{filename}.z')
+          print(f'Loaded {filename}.z of shape {z[2].shape}')
+          wav = vqvae.decode(z[2:], start_level=2).cpu().numpy()
+          # wav is now of shape (1, sample_length, 1), we want (sample_length,)
+          wav = wav[0, :, 0]
+          print(f'Generated audio: {wav.shape}')
 
         return ( hps.sr, wav )
 
@@ -613,7 +618,8 @@ with gr.Blocks() as app:
         outputs = UI.generated_audio,
         fn = lambda project_name, sample_id: gr.update(
           value = get_audio(project_name, sample_id),
-          visible = True
+          visible = True,
+          label = sample_id
         )
       )
 
