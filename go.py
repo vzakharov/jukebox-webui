@@ -66,11 +66,6 @@ hps.levels = 3
 hps.hop_fraction = [ 0.5, 0.5, 0.125 ]
 hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
 
-vqvae = None
-priors = None
-top_prior = None
-
-
 reload_all = False #@param{type:'boolean'}
 reload_dist = False #@param{type:'boolean'}
 
@@ -82,20 +77,22 @@ except:
   rank, local_rank, device = setup_dist_from_mpi()
   print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
+try:
+  vqvae, priors, top_prior
+  print('Model already loaded.')
+except:
+  vqvae = None
+  priors = None
+  top_prior = None
+  reload_prior = True
+  print('Model not loaded; loading...')
+
 reload_prior = False #@param{type:'boolean'}
 
 try:
   calculated_duration
 except:
   calculated_duration = 0
-
-try:
-  vqvae, top_prior
-  assert vqvae is not None and top_prior is not None
-  print('vqvae and top_prior already loaded')
-except:
-  print('Loading vqvae and top_prior')
-  reload_prior = True
 
 if total_duration != calculated_duration or reload_prior or reload_all:
 
@@ -253,6 +250,10 @@ class UI:
 
   metas = [ artist, genre, lyrics ]
 
+  parent_sample = gr.Dropdown(
+    label = 'Parent sample'
+  )
+
   generation_length = gr.Slider(
     label = 'Generation length, sec',
     minimum = 0.5,
@@ -260,12 +261,16 @@ class UI:
     step = 0.25
   )
 
+  child_samples = gr.Radio(
+    label = 'Child samples',
+  )
+
   generated_audio = gr.Audio(
     label = 'Generated audio',
     visible = False
   )
 
-  project_inputs = [ *metas, generation_length ]
+  project_inputs = [ *metas, parent_sample, generation_length ]
 
   print('Project inputs:', project_inputs)
 
@@ -322,6 +327,17 @@ with gr.Blocks() as app:
                   print(f'Warning: {key} is not a valid project setting')
         
           print('Valid settings:', settings_out_dict)
+
+          # For parent sample, also load the choices, which is all files with extension .z(s) in the project folder
+          parent_sample_choices = ['NONE']
+          for filename in os.listdir(f'{base_path}/{project_name}'):
+            if re.match(r'.*\.zs?$', filename):
+              id = filename.split('.')[0]
+              parent_sample_choices.append(id)
+          settings_out_dict[ UI.parent_sample ] = gr.update(
+            choices = parent_sample_choices,
+            value = settings_out_dict[ UI.parent_sample ] if UI.parent_sample in settings_out_dict else 'NONE'
+          )
 
           # Write the last project name to settings.yaml
           with open(f'{base_path}/settings.yaml', 'w') as f:
@@ -433,6 +449,7 @@ with gr.Blocks() as app:
 
     with gr.Column( scale = 3 ):
 
+      UI.parent_sample.render()
       UI.generation_length.render()
 
       generate_button = gr.Button(
@@ -441,6 +458,8 @@ with gr.Blocks() as app:
       )
 
       generating_spinner = gr.Markdown('')
+
+      UI.child_samples.render()
       UI.generated_audio.render()
 
       def seconds_to_tokens(sec):
@@ -451,50 +470,13 @@ with gr.Blocks() as app:
         tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
         return int(tokens)
 
-      def write_files(base_path, project_name, zs, wav, parent_sample_id=''):
-
-        # 1. Scan project folder for [project_name][-parent_sample_id]-[comma-separated child ids].zs
-        # 2. Take the highest child id and add 1 to it (call it first_new_child_id)
-        # 3. Create [project_name][-parent_sample_id]-[first_new_child_id,first_new_child_id+1,first_new_child_id+2,etc.].zs depending on how many samples we have (based on the shape of zs)
-
-        global hps
-        n_samples = wav.shape[0]
-
-        base_filename = f'{base_path}/{project_name}/{project_name}'
-        if parent_sample_id:
-          base_filename += f'-{parent_sample_id}'
-
-        files = glob.glob(f'{base_filename}-*.zs')
-        print(f'Found {len(files)} files matching {base_filename}-*.zs: {files}')
-        if not files:
-          first_new_child_id = 1
-          print(f'No files found, starting at {first_new_child_id}')
-        else:
-          existing_ids = []
-          for f in files:
-            # Extract the child ids from the filename by splitting the part after the last dash by the comma
-            child_ids = f.split('-')[-1].split('.')[0].split(',')
-            child_ids = [ int(c) for c in child_ids ]
-            existing_ids += child_ids
-          first_new_child_id = max(existing_ids) + 1
-          print(f'Found existing files, starting at {first_new_child_id}')
-
-        zs_filename = f"{base_filename}-{','.join([ str(i+first_new_child_id) for i in range(n_samples) ])}"
-        t.save(zs, zs_filename)
-        print(f'Wrote {zs_filename}')
-
-        for i in range(n_samples):
-          wav_filename = f"{base_filename}-{first_new_child_id+i}.wav"
-          librosa.output.write_wav(wav_filename, wav[i], hps.sr)
-          print(f'Wrote {wav_filename}')
-          
-        # Return all the new filenames
-        return [ f'{zs_filename}.zs', *[ f'{base_filename}-{first_new_child_id+i}.wav' for i in range(n_samples) ] ]
-
       def generate(project_name, artist, genre, lyrics, generation_length):
+
+        print('Generating...')
 
         n_samples = 1
         temperature = 0.98
+        parent_sample_id = ''
         # The above is to be moved to parameters/the UI
 
         global total_duration
@@ -502,6 +484,8 @@ with gr.Blocks() as app:
         global hps, raw_to_tokens, chunk_size, lower_batch_size, lower_level_chunk_size
         global top_prior, device
         global metas, labels
+
+        hps.n_samples = n_samples
 
         # If metas have changed, recalculate the metas
         if calculated_metas != dict( artist = artist, genre = genre, lyrics = lyrics ):
@@ -542,23 +526,52 @@ with gr.Blocks() as app:
         zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
         print('- zs generated.')
 
-        wav = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
+        wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
         print('- wav generated.')
 
-        filenames = write_files(base_path, project_name, zs, wav)
-        print(f'- Files written: {filenames}')
+        # filenames = write_files(base_path, project_name, zs, wav)
+        # print(f'- Files written: {filenames}')
+        
+        # Find the last filename starting with [project_name]-[parent_sample_id]-[integer].z(s)
+        first_new_child_id = 1
+        child_ids = []
+        prefix = f'{project_name}-{parent_sample_id}-' if parent_sample_id else f'{project_name}-'
+        for filename in os.listdir(f'{base_path}/{project_name}'):
+          match = re.match(f'{prefix}(\d+)\\.zs?', filename)
+          if match:
+            child_ids += [ filename.split('.')[0] ]
+            first_new_child_id = int(match.group(1)) + 1
+        if match:
+          print(f'Found existing children: {child_ids}; starting with {first_new_child_id}')
+        else:
+          print('No existing children found; starting with 1')
+
+        # For each sample, write the z (a subarray of zs) and the wav
+        for i in range(n_samples):
+          id = f'{prefix}{first_new_child_id + i}'
+          filename = f'{base_path}/{project_name}/{id}'
+          t.save(zs[i], f'{filename}.z')
+          print(f'Wrote {filename}.z')
+          librosa.output.write_wav(f'{filename}.wav', wavs[i], hps.sr)
+          print(f'Wrote {filename}.wav')
+          child_ids += [ id ]
 
         return {
           generating_spinner: gr.update(),
           UI.generated_audio: gr.update(
             visible = True,
-            value = ( hps.sr, wav[0] )
+            value = ( hps.sr, wavs[0] )
           ),
+          UI.child_samples: gr.update(
+            visible = True,
+            choices = child_ids,
+            value = child_ids[-1]
+          )
         }
 
       generate_button.click(
         inputs = [ UI.project_name, UI.artist, UI.genre, UI.lyrics, UI.generation_length ],
-        outputs = [ generating_spinner, UI.generated_audio ],
+        outputs = [ generating_spinner, UI.generated_audio, UI.child_samples ],
         fn = generate,
         api_name = 'generate',
       )
