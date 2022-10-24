@@ -500,7 +500,7 @@ with gr.Blocks(
         return not string or string == 'NONE'
 
       def get_prefix(project_name, parent_sample_id):
-        return f'{project_name}-{parent_sample_id}-' if not is_none_ish(parent_sample_id) else f'{project_name}-'
+        return f'{project_name if is_none_ish(parent_sample_id) else parent_sample_id}-'
 
       def get_child_samples(project_name, parent_sample_id):
 
@@ -517,13 +517,12 @@ with gr.Blocks(
 
         return child_ids
 
-      def generate(project_name, artist, genre, lyrics, generation_length):
+      def generate(project_name, parent_sample_id, artist, genre, lyrics, generation_length):
 
         print('Generating...')
 
         n_samples = 1
         temperature = 0.98
-        parent_sample_id = ''
         # The above is to be moved to parameters/the UI
 
         global total_duration
@@ -562,7 +561,12 @@ with gr.Blocks(
 
         print(f'Generating {generation_length} seconds for {project_name}...')
 
-        zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
+        if not parent_sample_id:
+          zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
+          print('No parent sample, generating from scratch')
+        else:
+          zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
+          print(f'Loaded parent sample {parent_sample_id} of shape {zs[2].shape}')
         
         tokens_to_sample = seconds_to_tokens(generation_length)
         sampling_kwargs = dict(
@@ -667,7 +671,7 @@ with gr.Blocks(
 
       # When the generate button is clicked, generate the z and update the child samples
       UI.generate_button.click(
-        inputs = [ UI.project_name, UI.artist, UI.genre, UI.lyrics, UI.generation_length ],
+        inputs = [ UI.project_name, UI.parent_sample, UI.artist, UI.genre, UI.lyrics, UI.generation_length ],
         outputs = [ UI.child_sample, UI.parent_sample ],
         fn = generate,
         api_name = 'generate',
