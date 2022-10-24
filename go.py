@@ -449,8 +449,13 @@ with gr.Blocks() as app:
 
     with gr.Column( scale = 3 ):
 
-      UI.parent_sample.render()
-      UI.generation_length.render()
+      with gr.Row():
+
+        with gr.Column( scale = 1 ):
+          UI.parent_sample.render()
+          
+        with gr.Column( scale = 1 ):
+          UI.generation_length.render()
 
       generate_button = gr.Button(
         'Generate',
