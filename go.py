@@ -470,6 +470,24 @@ with gr.Blocks() as app:
         tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
         return int(tokens)
 
+      def get_prefix(project_name, parent_sample_id):
+        return f'{project_name}-{parent_sample_id}-' if parent_sample_id and parent_sample_id != 'NONE' else f'{project_name}-'
+
+      def get_child_samples(project_name, parent_sample_id):
+
+        global base_path
+
+        prefix = get_prefix(project_name, parent_sample_id)
+        child_ids = []
+        for filename in os.listdir(f'{base_path}/{project_name}'):
+          match = re.match(f'{prefix}(\d+)\\.zs?', filename)
+          if match:
+            child_ids += [ filename.split('.')[0] ]
+
+        print(f'Found children of {parent_sample_id}: {child_ids}')
+
+        return child_ids
+
       def generate(project_name, artist, genre, lyrics, generation_length):
 
         print('Generating...')
@@ -532,23 +550,16 @@ with gr.Blocks() as app:
         # filenames = write_files(base_path, project_name, zs, wav)
         # print(f'- Files written: {filenames}')
         
-        # Find the last filename starting with [project_name]-[parent_sample_id]-[integer].z(s)
-        first_new_child_id = 1
-        child_ids = []
-        prefix = f'{project_name}-{parent_sample_id}-' if parent_sample_id else f'{project_name}-'
-        for filename in os.listdir(f'{base_path}/{project_name}'):
-          match = re.match(f'{prefix}(\d+)\\.zs?', filename)
-          if match:
-            child_ids += [ filename.split('.')[0] ]
-            first_new_child_id = int(match.group(1)) + 1
-        if match:
-          print(f'Found existing children: {child_ids}; starting with {first_new_child_id}')
-        else:
-          print('No existing children found; starting with 1')
+        child_ids = get_child_samples(parent_sample_id)
+        child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
+        first_new_child_index = max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
+        print(f'Existing children for parent {parent_sample_id}: {child_ids}')
+        print(f'First new child index: {first_new_child_index}')
 
         # For each sample, write the z (a subarray of zs) and the wav
+        prefix = get_prefix(project_name, parent_sample_id)
         for i in range(n_samples):
-          id = f'{prefix}{first_new_child_id + i}'
+          id = f'{prefix}{first_new_child_index + i}'
           filename = f'{base_path}/{project_name}/{id}'
           t.save(zs[i], f'{filename}.z')
           print(f'Wrote {filename}.z')
@@ -568,6 +579,14 @@ with gr.Blocks() as app:
             value = child_ids[-1]
           )
         }
+
+      UI.parent_sample.change(
+        inputs = [ UI.project_name, UI.parent_sample ],
+        outputs = UI.child_samples,
+        fn = lambda project_name, parent_sample_id: gr.update(
+          choices = get_child_samples(project_name, parent_sample_id)
+        )
+      )
 
       generate_button.click(
         inputs = [ UI.project_name, UI.artist, UI.genre, UI.lyrics, UI.generation_length ],
