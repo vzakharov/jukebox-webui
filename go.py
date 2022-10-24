@@ -620,6 +620,10 @@ with gr.Blocks(
           ),
           UI.child_sample_box: gr.update(
             visible = len(child_choices) > 0
+          ),
+          UI.generate_button: gr.update(
+            value = 'Generate more' if len(child_choices) > 0 else 'Generate',
+            variant = 'secondary' if len(child_choices) > 0 else 'primary'
           )
         }
 
@@ -683,7 +687,10 @@ with gr.Blocks(
 
         UI.generated_audio.render()
 
-        gr.Button('Set as parent').click(
+        gr.Button(
+          value = 'Continue with this sample',
+          variant = 'primary',
+        ).click(
           inputs = UI.child_sample,
           outputs = UI.parent_sample,
           fn = lambda child_sample: child_sample
