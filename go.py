@@ -550,7 +550,7 @@ with gr.Blocks() as app:
         # filenames = write_files(base_path, project_name, zs, wav)
         # print(f'- Files written: {filenames}')
         
-        child_ids = get_child_samples(parent_sample_id)
+        child_ids = get_child_samples(project_name, parent_sample_id)
         child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
         first_new_child_index = max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
         print(f'Existing children for parent {parent_sample_id}: {child_ids}')
