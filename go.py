@@ -597,8 +597,8 @@ with gr.Blocks(
           t.save(zs, f'{filename}.z')
           print(f'Wrote {filename}.z')
           # TODO: Account for n_samples > 1
-          librosa.output.write_wav(f'{filename}.wav', wavs[i], hps.sr)
-          print(f'Wrote {filename}.wav')
+          # librosa.output.write_wav(f'{filename}.wav', wavs[i], hps.sr)
+          # print(f'Wrote {filename}.wav')
           child_ids += [ id ]
 
         return {
