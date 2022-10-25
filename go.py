@@ -518,15 +518,31 @@ with gr.Blocks(
 
       with gr.Row():
 
-        with gr.Column( scale = 1 ):
-          UI.parent_sample.render()
+        UI.parent_sample.render()
 
-        with gr.Column( scale = 1 ):
-          UI.generation_length.render()
+        UI.go_to_parent_button.render()
 
+        # When the "go to parent" button is clicked, update the parent sample and set the child sampe to the current sample
+        def get_parent_sample(sample_id):        
+          # Remove the last part of the sample id
+          try:
+            parent_sample_id = '-'.join(sample_id.split('-')[:-1])
+          except:
+            parent_sample_id = 'NONE'
+          return {
+            UI.parent_sample: parent_sample_id,
+            UI.child_sample: sample_id
+          }
+        
+        UI.go_to_parent_button.click(
+          inputs = UI.parent_sample,
+          outputs = [ UI.parent_sample, UI.child_sample ],
+          fn = get_parent_sample,
+          api_name = 'get-parent-sample'
+        )
+
+      UI.generation_length.render()
       UI.generate_button.render()
-      UI.go_to_parent_button.render()
-
       UI.child_sample.render()
 
       def seconds_to_tokens(sec):
@@ -677,6 +693,15 @@ with gr.Blocks(
         fn = parent_sample_change
       )
 
+      # When the generate button is clicked, generate and update the child samples
+      generation_params = [ UI.artist, UI.genre, UI.lyrics, UI.generation_length ]
+      UI.generate_button.click(
+        inputs = [ UI.project_name, UI.parent_sample, *generation_params ],
+        outputs = [ UI.child_sample, UI.parent_sample ],
+        fn = generate,
+        api_name = 'generate',
+      )
+
       # When a child sample is selected, update the generated audio
       def get_audio(project_name, sample_id):
 
@@ -769,14 +794,7 @@ with gr.Blocks(
       UI.child_sample.change(**child_sample_change_args)
       UI.preview_just_the_last_n_sec.change(**child_sample_change_args)
 
-      # When the generate button is clicked, generate the z and update the child samples
-      generation_params = [ UI.artist, UI.genre, UI.lyrics, UI.generation_length ]
-      UI.generate_button.click(
-        inputs = [ UI.project_name, UI.parent_sample, *generation_params ],
-        outputs = [ UI.child_sample, UI.parent_sample ],
-        fn = generate,
-        api_name = 'generate',
-      )
+
 
       UI.child_sample_box.render()
 
