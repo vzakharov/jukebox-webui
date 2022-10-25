@@ -282,7 +282,7 @@ class UI:
     label = 'Generation length, sec',
     minimum = 0.5,
     maximum = 10,
-    step = 0.25
+    step = 0.1
   )
 
   generate_button = gr.Button(
@@ -297,11 +297,21 @@ class UI:
     visible = False
   )
 
+  preview_start_from = gr.Slider(
+    label = 'Start preview from, sec',
+    minimum = 0,
+    maximum = 0,
+    step = 0.1,
+    value = 0
+  )
+
   generated_audio = gr.Audio(
     label = 'Generated audio'
   )
 
-  audio_waveform = gr.Plot()
+  audio_waveform = gr.Plot(
+    label = 'Waveform'
+  )
 
   project_inputs = [ *metas, parent_sample, generation_length, child_sample ]
 
@@ -665,9 +675,9 @@ with gr.Blocks(
       )
 
       # When a child sample is selected, update the generated audio
-      def get_audio(project_name, sample_id):
+      def get_audio(project_name, sample_id, preview_start_from):
 
-        global base_path
+        global base_path, hps
 
         # If there is a wav file, use that
         filename = f'{base_path}/{project_name}/{sample_id}'
@@ -687,14 +697,18 @@ with gr.Blocks(
           wav = wav[0, :, 0]
           print(f'Generated audio: {wav.shape}')
 
+        # If the preview start is not 0, trim the audio
+        if preview_start_from and preview_start_from > 0:
+          print(f'Trimming audio from {preview_start_from} seconds')
+          wav = wav[int(preview_start_from * hps.sr):]
+
         return ( hps.sr, wav )
 
-      def child_sample_change(project_name, sample_id):
-
+      def child_sample_change(project_name, sample_id, preview_start_from):
 
         if sample_id:
 
-          audio = get_audio(project_name, sample_id)
+          audio = get_audio(project_name, sample_id, preview_start_from)
           # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
           # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
           x = np.arange(0, len(audio[1])) / audio[0]
@@ -726,7 +740,11 @@ with gr.Blocks(
               visible = True,
             ),
             UI.generated_audio: audio,
-            UI.audio_waveform: figure
+            UI.audio_waveform: figure,
+            # Update max value of preview_start_from
+            UI.preview_start_from: gr.update(
+              maximum = int(( len(audio[1]) / audio[0] + preview_start_from ) * 10) / 10
+            )
           }
         
         else:
@@ -737,12 +755,14 @@ with gr.Blocks(
             )
           }
 
-      UI.child_sample.change(
-        inputs = [ UI.project_name, UI.child_sample ],
-        outputs = [ UI.child_sample_box, UI.generated_audio, UI.audio_waveform ],
+      child_sample_change_args = dict(
+        inputs = [ UI.project_name, UI.child_sample, UI.preview_start_from ],
+        outputs = [ UI.child_sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_start_from ],
         fn = child_sample_change
       )
 
+      UI.child_sample.change(**child_sample_change_args)
+      UI.preview_start_from.change(**child_sample_change_args)
 
       # When the generate button is clicked, generate the z and update the child samples
       generation_params = [ UI.artist, UI.genre, UI.lyrics, UI.generation_length ]
@@ -757,6 +777,7 @@ with gr.Blocks(
 
       with UI.child_sample_box:
 
+        UI.preview_start_from.render()
         UI.generated_audio.render()
         UI.audio_waveform.render()
 
