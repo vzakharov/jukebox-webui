@@ -297,14 +297,10 @@ class UI:
     visible = False
   )
 
-  preview_window_flag = gr.Checkbox(
-    label = 'Preview just the last ...'
-  )
-
-  preview_window = gr.Slider(
-    label = '... seconds',
+  preview_just_the_last_n_sec = gr.Slider(
+    label = 'Preview just the last ... seconds (0 to disable)',
     minimum = 0,
-    maximum = 0,
+    maximum = 200,
     step = 0.1,
     value = 0
   )
@@ -317,7 +313,7 @@ class UI:
     label = 'Waveform'
   )
 
-  project_inputs = [ *metas, parent_sample, generation_length, child_sample ]
+  project_inputs = [ *metas, parent_sample, generation_length, child_sample, preview_just_the_last_n_sec ]
 
   print('Project inputs:', project_inputs)
 
@@ -704,17 +700,17 @@ with gr.Blocks(
 
         return ( hps.sr, wav )
 
-      def child_sample_change(project_name, sample_id, preview_window_flag, preview_window):
+      def child_sample_change(project_name, sample_id, preview_just_the_last_n_sec):
 
         if sample_id:
 
           audio = get_audio(project_name, sample_id)
           wav = audio[1]
           
-          # If the preview_window_flag is set, edit out all but the last preview_window seconds
-          if preview_window_flag:
-            print(f'Trimming audio to last {preview_window} seconds')
-            wav = wav[ int( -1 * preview_window * hps.sr ): ]
+          # If the preview_just_the_last_n_sec is set, only show the last n seconds
+          if preview_just_the_last_n_sec > 0:
+            print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
+            wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
 
           # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
           # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
@@ -748,8 +744,8 @@ with gr.Blocks(
             ),
             UI.generated_audio: ( audio[0], wav ),
             UI.audio_waveform: figure,
-            UI.preview_window: gr.update(
-              maximum = len(audio[1]) / audio[0]
+            UI.preview_just_the_last_n_sec: gr.update(
+              maximum = int( len(audio[1]) / audio[0] )
             )
           }
         
@@ -762,14 +758,13 @@ with gr.Blocks(
           }
 
       child_sample_change_args = dict(
-        inputs = [ UI.project_name, UI.child_sample, UI.preview_window_flag, UI.preview_window ],
-        outputs = [ UI.child_sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_window ],
+        inputs = [ UI.project_name, UI.child_sample, UI.preview_just_the_last_n_sec ],
+        outputs = [ UI.child_sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec ],
         fn = child_sample_change
       )
 
       UI.child_sample.change(**child_sample_change_args)
-      UI.preview_window_flag.change(**child_sample_change_args)
-      UI.preview_window.change(**child_sample_change_args)
+      UI.preview_just_the_last_n_sec.change(**child_sample_change_args)
 
       # When the generate button is clicked, generate the z and update the child samples
       generation_params = [ UI.artist, UI.genre, UI.lyrics, UI.generation_length ]
@@ -784,8 +779,6 @@ with gr.Blocks(
 
       with UI.child_sample_box:
 
-        UI.preview_window_flag.render()
-        UI.preview_window.render()
         UI.generated_audio.render()
         UI.audio_waveform.render()
 
@@ -819,6 +812,10 @@ with gr.Blocks(
           outputs = [ UI.child_sample, UI.child_sample_box ],
           fn = delete_child_sample
         )
+
+        with gr.Accordion('Advanced'):
+          UI.preview_just_the_last_n_sec.render()
+
 
   # If the app is loaded and the list of projects is empty, set the project list to CREATE NEW. Otherwise, load the last project from settings.yaml, if it exists.
   def get_last_project():
