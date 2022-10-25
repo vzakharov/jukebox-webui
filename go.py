@@ -294,6 +294,8 @@ class UI:
     'Go to parent'
   )
 
+  child_sample_to_use = gr.State()
+
   child_sample = gr.Radio(
     label = 'Child samples',
   )
@@ -519,8 +521,8 @@ with gr.Blocks(
       with gr.Row():
 
         UI.parent_sample.render()
-
         UI.go_to_parent_button.render()
+        UI.child_sample_to_use.render()
 
         # When the "go to parent" button is clicked, update the parent sample and set the child sampe to the current sample
         def get_parent_sample(sample_id):        
@@ -529,14 +531,15 @@ with gr.Blocks(
             parent_sample_id = '-'.join(sample_id.split('-')[:-1])
           except:
             parent_sample_id = 'NONE'
+          print(f'Going from {sample_id} to {parent_sample_id}')
           return {
             UI.parent_sample: parent_sample_id,
-            UI.child_sample: sample_id
+            UI.child_sample_to_use: sample_id
           }
         
         UI.go_to_parent_button.click(
           inputs = UI.parent_sample,
-          outputs = [ UI.parent_sample, UI.child_sample ],
+          outputs = [ UI.parent_sample, UI.child_sample_to_use ],
           fn = get_parent_sample,
           api_name = 'get-parent-sample'
         )
@@ -671,12 +674,13 @@ with gr.Blocks(
         }
 
       # When the parent sample is changed, update the child samples
-      def parent_sample_change(project_name, parent_sample_id):
+      def parent_sample_change(project_name, parent_sample_id, child_sample_to_use):
+        print(f'Parent sample changed to {parent_sample_id} (child sample to use: {child_sample_to_use})')
         child_choices = get_child_samples(project_name, parent_sample_id)
         return {
           UI.child_sample: gr.update(
             choices = child_choices,
-            value = child_choices[-1] if child_choices else None
+            value = child_sample_to_use if child_sample_to_use in child_choices else child_choices[-1] if child_choices else None
           ),
           UI.child_sample_box: gr.update(
             visible = len(child_choices) > 0
@@ -688,7 +692,7 @@ with gr.Blocks(
         }
 
       UI.parent_sample.change(
-        inputs = [ UI.project_name, UI.parent_sample ],
+        inputs = [ UI.project_name, UI.parent_sample, UI.child_sample_to_use ],
         outputs = [ UI.child_sample, UI.child_sample_box, UI.generate_button ],
         fn = parent_sample_change
       )
