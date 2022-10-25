@@ -286,7 +286,12 @@ class UI:
   )
 
   generate_button = gr.Button(
-    'Generate'
+    'Generate',
+    variant = 'primary'
+  )
+
+  go_to_parent_button = gr.Button(
+    'Go to parent'
   )
 
   child_sample = gr.Radio(
@@ -519,10 +524,8 @@ with gr.Blocks(
         with gr.Column( scale = 1 ):
           UI.generation_length.render()
 
-      UI.generate_button = gr.Button(
-        'Generate',
-        variant = 'primary',
-      )
+      UI.generate_button.render()
+      UI.go_to_parent_button.render()
 
       UI.child_sample.render()
 
@@ -813,7 +816,7 @@ with gr.Blocks(
           fn = delete_child_sample
         )
 
-        with gr.Accordion('Advanced'):
+        with gr.Accordion( 'Advanced', open = False ):
           UI.preview_just_the_last_n_sec.render()
 
 
