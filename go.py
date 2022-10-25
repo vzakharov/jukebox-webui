@@ -1,11 +1,29 @@
-# Check if it's a Colab notebookby checking if google.colab package is available
+import os
+
 try:
-  import google.colab
-  print('Running on Colab')
-  is_colab = True
+
+  is_colab # If is_colab is defined, we don't need to check again
+  print('Re-running the cell')
+
 except:
-  print('Not running on Colab')
-  is_colab = False
+  
+  try:
+
+    from google.colab import drive
+    drive.mount('/content/drive')
+
+    # !pip install git+https://github.com/openai/jukebox.git
+    # !pip install gradio
+    os.system('pip install git+https://github.com/openai/jukebox.git')
+    os.system('pip install gradio')
+    # TODO: os.system does not show the output in Colab, so we need to find a way to show the output
+    # We could just uncomment the !... lines above (while commenting the os.system ones), but then it won't work in non-notebook environments
+
+    is_colab = True
+
+  except:
+    print('Not running on Colab')
+    is_colab = False
   
 
 total_duration = 200 #@param {type:"slider", min:60, max:300, step:10}
@@ -26,13 +44,16 @@ import random
 from time import sleep
 import gradio as gr
 import json
-import os
 import shutil
 import glob
+import numpy as np
 import urllib.request
 import re
 import torch as t
 import librosa
+
+import matplotlib
+import matplotlib.pyplot as plt
 
 import yaml
 
@@ -77,6 +98,51 @@ except:
   rank, local_rank, device = setup_dist_from_mpi()
   print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
+# Monkey patch jukebox.make_models.load_checkpoint to load cached checkpoints from local_data_path instead of '~/.cache'
+reload_monkey_patch = False #@param{type:'boolean'}
+try:
+  print('Checking monkey patch...')
+  assert not reload_monkey_patch and not reload_all
+  monkey_patched_load_checkpoint
+  print('load_checkpoint already monkey patched.')
+except:
+
+  print('load_checkpoint not monkey patched; monkey patching...')
+
+  def download_to_cache(remote_path, local_path):
+    print(f'Caching {remote_path} to {local_path}')
+    if not os.path.exists(os.path.dirname(local_path)):
+      print(f'Creating directory {os.path.dirname(local_path)}')
+      os.makedirs(os.path.dirname(local_path))
+    if not os.path.exists(local_path):
+      print('Downloading...')
+      download(remote_path, local_path)
+      print('Done.')
+    else:
+      print('Already cached.')
+
+  def monkey_patched_load_checkpoint(path):
+    global data_path
+    restore = path
+    if restore.startswith(REMOTE_PREFIX):
+        remote_path = restore
+        local_path = os.path.join(data_path, remote_path[len(REMOTE_PREFIX):])
+        if dist.get_rank() % 8 == 0:
+            download_to_cache(remote_path, local_path)
+        restore = local_path
+    dist.barrier()
+    checkpoint = t.load(restore, map_location=t.device('cpu'))
+    print("Restored from {}".format(restore))
+    return checkpoint
+
+  # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
+  for model_path in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
+    download_to_cache(f'{REMOTE_PREFIX}{model_path}', os.path.join(data_path, model_path))
+
+  jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
+
+  print('Monkey patched load_checkpoint and downloaded the checkpoints')
+
 try:
   vqvae, priors, top_prior
   print('Model already loaded.')
@@ -115,48 +181,6 @@ if total_duration != calculated_duration or reload_prior or reload_all:
   top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
 
   calculated_duration = total_duration
-
-# Monkey patch jukebox.make_models.load_checkpoint to load cached checkpoints from local_data_path instead of '~/.cache'
-reload_monkey_patch = False #@param{type:'boolean'}
-try:
-  assert not reload_monkey_patch and not reload_all
-  monkey_patched_load_checkpoint
-  print('load_checkpoint already monkey patched')
-except:
-
-  def download_to_cache(remote_path, local_path):
-    print(f'Caching {remote_path} to {local_path}')
-    if not os.path.exists(os.path.dirname(local_path)):
-      print(f'Creating directory {os.path.dirname(local_path)}')
-      os.makedirs(os.path.dirname(local_path))
-    if not os.path.exists(local_path):
-      print('Downloading...')
-      download(remote_path, local_path)
-      print('Done.')
-    else:
-      print('Already cached.')
-
-  def monkey_patched_load_checkpoint(path):
-    global data_path
-    restore = path
-    if restore.startswith(REMOTE_PREFIX):
-        remote_path = restore
-        local_path = os.path.join(data_path, remote_path[len(REMOTE_PREFIX):])
-        if dist.get_rank() % 8 == 0:
-            download_to_cache(remote_path, local_path)
-        restore = local_path
-    dist.barrier()
-    checkpoint = t.load(restore, map_location=t.device('cpu'))
-    print("Restored from {}".format(restore))
-    return checkpoint
-
-  # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
-  for model in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
-    download_to_cache(f'{REMOTE_PREFIX}{model}', os.path.join(data_path, model))
-
-  jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
-
-  print('Monkey patched load_checkpoint and downloaded the checkpoints')
 
 
 # If the base folder doesn't exist, create it
@@ -274,9 +298,10 @@ class UI:
   )
 
   generated_audio = gr.Audio(
-    label = 'Generated audio',
-    visible = False
+    label = 'Generated audio'
   )
+
+  audio_waveform = gr.Plot()
 
   project_inputs = [ *metas, parent_sample, generation_length, child_sample ]
 
@@ -357,15 +382,16 @@ with gr.Blocks(
       
       def get_project_samples(project_name):
 
-        parent_sample_choices = ['NONE']
+        parent_sample_choices = []
         for filename in os.listdir(f'{base_path}/{project_name}'):
           if re.match(r'.*\.zs?$', filename):
             id = filename.split('.')[0]
             parent_sample_choices += [ id ]
         
-        return gr.update(
-          choices = parent_sample_choices,
-        )
+        # Sort by id, in descending order
+        parent_sample_choices.sort(reverse = True)
+        
+        return [ 'NONE' ] + parent_sample_choices
       
       UI.project_name.change(
         inputs = UI.project_name,
@@ -377,7 +403,9 @@ with gr.Blocks(
       UI.project_name.change(
         inputs = UI.project_name,
         outputs = UI.parent_sample,
-        fn = get_project_samples,
+        fn = lambda project_name: {
+          UI.parent_sample: gr.update( choices = get_project_samples(project_name) )
+        },
         api_name = 'get-project-samples'
       )
 
@@ -607,11 +635,14 @@ with gr.Blocks(
             choices = child_ids,
             value = child_ids[-1]
           ),
-          UI.parent_sample: get_project_samples(project_name)
+          UI.parent_sample: gr.update(
+            choices = get_project_samples(project_name),
+            value = parent_sample_id
+          )            
         }
 
       # When the parent sample is changed, update the child samples
-      def change_parent_sample(project_name, parent_sample_id):
+      def parent_sample_change(project_name, parent_sample_id):
         child_choices = get_child_samples(project_name, parent_sample_id)
         return {
           UI.child_sample: gr.update(
@@ -630,7 +661,7 @@ with gr.Blocks(
       UI.parent_sample.change(
         inputs = [ UI.project_name, UI.parent_sample ],
         outputs = [ UI.child_sample, UI.child_sample_box, UI.generate_button ],
-        fn = change_parent_sample
+        fn = parent_sample_change
       )
 
       # When a child sample is selected, update the generated audio
@@ -658,24 +689,65 @@ with gr.Blocks(
 
         return ( hps.sr, wav )
 
+      def child_sample_change(project_name, sample_id):
+
+
+        if sample_id:
+
+          audio = get_audio(project_name, sample_id)
+          # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
+          # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
+          x = np.arange(0, len(audio[1])) / audio[0]
+          y = audio[1]
+          print(f'Plotting {len(x)} points')
+          print(f'x: {x.shape}')
+          print(f'y: {y.shape}')
+
+          figure = plt.figure()
+          # Set aspect ratio to 10:1
+          figure.set_size_inches(20, 2)
+
+          # Remove y axis; make x axis go through y=0          
+          ax = plt.gca()
+          ax.spines['bottom'].set_position('zero')
+          ax.spines['left'].set_visible(False)
+          ax.spines['right'].set_visible(False)
+          ax.spines['top'].set_visible(False)
+          # Set minor x ticks every 0.1 seconds
+          ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.1))
+          # Move x axis to the foreground
+          ax.set_axisbelow(False)
+
+          plt.plot(x, y)
+          plt.show()        
+
+          return {
+            UI.child_sample_box: gr.update(
+              visible = True,
+            ),
+            UI.generated_audio: audio,
+            UI.audio_waveform: figure
+          }
+        
+        else:
+
+          return {
+            UI.child_sample_box: gr.update(
+              visible = False
+            )
+          }
+
       UI.child_sample.change(
         inputs = [ UI.project_name, UI.child_sample ],
-        outputs = [ UI.child_sample_box, UI.generated_audio ],
-        fn = lambda project_name, sample_id: {
-          UI.child_sample_box: gr.update(
-            visible = True,
-          ),
-          UI.generated_audio: gr.update(
-            value = get_audio(project_name, sample_id),
-            visible = True,
-            label = sample_id
-          )
-        }
+        outputs = [ UI.child_sample_box, UI.generated_audio, UI.audio_waveform ],
+        fn = child_sample_change
       )
 
+
       # When the generate button is clicked, generate the z and update the child samples
+      generation_params = [ UI.artist, UI.genre, UI.lyrics, UI.generation_length ]
       UI.generate_button.click(
-        inputs = [ UI.project_name, UI.parent_sample, UI.artist, UI.genre, UI.lyrics, UI.generation_length ],
+        inputs = [ UI.project_name, UI.parent_sample, *generation_params ],
         outputs = [ UI.child_sample, UI.parent_sample ],
         fn = generate,
         api_name = 'generate',
@@ -686,14 +758,15 @@ with gr.Blocks(
       with UI.child_sample_box:
 
         UI.generated_audio.render()
+        UI.audio_waveform.render()
 
         gr.Button(
-          value = 'Continue with this sample',
+          value = 'Generate after this',
           variant = 'primary',
         ).click(
-          inputs = UI.child_sample,
-          outputs = UI.parent_sample,
-          fn = lambda child_sample: child_sample
+          inputs =  [ UI.project_name, UI.child_sample, *generation_params ],
+          outputs = [ UI.child_sample, UI.parent_sample ],
+          fn = generate,
         )
 
         def delete_child_sample(project_name, parent_sample_id, child_sample_id):
@@ -717,11 +790,6 @@ with gr.Blocks(
           outputs = [ UI.child_sample, UI.child_sample_box ],
           fn = delete_child_sample
         )
-
-  # with gr.Row():
-
-  #   UI.status_bar.render()
-
 
   # If the app is loaded and the list of projects is empty, set the project list to CREATE NEW. Otherwise, load the last project from settings.yaml, if it exists.
   def get_last_project():
