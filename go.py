@@ -12,12 +12,12 @@ except:
     from google.colab import drive
     drive.mount('/content/drive')
 
-    # !pip install git+https://github.com/openai/jukebox.git
-    # !pip install gradio
-    os.system('pip install git+https://github.com/openai/jukebox.git')
-    os.system('pip install gradio')
-    # TODO: os.system does not show the output in Colab, so we need to find a way to show the output
-    # We could just uncomment the !... lines above (while commenting the os.system ones), but then it won't work in non-notebook environments
+    !nvidia-smi
+    !pip install git+https://github.com/openai/jukebox.git
+    !pip install gradio
+    # os.system('pip install git+https://github.com/openai/jukebox.git')
+    # os.system('pip install gradio')
+    # TODO: Fing a way to do the !stuff so that it runs in non-colab environments
 
     is_colab = True
 
@@ -361,7 +361,8 @@ with gr.Blocks(
         settings_out_dict = {
           UI.artist: 'Unknown',
           UI.genre: 'Unknown',
-          UI.lyrics: ''
+          UI.lyrics: '',
+          UI.parent_sample: 'NONE',
         }
 
         # If not new, load the settings from settings.yaml in the project folder, if it exists
@@ -816,7 +817,19 @@ with gr.Blocks(
           fn = generate,
         )
 
-        def delete_child_sample(project_name, parent_sample_id, child_sample_id):
+        gr.Button(
+          value = 'View children',
+        ).click(
+          inputs = UI.child_sample, 
+          outputs = UI.parent_sample,
+          fn = lambda sample_id: sample_id
+        )
+
+        def delete_child_sample(project_name, parent_sample_id, child_sample_id, confirm):
+
+          if not confirm:
+            return {}
+
           filename = f'{base_path}/{project_name}/{child_sample_id}'
           for extenstion in [ '.z', '.wav' ]:
             if os.path.isfile(f'{filename}{extenstion}'):
@@ -835,7 +848,11 @@ with gr.Blocks(
         gr.Button('Delete').click(
           inputs = [ UI.project_name, UI.parent_sample, UI.child_sample ],
           outputs = [ UI.child_sample, UI.child_sample_box ],
-          fn = delete_child_sample
+          fn = delete_child_sample,
+          _js = "(...args) => {\
+            console.log(__fn_args);\
+            return [...__fn_args, confirm('Are you sure? There is no undo.')]\
+          }"
         )
 
         with gr.Accordion( 'Advanced', open = False ):
