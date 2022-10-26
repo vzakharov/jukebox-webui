@@ -513,7 +513,7 @@ with gr.Blocks(
         UI.go_to_parent_button.render()
 
         # When the "go to parent" button is clicked, update the parent sample and set the child sampe to the current sample
-        def get_parent_sample(sample_id):        
+        def get_parent(sample_id):        
           # Remove the last part of the sample id
           try:
             parent_sample_id = '-'.join(sample_id.split('-')[:-1])
@@ -525,7 +525,7 @@ with gr.Blocks(
         UI.go_to_parent_button.click(
           inputs = UI.current_sample,
           outputs = UI.current_sample,
-          fn = get_parent_sample,
+          fn = get_parent,
           api_name = 'get-parent-sample'
         )
 
@@ -547,22 +547,25 @@ with gr.Blocks(
       def get_prefix(project_name, parent_sample_id):
         return f'{project_name if is_none_ish(parent_sample_id) else parent_sample_id}-'
 
-      def get_siblings(project_name, sample_id):
+      def get_children(project_name, parent_sample_id):
 
         global base_path
 
-        parent_sample_id = get_parent_sample(sample_id)
-
         prefix = get_prefix(project_name, parent_sample_id)
-        sibling_ids = []
+        child_ids = []
         for filename in os.listdir(f'{base_path}/{project_name}'):
           match = re.match(f'{prefix}(\d+)\\.zs?', filename)
           if match:
-            sibling_ids += [ filename.split('.')[0] ]
+            child_ids += [ filename.split('.')[0] ]
 
-        print(f'Siblings of {sample_id} (including itself): {sibling_ids}')
+        print(f'Children of {parent_sample_id}: {child_ids}')
 
-        return sibling_ids
+        return child_ids
+      
+      def get_siblings(project_name, sample_id):
+
+        return get_children(project_name, get_parent(sample_id))
+
 
       def generate(project_name, parent_sample_id, artist, genre, lyrics, generation_length):
 
@@ -630,7 +633,7 @@ with gr.Blocks(
         # filenames = write_files(base_path, project_name, zs, wav)
         # print(f'- Files written: {filenames}')
         
-        child_ids = get_siblings(project_name, parent_sample_id)
+        child_ids = get_children(project_name, parent_sample_id)
         child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
         first_new_child_index = max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
         print(f'Existing children for parent {parent_sample_id}: {child_ids}')
@@ -648,17 +651,10 @@ with gr.Blocks(
           # print(f'Wrote {filename}.wav')
           child_ids += [ id ]
 
-        return {
-          UI.sibling_sample: gr.update(
-            visible = True,
-            choices = child_ids,
-            value = child_ids[-1]
-          ),
-          UI.current_sample: gr.update(
-            choices = get_project_samples(project_name),
-            value = parent_sample_id
-          )            
-        }
+        return gr.update(
+          choices = get_project_samples(project_name),
+          value = child_ids[-1]
+        )
 
       def get_audio(project_name, sample_id):
 
@@ -760,7 +756,7 @@ with gr.Blocks(
       generation_params = [ UI.artist, UI.genre, UI.lyrics, UI.generation_length ]
       UI.generate_first_button.click(
         inputs = [ UI.project_name, UI.current_sample, *generation_params ],
-        outputs = [ UI.sibling_sample, UI.current_sample ],
+        outputs = UI.current_sample,
         fn = generate,
         api_name = 'generate',
       )
@@ -787,12 +783,20 @@ with gr.Blocks(
         UI.audio_waveform.render()
 
         gr.Button(
-          value = 'Generate after this',
+          value = 'Continue',
           variant = 'primary',
         ).click(
           inputs =  [ UI.project_name, UI.sibling_sample, *generation_params ],
-          outputs = [ UI.sibling_sample, UI.current_sample ],
+          outputs = UI.current_sample,
           fn = generate,
+        )
+
+        gr.Button(
+          value = 'Try again',          
+        ).click(
+          inputs = [ UI.project_name, UI.sibling_sample, *generation_params ],
+          outputs = UI.current_sample,
+          fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(sample_id), *args),
         )
 
         gr.Button(
@@ -808,7 +812,7 @@ with gr.Blocks(
           if not confirm:
             return {}
           
-          parent_sample_id = get_parent_sample(sample_id)
+          parent_sample_id = get_parent(sample_id)
           
           # New child sample is the one that goes after the deleted sample
           child_samples = get_siblings(project_name, parent_sample_id)
