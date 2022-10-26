@@ -300,6 +300,14 @@ class UI:
     visible = False
   )
 
+  generated_audio = gr.Audio(
+    label = 'Generated audio'
+  )
+
+  audio_waveform = gr.Plot(
+    label = 'Waveform'
+  )
+
   preview_just_the_last_n_sec = gr.Slider(
     label = 'Preview just the last ... seconds (0 to disable)',
     minimum = 0,
@@ -308,13 +316,6 @@ class UI:
     value = 0
   )
 
-  generated_audio = gr.Audio(
-    label = 'Generated audio'
-  )
-
-  audio_waveform = gr.Plot(
-    label = 'Waveform'
-  )
 
   project_settings = [ *metas, current_sample, generation_length, preview_just_the_last_n_sec ]
 
@@ -693,10 +694,10 @@ with gr.Blocks(
         # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
         # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
         x = np.arange(0, len(wav)) / hps.sr
+        # Add total length in seconds minus the preview length to the x values
+        x += len(audio[1]) / hps.sr - preview_just_the_last_n_sec
         y = wav
-        print(f'Plotting {len(x)} points')
-        print(f'x: {x.shape}')
-        print(f'y: {y.shape}')
+        print(f'Plotting {len(x)} points from {x[0]} to {x[-1]} seconds')
 
         figure = plt.figure()
         # Set aspect ratio to 10:1
@@ -812,14 +813,12 @@ with gr.Blocks(
           if not confirm:
             return {}
           
-          parent_sample_id = get_parent(sample_id)
-          
           # New child sample is the one that goes after the deleted sample
-          child_samples = get_siblings(project_name, parent_sample_id)
-          new_child_sample = child_samples[ child_samples.index(sample_id) + 1 ] if sample_id != child_samples[-1] else None
+          siblings = get_siblings(project_name, sample_id)
+          new_sibling_to_use = siblings[ siblings.index(sample_id) + 1 ] if sample_id != siblings[-1] else None
 
           # Remove the to-be-deleted sample from the list of child samples
-          child_samples.remove(sample_id)
+          siblings.remove(sample_id)
 
           # Delete the sample
           filename = f'{base_path}/{project_name}/{sample_id}'
@@ -832,11 +831,11 @@ with gr.Blocks(
               print(f'No {filename}{extension} found')
           return {
             UI.sibling_sample: gr.update(
-              choices = child_samples,
-              value = new_child_sample,
+              choices = siblings,
+              value = new_sibling_to_use,
             ),
             UI.sample_box: gr.update(
-              visible = len(child_samples) > 0
+              visible = len(siblings) > 0
             ),            
           }
         
@@ -844,8 +843,15 @@ with gr.Blocks(
           inputs = [ UI.project_name, UI.sibling_sample, gr.Checkbox(visible=False) ],
           outputs = [ UI.sibling_sample, UI.sample_box ],
           fn = delete_sample,
-          _js = "( project_name, child_sample_id ) => \
-            [ project_name, child_sample_id, confirm('Are you sure? There is no undo.') ]",
+          _js = """
+            ( project_name, child_sample_id ) => {
+              if ( confirm('Are you sure? There is no undo!') ) {
+                return [ project_name, child_sample_id, true ]
+              } else {
+                throw new Error('Cancelled; not deleting')
+              }
+            }
+          """,
           api_name = 'delete-sample'
         )
 
