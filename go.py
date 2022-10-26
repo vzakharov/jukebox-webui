@@ -827,33 +827,46 @@ with gr.Blocks(
           fn = lambda sample_id: sample_id
         )
 
-        def delete_sample(project_name, parent_sample_id, child_sample_id, confirm):
+        def delete_sample(project_name, sample_id, confirm):
 
           if not confirm:
             return {}
+          
+          parent_sample_id = get_parent_sample(sample_id)[UI.parent_sample]
+          
+          # New child sample is the one that goes after the deleted sample
+          child_samples = get_child_samples(project_name, parent_sample_id)
+          new_child_sample = child_samples[ child_samples.index(sample_id) + 1 ] if sample_id != child_samples[-1] else None
 
-          filename = f'{base_path}/{project_name}/{child_sample_id}'
+          # Remove the to-be-deleted sample from the list of child samples
+          child_samples.remove(sample_id)
+
+          # Delete the sample
+          filename = f'{base_path}/{project_name}/{sample_id}'
+
           for extenstion in [ '.z', '.wav' ]:
             if os.path.isfile(f'{filename}{extenstion}'):
               os.remove(f'{filename}{extenstion}')
               print(f'Deleted {filename}{extenstion}')
             else:
               print(f'No {filename}{extenstion} found')
-          child_samples = get_child_samples(project_name, parent_sample_id)
           return {
-            UI.child_sample: child_samples,
+            UI.child_sample: gr.update(
+              choices = child_samples,
+              value = new_child_sample,
+            ),
             UI.child_sample_box: gr.update(
               visible = len(child_samples) > 0
             ),            
           }
         
         gr.Button('Delete').click(
-          inputs = [ UI.project_name, UI.parent_sample, UI.child_sample, gr.Checkbox(visible=False) ],
+          inputs = [ UI.project_name, UI.child_sample, gr.Checkbox(visible=False) ],
           outputs = [ UI.child_sample, UI.child_sample_box ],
           fn = delete_sample,
-          _js = "( project_name, parent_sample_id, child_sample_id ) => \
-            [ project_name, parent_sample_id, child_sample_id, confirm('Are you sure? There is no undo.') ]",
-          api_name = 'delete-child-sample'
+          _js = "( project_name, child_sample_id ) => \
+            [ project_name, child_sample_id, confirm('Are you sure? There is no undo.') ]",
+          api_name = 'delete-sample'
         )
 
         with gr.Accordion( 'Advanced', open = False ):
