@@ -844,12 +844,12 @@ with gr.Blocks(
           # Delete the sample
           filename = f'{base_path}/{project_name}/{sample_id}'
 
-          for extenstion in [ '.z', '.wav' ]:
-            if os.path.isfile(f'{filename}{extenstion}'):
-              os.remove(f'{filename}{extenstion}')
-              print(f'Deleted {filename}{extenstion}')
+          for extension in [ '.z', '.wav' ]:
+            if os.path.isfile(f'{filename}{extension}'):
+              os.remove(f'{filename}{extension}')
+              print(f'Deleted {filename}{extension}')
             else:
-              print(f'No {filename}{extenstion} found')
+              print(f'No {filename}{extension} found')
           return {
             UI.child_sample: gr.update(
               choices = child_samples,
