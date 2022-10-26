@@ -193,7 +193,7 @@ def get_projects():
   
   global base_path
 
-  print(f'Getting project list for {base_path}...')
+  # print(f'Getting project list for {base_path}...')
 
   project_names = []
   for folder in os.listdir(base_path):
@@ -209,7 +209,7 @@ def get_projects():
 
 def get_meta(what):
   items = []
-  print(f'Getting {what} list...')
+  # print(f'Getting {what} list...')
   with urllib.request.urlopen(f'https://raw.githubusercontent.com/openai/jukebox/master/jukebox/data/ids/v2_{what}_ids.txt') as f:
     for line in f:
       item = line.decode('utf-8').split(';')[0]
@@ -275,8 +275,6 @@ class UI:
   current_sample = gr.Dropdown(
     label = 'Current sample',
   )
-
-  set_via_sample_picker = gr.State()
 
   generation_length = gr.Slider(
     label = 'Generation length, sec',
@@ -512,7 +510,6 @@ with gr.Blocks(
       with gr.Row():
 
         UI.current_sample.render()
-        UI.set_via_sample_picker.render()
         UI.go_to_parent_button.render()
 
         # When the "go to parent" button is clicked, update the parent sample and set the child sampe to the current sample
@@ -731,7 +728,7 @@ with gr.Blocks(
           )
         }
 
-      def set_sample(project_name, sample_id, preview_just_the_last_n_sec):
+      def get_sample_siblings(project_name, sample_id, preview_just_the_last_n_sec):
         
         if is_none_ish(sample_id):
           return {
@@ -748,15 +745,13 @@ with gr.Blocks(
             visible = len(sibling_choices) > 1
           ),
           UI.sample_box: gr.update( visible = True ),
-          UI.set_via_sample_picker: True,
-          **get_audio_preview(project_name, sample_id, preview_just_the_last_n_sec)
         }
 
       UI.current_sample.change(
         inputs = [ UI.project_name, UI.current_sample, UI.preview_just_the_last_n_sec ],
-        outputs = [ UI.sibling_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec, UI.set_via_sample_picker ],
-        fn = set_sample,
-        api_name = 'set-sample'
+        outputs = [ UI.sibling_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec ],
+        fn = get_sample_siblings,
+        api_name = 'get-siblings'        
       )
 
       # When the generate button is clicked, generate and update the child samples
@@ -769,10 +764,9 @@ with gr.Blocks(
       )
 
       UI.sibling_sample.change(
-        inputs = [ UI.set_via_sample_picker, UI.project_name, UI.sibling_sample, UI.preview_just_the_last_n_sec ],
-        outputs = [ UI.set_via_sample_picker, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec ],
-        fn = lambda set_via_sample_picker, *args: get_audio_preview(*args) if not set_via_sample_picker else { UI.set_via_sample_picker: False },
-        # status_tracker = None
+        inputs = [ UI.project_name, UI.sibling_sample, UI.preview_just_the_last_n_sec ],
+        outputs = [ UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec ],
+        fn = get_audio_preview,
       )
 
       UI.preview_just_the_last_n_sec.change(
