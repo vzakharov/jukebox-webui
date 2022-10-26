@@ -273,7 +273,7 @@ class UI:
   metas = [ artist, genre, lyrics ]
 
   current_sample = gr.Dropdown(
-    label = 'Current sample',
+    label = 'Sample tree',
   )
 
   generation_length = gr.Slider(
