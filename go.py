@@ -622,7 +622,7 @@ with gr.Blocks(
 
         print(f'Generating {generation_length} seconds for {project_name}...')
 
-        if not parent_sample_id:
+        if is_none_ish(parent_sample_id):
           zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
           print('No parent sample, generating from scratch')
         else:
@@ -796,7 +796,9 @@ with gr.Blocks(
         fn = child_sample_change
       )
 
-      UI.child_sample.change(**child_sample_change_args)
+      UI.child_sample.change( **{ **child_sample_change_args, 
+        'api_name': 'get-audio'
+      })
       UI.preview_just_the_last_n_sec.change(**child_sample_change_args)
 
 
@@ -846,13 +848,12 @@ with gr.Blocks(
           }
         
         gr.Button('Delete').click(
-          inputs = [ UI.project_name, UI.parent_sample, UI.child_sample ],
+          inputs = [ UI.project_name, UI.parent_sample, UI.child_sample, gr.Checkbox(visible=False) ],
           outputs = [ UI.child_sample, UI.child_sample_box ],
           fn = delete_child_sample,
-          _js = "(...args) => {\
-            console.log(__fn_args);\
-            return [...__fn_args, confirm('Are you sure? There is no undo.')]\
-          }"
+          _js = "( project_name, parent_sample_id, child_sample_id ) => \
+            [ project_name, parent_sample_id, child_sample_id, confirm('Are you sure? There is no undo.') ]",
+          api_name = 'delete-child-sample'
         )
 
         with gr.Accordion( 'Advanced', open = False ):
