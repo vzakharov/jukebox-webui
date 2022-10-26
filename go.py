@@ -659,6 +659,63 @@ with gr.Blocks(
           )            
         }
 
+      def get_sample_details(project_name, sample_id, preview_just_the_last_n_sec):
+
+        if sample_id:
+
+          audio = get_audio(project_name, sample_id)
+          wav = audio[1]
+          
+          # If the preview_just_the_last_n_sec is set, only show the last n seconds
+          if preview_just_the_last_n_sec > 0:
+            print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
+            wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
+
+          # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
+          # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
+          x = np.arange(0, len(wav)) / hps.sr
+          y = wav
+          print(f'Plotting {len(x)} points')
+          print(f'x: {x.shape}')
+          print(f'y: {y.shape}')
+
+          figure = plt.figure()
+          # Set aspect ratio to 10:1
+          figure.set_size_inches(20, 2)
+
+          # Remove y axis; make x axis go through y=0          
+          ax = plt.gca()
+          ax.spines['bottom'].set_position('zero')
+          ax.spines['left'].set_visible(False)
+          ax.spines['right'].set_visible(False)
+          ax.spines['top'].set_visible(False)
+          # Set minor x ticks every 0.1 seconds
+          ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.1))
+          # Move x axis to the foreground
+          ax.set_axisbelow(False)
+
+          plt.plot(x, y)
+          plt.show()        
+
+          return {
+            UI.sample_box: gr.update(
+              visible = True,
+            ),
+            UI.generated_audio: ( audio[0], wav ),
+            UI.audio_waveform: figure,
+            UI.preview_just_the_last_n_sec: gr.update(
+              maximum = int( len(audio[1]) / audio[0] )
+            )
+          }
+        
+        else:
+
+          return {
+            UI.sample_box: gr.update(
+              visible = False
+            )
+          }
+
       def current_sample_change(project_name, current_sample_id):
         print(f'Changing current sample to {current_sample_id}...')
         sibling_choices = get_siblings(project_name, current_sample_id)
@@ -717,73 +774,16 @@ with gr.Blocks(
 
         return ( hps.sr, wav )
 
-      def sibling_sample_change(project_name, sample_id, preview_just_the_last_n_sec):
-
-        if sample_id:
-
-          audio = get_audio(project_name, sample_id)
-          wav = audio[1]
-          
-          # If the preview_just_the_last_n_sec is set, only show the last n seconds
-          if preview_just_the_last_n_sec > 0:
-            print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
-            wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
-
-          # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
-          # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
-          x = np.arange(0, len(wav)) / hps.sr
-          y = wav
-          print(f'Plotting {len(x)} points')
-          print(f'x: {x.shape}')
-          print(f'y: {y.shape}')
-
-          figure = plt.figure()
-          # Set aspect ratio to 10:1
-          figure.set_size_inches(20, 2)
-
-          # Remove y axis; make x axis go through y=0          
-          ax = plt.gca()
-          ax.spines['bottom'].set_position('zero')
-          ax.spines['left'].set_visible(False)
-          ax.spines['right'].set_visible(False)
-          ax.spines['top'].set_visible(False)
-          # Set minor x ticks every 0.1 seconds
-          ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.1))
-          # Move x axis to the foreground
-          ax.set_axisbelow(False)
-
-          plt.plot(x, y)
-          plt.show()        
-
-          return {
-            UI.sample_box: gr.update(
-              visible = True,
-            ),
-            UI.generated_audio: ( audio[0], wav ),
-            UI.audio_waveform: figure,
-            UI.preview_just_the_last_n_sec: gr.update(
-              maximum = int( len(audio[1]) / audio[0] )
-            )
-          }
-        
-        else:
-
-          return {
-            UI.sample_box: gr.update(
-              visible = False
-            )
-          }
-
-      child_sample_change_args = dict(
+      sibling_sample_change_args = dict(
         inputs = [ UI.project_name, UI.sibling_sample, UI.preview_just_the_last_n_sec ],
         outputs = [ UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec ],
-        fn = sibling_sample_change
+        fn = get_sample_details
       )
 
-      UI.sibling_sample.change( **{ **child_sample_change_args, 
+      UI.sibling_sample.change( **{ **sibling_sample_change_args, 
         'api_name': 'get-audio'
       })
-      UI.preview_just_the_last_n_sec.change(**child_sample_change_args)
+      UI.preview_just_the_last_n_sec.change(**sibling_sample_change_args)
 
 
 
