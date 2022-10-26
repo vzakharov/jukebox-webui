@@ -276,6 +276,8 @@ class UI:
     label = 'Current sample',
   )
 
+  set_via_sample_picker = gr.State()
+
   generation_length = gr.Slider(
     label = 'Generation length, sec',
     minimum = 0.5,
@@ -329,7 +331,8 @@ with gr.Blocks(
       /* add margin to the button */
       margin: 5px 5px 5px 5px;
     }
-  """
+  """,
+  title = 'Jukebox Web UI',
 ) as app:
   
   with gr.Row():
@@ -509,6 +512,7 @@ with gr.Blocks(
       with gr.Row():
 
         UI.current_sample.render()
+        UI.set_via_sample_picker.render()
         UI.go_to_parent_button.render()
 
         # When the "go to parent" button is clicked, update the parent sample and set the child sampe to the current sample
@@ -659,96 +663,6 @@ with gr.Blocks(
           )            
         }
 
-      def get_sample_details(project_name, sample_id, preview_just_the_last_n_sec):
-
-        if sample_id:
-
-          audio = get_audio(project_name, sample_id)
-          wav = audio[1]
-          
-          # If the preview_just_the_last_n_sec is set, only show the last n seconds
-          if preview_just_the_last_n_sec > 0:
-            print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
-            wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
-
-          # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
-          # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
-          x = np.arange(0, len(wav)) / hps.sr
-          y = wav
-          print(f'Plotting {len(x)} points')
-          print(f'x: {x.shape}')
-          print(f'y: {y.shape}')
-
-          figure = plt.figure()
-          # Set aspect ratio to 10:1
-          figure.set_size_inches(20, 2)
-
-          # Remove y axis; make x axis go through y=0          
-          ax = plt.gca()
-          ax.spines['bottom'].set_position('zero')
-          ax.spines['left'].set_visible(False)
-          ax.spines['right'].set_visible(False)
-          ax.spines['top'].set_visible(False)
-          # Set minor x ticks every 0.1 seconds
-          ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.1))
-          # Move x axis to the foreground
-          ax.set_axisbelow(False)
-
-          plt.plot(x, y)
-          plt.show()        
-
-          return {
-            UI.sample_box: gr.update(
-              visible = True,
-            ),
-            UI.generated_audio: ( audio[0], wav ),
-            UI.audio_waveform: figure,
-            UI.preview_just_the_last_n_sec: gr.update(
-              maximum = int( len(audio[1]) / audio[0] )
-            )
-          }
-        
-        else:
-
-          return {
-            UI.sample_box: gr.update(
-              visible = False
-            )
-          }
-
-      def current_sample_change(project_name, current_sample_id):
-        print(f'Changing current sample to {current_sample_id}...')
-        sibling_choices = get_siblings(project_name, current_sample_id)
-        return {
-          UI.sibling_sample: gr.update(
-            choices = sibling_choices,
-            value = current_sample_id
-          ),
-          UI.sample_box: gr.update(
-            visible = len(sibling_choices) > 0
-          ),
-          UI.generate_button: gr.update(
-            value = 'Generate more' if len(sibling_choices) > 0 else 'Generate',
-            variant = 'secondary' if len(sibling_choices) > 0 else 'primary'
-          )
-        }
-
-      UI.current_sample.change(
-        inputs = [ UI.project_name, UI.current_sample ],
-        outputs = [ UI.sibling_sample, UI.sample_box, UI.generate_button ],
-        fn = current_sample_change
-      )
-
-      # When the generate button is clicked, generate and update the child samples
-      generation_params = [ UI.artist, UI.genre, UI.lyrics, UI.generation_length ]
-      UI.generate_button.click(
-        inputs = [ UI.project_name, UI.current_sample, *generation_params ],
-        outputs = [ UI.sibling_sample, UI.current_sample ],
-        fn = generate,
-        api_name = 'generate',
-      )
-
-      # When a child sample is selected, update the generated audio
       def get_audio(project_name, sample_id):
 
         global base_path, hps
@@ -771,19 +685,102 @@ with gr.Blocks(
           wav = wav[0, :, 0]
           print(f'Generated audio: {wav.shape}')
 
-
         return ( hps.sr, wav )
 
-      sibling_sample_change_args = dict(
-        inputs = [ UI.project_name, UI.sibling_sample, UI.preview_just_the_last_n_sec ],
-        outputs = [ UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec ],
-        fn = get_sample_details
+      def get_audio_preview(project_name, sample_id, preview_just_the_last_n_sec):
+
+        audio = get_audio(project_name, sample_id)
+        wav = audio[1]
+        
+        # If the preview_just_the_last_n_sec is set, only show the last n seconds
+        if preview_just_the_last_n_sec > 0:
+          print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
+          wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
+
+        # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
+        # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
+        x = np.arange(0, len(wav)) / hps.sr
+        y = wav
+        print(f'Plotting {len(x)} points')
+        print(f'x: {x.shape}')
+        print(f'y: {y.shape}')
+
+        figure = plt.figure()
+        # Set aspect ratio to 10:1
+        figure.set_size_inches(20, 2)
+
+        # Remove y axis; make x axis go through y=0          
+        ax = plt.gca()
+        ax.spines['bottom'].set_position('zero')
+        ax.spines['left'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        # Set minor x ticks every 0.1 seconds
+        ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.1))
+        # Move x axis to the foreground
+        ax.set_axisbelow(False)
+
+        plt.plot(x, y)
+        plt.show()        
+
+        return {
+          UI.generated_audio: ( audio[0], wav ),
+          UI.audio_waveform: figure,
+          UI.preview_just_the_last_n_sec: gr.update(
+            maximum = int( len(audio[1]) / audio[0] )
+          )
+        }
+
+      def set_sample(project_name, sample_id, preview_just_the_last_n_sec):
+        
+        if is_none_ish(sample_id):
+          return {
+            UI.sibling_sample: gr.update( visible = False ),
+            UI.sample_box: gr.update( visible = False )
+          }
+
+        print(f'Changing current sample to {sample_id}...')
+        sibling_choices = get_siblings(project_name, sample_id)
+        return {
+          UI.sibling_sample: gr.update(
+            choices = sibling_choices,
+            value = sample_id,
+            visible = len(sibling_choices) > 1
+          ),
+            variant = 'secondary' if len(sibling_choices) > 0 else 'primary'
+          )
+        }
+
+      UI.current_sample.change(
+        inputs = [ UI.project_name, UI.current_sample ],
+        inputs = [ UI.project_name, UI.current_sample, UI.preview_just_the_last_n_sec ],
+        outputs = [ 
+          UI.sibling_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec, UI.set_via_sample_picker 
+        ],
+        fn = set_sample,
+        api_name = 'set-sample'
       )
 
-      UI.sibling_sample.change( **{ **sibling_sample_change_args, 
-        'api_name': 'get-audio'
-      })
-      UI.preview_just_the_last_n_sec.change(**sibling_sample_change_args)
+      # When the generate button is clicked, generate and update the child samples
+      generation_params = [ UI.artist, UI.genre, UI.lyrics, UI.generation_length ]
+      UI.generate_button.click(
+        inputs = [ UI.project_name, UI.current_sample, *generation_params ],
+        outputs = [ UI.sibling_sample, UI.current_sample ],
+        fn = generate,
+        api_name = 'generate',
+      )
+
+      UI.sibling_sample.change(
+        inputs = [ UI.set_via_sample_picker, UI.project_name, UI.sibling_sample, UI.preview_just_the_last_n_sec ],
+        outputs = [ UI.set_via_sample_picker, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec ],
+        fn = lambda set_via_sample_picker, *args: get_audio_preview(*args) if not set_via_sample_picker else { UI.set_via_sample_picker: False },
+      )
+
+      UI.preview_just_the_last_n_sec.change(
+        inputs = [ UI.project_name, UI.current_sample, UI.preview_just_the_last_n_sec ],
+        outputs = [ UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec ],
+        fn = get_audio_preview
+      )
 
 
 
