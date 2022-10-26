@@ -283,7 +283,7 @@ class UI:
     step = 0.1
   )
 
-  generate_button = gr.Button(
+  generate_first_button = gr.Button(
     'Generate',
     variant = 'primary'
   )
@@ -530,7 +530,7 @@ with gr.Blocks(
         )
 
       UI.generation_length.render()
-      UI.generate_button.render()
+      UI.generate_first_button.render()
       UI.sibling_sample.render()
 
       def seconds_to_tokens(sec):
@@ -728,35 +728,37 @@ with gr.Blocks(
           )
         }
 
-      def get_sample_siblings(project_name, sample_id, preview_just_the_last_n_sec):
+      def refresh_siblings(project_name, sample_id):
         
         if is_none_ish(sample_id):
           return {
             UI.sibling_sample: gr.update( visible = False ),
-            UI.sample_box: gr.update( visible = False )
+            UI.sample_box: gr.update( visible = False ),
+            UI.generate_first_button: gr.update( visible = True ),
           }
 
         print(f'Changing current sample to {sample_id}...')
-        sibling_choices = get_siblings(project_name, sample_id)
+        siblings = get_siblings(project_name, sample_id)
         return {
           UI.sibling_sample: gr.update(
-            choices = sibling_choices,
+            choices = siblings,
             value = sample_id,
-            visible = len(sibling_choices) > 1
+            visible = len(siblings) > 1
           ),
           UI.sample_box: gr.update( visible = True ),
+          UI.generate_first_button: gr.update( visible = False ),
         }
 
       UI.current_sample.change(
-        inputs = [ UI.project_name, UI.current_sample, UI.preview_just_the_last_n_sec ],
-        outputs = [ UI.sibling_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec ],
-        fn = get_sample_siblings,
+        inputs = [ UI.project_name, UI.current_sample ],
+        outputs = [ UI.sibling_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.generate_first_button ],
+        fn = refresh_siblings,
         api_name = 'get-siblings'        
       )
 
       # When the generate button is clicked, generate and update the child samples
       generation_params = [ UI.artist, UI.genre, UI.lyrics, UI.generation_length ]
-      UI.generate_button.click(
+      UI.generate_first_button.click(
         inputs = [ UI.project_name, UI.current_sample, *generation_params ],
         outputs = [ UI.sibling_sample, UI.current_sample ],
         fn = generate,
