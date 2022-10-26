@@ -754,7 +754,7 @@ with gr.Blocks(
 
       UI.current_sample.change(
         inputs = [ UI.project_name, UI.current_sample, UI.preview_just_the_last_n_sec ],
-        outputs = [ UI.sibling_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec ],
+        outputs = [ UI.sibling_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec, UI.set_via_sample_picker ],
         fn = set_sample,
         api_name = 'set-sample'
       )
@@ -772,6 +772,7 @@ with gr.Blocks(
         inputs = [ UI.set_via_sample_picker, UI.project_name, UI.sibling_sample, UI.preview_just_the_last_n_sec ],
         outputs = [ UI.set_via_sample_picker, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec ],
         fn = lambda set_via_sample_picker, *args: get_audio_preview(*args) if not set_via_sample_picker else { UI.set_via_sample_picker: False },
+        # status_tracker = None
       )
 
       UI.preview_just_the_last_n_sec.change(
