@@ -746,14 +746,11 @@ with gr.Blocks(
             choices = sibling_choices,
             value = sample_id,
             visible = len(sibling_choices) > 1
-          ),
-            variant = 'secondary' if len(sibling_choices) > 0 else 'primary'
           )
         }
 
       UI.current_sample.change(
         inputs = [ UI.project_name, UI.current_sample ],
-        inputs = [ UI.project_name, UI.current_sample, UI.preview_just_the_last_n_sec ],
         outputs = [ 
           UI.sibling_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec, UI.set_via_sample_picker 
         ],
