@@ -294,7 +294,7 @@ class UI:
     'Go to parent'
   )
 
-  child_sample_to_use = gr.State()
+  previous_parent_sample = gr.State()
 
   child_sample = gr.Radio(
     label = 'Child samples',
@@ -523,7 +523,7 @@ with gr.Blocks(
 
         UI.parent_sample.render()
         UI.go_to_parent_button.render()
-        UI.child_sample_to_use.render()
+        UI.previous_parent_sample.render()
 
         # When the "go to parent" button is clicked, update the parent sample and set the child sampe to the current sample
         def get_parent_sample(sample_id):        
@@ -535,12 +535,12 @@ with gr.Blocks(
           print(f'Going from {sample_id} to {parent_sample_id}')
           return {
             UI.parent_sample: parent_sample_id,
-            UI.child_sample_to_use: sample_id
+            UI.previous_parent_sample: sample_id
           }
         
         UI.go_to_parent_button.click(
           inputs = UI.parent_sample,
-          outputs = [ UI.parent_sample, UI.child_sample_to_use ],
+          outputs = [ UI.parent_sample, UI.previous_parent_sample ],
           fn = get_parent_sample,
           api_name = 'get-parent-sample'
         )
@@ -693,7 +693,7 @@ with gr.Blocks(
         }
 
       UI.parent_sample.change(
-        inputs = [ UI.project_name, UI.parent_sample, UI.child_sample_to_use ],
+        inputs = [ UI.project_name, UI.parent_sample, UI.previous_parent_sample ],
         outputs = [ UI.child_sample, UI.child_sample_box, UI.generate_button ],
         fn = parent_sample_change
       )
@@ -827,7 +827,7 @@ with gr.Blocks(
           fn = lambda sample_id: sample_id
         )
 
-        def delete_child_sample(project_name, parent_sample_id, child_sample_id, confirm):
+        def delete_sample(project_name, parent_sample_id, child_sample_id, confirm):
 
           if not confirm:
             return {}
@@ -850,7 +850,7 @@ with gr.Blocks(
         gr.Button('Delete').click(
           inputs = [ UI.project_name, UI.parent_sample, UI.child_sample, gr.Checkbox(visible=False) ],
           outputs = [ UI.child_sample, UI.child_sample_box ],
-          fn = delete_child_sample,
+          fn = delete_sample,
           _js = "( project_name, parent_sample_id, child_sample_id ) => \
             [ project_name, parent_sample_id, child_sample_id, confirm('Are you sure? There is no undo.') ]",
           api_name = 'delete-child-sample'
