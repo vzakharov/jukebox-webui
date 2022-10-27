@@ -305,10 +305,6 @@ class UI:
     variant = 'primary'
   )
 
-  go_to_parent_button = gr.Button(
-    'Go to parent'
-  )
-
   sibling_sample = gr.Radio(
     label = 'Sibling samples',
   )
@@ -323,6 +319,14 @@ class UI:
 
   audio_waveform = gr.Plot(
     label = 'Waveform'
+  )
+
+  go_to_parent_button = gr.Button(
+    value = '< parent',
+  )
+
+  go_to_children_button = gr.Button(
+    value = '> children',
   )
 
   preview_just_the_last_n_sec = gr.Slider(
@@ -537,28 +541,7 @@ with gr.Blocks(
 
     with gr.Column( scale = 3 ):
 
-      with gr.Row():
-
-        UI.current_sample.render()
-        UI.go_to_parent_button.render()
-
-        # When the "go to parent" button is clicked, update the parent sample and set the child sampe to the current sample
-        def get_parent(sample_id):        
-          # Remove the last part of the sample id
-          try:
-            parent_sample_id = '-'.join(sample_id.split('-')[:-1])
-          except:
-            parent_sample_id = 'NONE'
-          print(f'Going from {sample_id} to {parent_sample_id}')
-          return parent_sample_id
-        
-        UI.go_to_parent_button.click(
-          inputs = UI.current_sample,
-          outputs = UI.current_sample,
-          fn = get_parent,
-          api_name = 'get-parent-sample'
-        )
-
+      UI.current_sample.render()       
       UI.generate_first_button.render()
       UI.sibling_sample.render()
 
@@ -591,9 +574,16 @@ with gr.Blocks(
 
         return child_ids
       
+      def get_parent(project_name, sample_id):
+        # Remove the project name and first dash from the sample id
+        path = sample_id[ len(project_name) + 1: ].split('-')
+        parent_sample_id = '-'.join([ project_name, *path[:-1] ]) if len(path) > 1 else None
+        print(f'Parent of {sample_id}: {parent_sample_id}')
+        return parent_sample_id
+      
       def get_siblings(project_name, sample_id):
 
-        return get_children(project_name, get_parent(sample_id))
+        return get_children(project_name, get_parent(project_name, sample_id))
 
 
       def generate(project_name, parent_sample_id, artist, genre, lyrics, n_samples, temperature, generation_length):
@@ -701,7 +691,7 @@ with gr.Blocks(
 
         return ( hps.sr, wav )
 
-      def get_audio_preview(project_name, sample_id, preview_just_the_last_n_sec, cut_n_sec_from_end):
+      def pick_sample(project_name, sample_id, preview_just_the_last_n_sec, cut_n_sec_from_end):
 
         audio = get_audio(project_name, sample_id)
         wav = audio[1]
@@ -753,6 +743,12 @@ with gr.Blocks(
           UI.cut_n_sec_from_end: gr.update(
             maximum = int( len(audio[1]) / audio[0] ),
             # value = cut_n_sec_from_end
+          ),
+          UI.go_to_children_button: gr.update(
+            visible = len(get_children(project_name, sample_id)) > 0
+          ),
+          UI.go_to_parent_button: gr.update(
+            visible = get_parent(project_name, sample_id) is not None
           )
         }
 
@@ -794,8 +790,11 @@ with gr.Blocks(
 
       preview_args = dict(
         inputs = [ UI.project_name, UI.sibling_sample, UI.preview_just_the_last_n_sec, UI.cut_n_sec_from_end ],
-        outputs = [ UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec, UI.cut_n_sec_from_end ],
-        fn = get_audio_preview,
+        outputs = [ 
+          UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec, UI.cut_n_sec_from_end,
+          UI.go_to_children_button, UI.go_to_parent_button 
+        ],
+        fn = pick_sample,
       )
 
       UI.sibling_sample.change(**preview_args, api_name = 'get-audio-preview')
@@ -821,15 +820,21 @@ with gr.Blocks(
         ).click(
           inputs = [ UI.project_name, UI.sibling_sample, *UI.generation_params ],
           outputs = UI.current_sample,
-          fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(sample_id), *args),
+          fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(project_name, sample_id), *args),
         )
 
-        gr.Button(
-          value = 'View children',
-        ).click(
-          inputs = UI.sibling_sample, 
+        UI.go_to_parent_button.render()
+        UI.go_to_parent_button.click(
+          inputs = [ UI.project_name, UI.sibling_sample ],
           outputs = UI.current_sample,
-          fn = lambda sample_id: sample_id
+          fn = get_parent
+        )
+
+        UI.go_to_children_button.render()
+        UI.go_to_children_button.click(
+          inputs = [ UI.project_name, UI.sibling_sample ], 
+          outputs = UI.current_sample,
+          fn = lambda project_name, sample_id: get_children(project_name, sample_id)[0]
         )
 
         def delete_sample(project_name, sample_id, confirm):
