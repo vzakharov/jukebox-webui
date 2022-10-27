@@ -577,24 +577,6 @@ with gr.Blocks(
 
         return get_children(project_name, get_parent(sample_id))
 
-      def load_sample(project_name, z_filename, n_samples = 1, sample_index = 0):
-
-        global base_path
-
-        z = t.load(f'{base_path}/{project_name}/{z_filename}.z')
-        print(f'Loaded {z_filename}.z: {z}')
-
-        # If z is a list, it's a list of tensors, we only want the last one
-        if isinstance(z, list):
-          z = z[-1]
-          print(f'Using last tensor in list: {z}')
-        
-        # z is of shape (loaded_n_samples, n_tokens). We need to get the sample_index'th sample and repeat it n_samples times
-        z = z[sample_index].repeat(n_samples, 1)
-        print(f'Repeated z[{sample_index}] {n_samples} times: {z}')
-
-        return z
-        
 
       def generate(project_name, parent_sample_id, artist, genre, lyrics, generation_length):
 
@@ -637,12 +619,17 @@ with gr.Blocks(
 
         print(f'Generating {generation_length} seconds for {project_name}...')
 
-        zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
-
         if is_none_ish(parent_sample_id):
+          zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
           print('No parent sample, generating from scratch')
         else:
-          zs[2] = load_sample(project_name, parent_sample_id, n_samples = n_samples)
+          zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
+          print(f'Loaded parent sample {parent_sample_id} of shape {[ z.shape for z in zs ]}')
+          # zs is a list of tensors of torch.Size([loaded_n_samples, n_tokens])
+          # We need to turn it into a list of tensors of torch.Size([n_samples, n_tokens])
+          # We do this by repeating the first sample of each tensor n_samples times
+          zs = [ z[0].repeat(n_samples, 1) for z in zs ]
+          print(f'Converted to shape {[ z.shape for z in zs ]}')
         
         tokens_to_sample = seconds_to_tokens(generation_length)
         sampling_kwargs = dict(
@@ -653,6 +640,9 @@ with gr.Blocks(
         print(f'zs: {[ z.shape for z in zs ]}')
         zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
         print(f'Generated zs of shape {[ z.shape for z in zs ]}')
+
+        wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
+        print(f'Generated wavs of shape {wavs.shape}')
 
         # filenames = write_files(base_path, project_name, zs, wav)
         # print(f'- Files written: {filenames}')
@@ -670,8 +660,8 @@ with gr.Blocks(
           filename = f'{base_path}/{project_name}/{id}'
 
           # zs is a list of 3 tensors, each of shape (n_samples, n_tokens)
-          # To write the z for a single sample at the last level, we need to get the i'th sample from the last tensor
-          z = zs[2][i:i+1]
+          # To write the z for a single sample, we need to take a subarray of each tensor
+          z = [ z[i:i+1] for z in zs ]
 
           t.save(z, f'{filename}.z')
           print(f'Wrote {filename}.z')
@@ -686,11 +676,23 @@ with gr.Blocks(
 
         global base_path, hps
 
-        z = load_sample(project_name, sample_id)
-        wav = vqvae.decode([z], start_level=2).cpu().numpy()
-        # wav is now of shape (1, sample_length, 1), we want (sample_length,)
-        wav = wav[0, :, 0]
-        print(f'Generated audio: {wav.shape}')
+        # If there is a wav file, use that
+        filename = f'{base_path}/{project_name}/{sample_id}'
+
+        if os.path.isfile(f'{filename}.wav'):
+          print(f'Found {filename}.wav')
+          wav = librosa.load(f'{filename}.wav', sr=hps.sr)[0]
+          print(f'Loaded {filename}.wav: {wav.shape}')
+        
+        # Otherwise, generate the audio from the z file
+        else:
+          print(f'No {filename}.wav found, generating from {filename}.z')
+          z = t.load(f'{filename}.z')
+          print(f'Loaded {filename}.z of shape {z[2].shape}')
+          wav = vqvae.decode(z[2:], start_level=2).cpu().numpy()
+          # wav is now of shape (1, sample_length, 1), we want (sample_length,)
+          wav = wav[0, :, 0]
+          print(f'Generated audio: {wav.shape}')
 
         return ( hps.sr, wav )
 
@@ -895,10 +897,12 @@ with gr.Blocks(
             # Load z, find out how many tokens are in n_sec, cut that many tokens from the end, and save z
             filename = f'{base_path}/{project_name}/{sample_id}.z'
             print(f'Loading {filename}...')
-            z = load_sample(project_name, sample_id)
+            z = t.load(filename)
+            print(f'Loaded z, z[2] shape is {z[2].shape}')
             n_tokens = seconds_to_tokens(n_sec)
             print(f'Cutting {n_tokens} tokens from the end')
-            z = z[:, :-n_tokens]
+            z[2] = z[2][:, :-n_tokens]
+            print(f'z[2].shape = {z[2].shape}')
             t.save(z, filename)
             print(f'Saved z to {filename}')
             return 0
