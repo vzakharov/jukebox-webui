@@ -296,7 +296,7 @@ class UI:
 
   generation_params = [ artist, genre, lyrics, n_samples, temperature, generation_length ]
 
-  current_sample = gr.Dropdown(
+  sample_tree = gr.Dropdown(
     label = 'Sample tree',
   )
 
@@ -347,7 +347,7 @@ class UI:
 
   cut_button = gr.Button( 'Cut', visible = False )
 
-  project_settings = [ *generation_params, current_sample, generation_length, preview_just_the_last_n_sec ]
+  project_settings = [ *generation_params, sample_tree, generation_length, preview_just_the_last_n_sec ]
 
   input_names = { input: name for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
 
@@ -381,7 +381,7 @@ with gr.Blocks(
           UI.artist: 'Unknown',
           UI.genre: 'Unknown',
           UI.lyrics: '',
-          UI.current_sample: 'NONE',
+          UI.sample_tree: 'NONE',
           UI.generation_length: 1,
           UI.temperature: 0.98,
           UI.n_samples: 2
@@ -442,9 +442,9 @@ with gr.Blocks(
 
       UI.project_name.change(
         inputs = UI.project_name,
-        outputs = UI.current_sample,
+        outputs = UI.sample_tree,
         fn = lambda project_name: {
-          UI.current_sample: gr.update( choices = get_project_samples(project_name) )
+          UI.sample_tree: gr.update( choices = get_project_samples(project_name) )
         },
         api_name = 'get-project-samples'
       )
@@ -541,7 +541,7 @@ with gr.Blocks(
 
     with gr.Column( scale = 3 ):
 
-      UI.current_sample.render()       
+      UI.sample_tree.render()       
       UI.generate_first_button.render()
       UI.sibling_sample.render()
 
@@ -773,8 +773,8 @@ with gr.Blocks(
           UI.generate_first_button: gr.update( visible = False ),
         }
 
-      UI.current_sample.change(
-        inputs = [ UI.project_name, UI.current_sample ],
+      UI.sample_tree.change(
+        inputs = [ UI.project_name, UI.sample_tree ],
         outputs = [ UI.sibling_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.generate_first_button ],
         fn = refresh_siblings,
         api_name = 'get-siblings'        
@@ -782,8 +782,8 @@ with gr.Blocks(
 
       # When the generate button is clicked, generate and update the child samples
       UI.generate_first_button.click(
-        inputs = [ UI.project_name, UI.current_sample, *UI.generation_params ],
-        outputs = UI.current_sample,
+        inputs = [ UI.project_name, UI.sample_tree, *UI.generation_params ],
+        outputs = UI.sample_tree,
         fn = generate,
         api_name = 'generate',
       )
@@ -811,7 +811,7 @@ with gr.Blocks(
           variant = 'primary',
         ).click(
           inputs =  [ UI.project_name, UI.sibling_sample, *UI.generation_params ],
-          outputs = UI.current_sample,
+          outputs = UI.sample_tree,
           fn = generate,
         )
 
@@ -819,21 +819,21 @@ with gr.Blocks(
           value = 'Try again',          
         ).click(
           inputs = [ UI.project_name, UI.sibling_sample, *UI.generation_params ],
-          outputs = UI.current_sample,
+          outputs = UI.sample_tree,
           fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(project_name, sample_id), *args),
         )
 
         UI.go_to_parent_button.render()
         UI.go_to_parent_button.click(
           inputs = [ UI.project_name, UI.sibling_sample ],
-          outputs = UI.current_sample,
+          outputs = UI.sample_tree,
           fn = get_parent
         )
 
         UI.go_to_children_button.render()
         UI.go_to_children_button.click(
           inputs = [ UI.project_name, UI.sibling_sample ], 
-          outputs = UI.current_sample,
+          outputs = UI.sample_tree,
           fn = lambda project_name, sample_id: get_children(project_name, sample_id)[0]
         )
 
