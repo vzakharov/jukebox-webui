@@ -582,7 +582,7 @@ with gr.Blocks(
 
         print('Generating...')
 
-        n_samples = 1
+        n_samples = 2
         temperature = 0.98
         # The above is to be moved to parameters/the UI
 
@@ -598,9 +598,6 @@ with gr.Blocks(
         if calculated_metas != dict( artist = artist, genre = genre, lyrics = lyrics ):
 
           print(f'Metas have changed, recalculating the model for {artist}, {genre}, {lyrics}')
-
-          n_samples = 1
-          hps.n_samples = n_samples
 
           metas = [dict(
             artist = artist,
@@ -627,7 +624,12 @@ with gr.Blocks(
           print('No parent sample, generating from scratch')
         else:
           zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
-          print(f'Loaded parent sample {parent_sample_id} of shape {zs[2].shape}')
+          print(f'Loaded parent sample {parent_sample_id} of shape {[ z.shape for z in zs ]}')
+          # zs is a list of tensors of torch.Size([loaded_n_samples, n_tokens])
+          # We need to turn it into a list of tensors of torch.Size([n_samples, n_tokens])
+          # We do this by repeating the first sample of each tensor n_samples times
+          zs = [ z[0].repeat(n_samples, 1) for z in zs ]
+          print(f'Converted to shape {[ z.shape for z in zs ]}')
         
         tokens_to_sample = seconds_to_tokens(generation_length)
         sampling_kwargs = dict(
@@ -635,8 +637,9 @@ with gr.Blocks(
           chunk_size=lower_level_chunk_size
         )
 
+        print(f'zs: {[ z.shape for z in zs ]}')
         zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
-        print(f'Generated zs of shape {zs[2].shape}')
+        print(f'Generated zs of shape {[ z.shape for z in zs ]}')
 
         wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
         print(f'Generated wavs of shape {wavs.shape}')
@@ -650,16 +653,18 @@ with gr.Blocks(
         print(f'Existing children for parent {parent_sample_id}: {child_ids}')
         print(f'First new child index: {first_new_child_index}')
 
-        # For each sample, write the z (a subarray of zs) and the wav
+        # For each sample, write the z (a subarray of zs)
         prefix = get_prefix(project_name, parent_sample_id)
         for i in range(n_samples):
           id = f'{prefix}{first_new_child_index + i}'
           filename = f'{base_path}/{project_name}/{id}'
-          t.save(zs, f'{filename}.z')
+
+          # zs is a list of 3 tensors, each of shape (n_samples, n_tokens)
+          # To write the z for a single sample, we need to take a subarray of each tensor
+          z = [ z[i:i+1] for z in zs ]
+
+          t.save(z, f'{filename}.z')
           print(f'Wrote {filename}.z')
-          # TODO: Account for n_samples > 1
-          # librosa.output.write_wav(f'{filename}.wav', wavs[i], hps.sr)
-          # print(f'Wrote {filename}.wav')
           child_ids += [ id ]
 
         return gr.update(
