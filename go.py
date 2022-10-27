@@ -263,15 +263,15 @@ class UI:
 
   generation_params = [ artist, genre, lyrics, n_samples, temperature, generation_length ]
 
-  generation_column = gr.Column( scale = 3 )
-
-  sample_tree = gr.Dropdown(
-    label = 'Sample tree',
-  )
-
   generate_first_button = gr.Button(
     'Generate',
     variant = 'primary'
+  )
+
+  generation_column = gr.Column( scale = 3, visible = False )
+
+  sample_tree = gr.Dropdown(
+    label = 'Sample tree',
   )
 
   picked_sample = gr.Radio(
@@ -451,7 +451,7 @@ def generate(project_name, parent_sample_id, artist, genre, lyrics, n_samples, t
     child_ids += [ id ]
 
   return gr.update(
-    choices = get_project_samples(project_name),
+    choices = get_samples(project_name),
     value = child_ids[-1]
   )
 
@@ -577,7 +577,7 @@ def get_parent(project_name, sample_id):
 def get_prefix(project_name, parent_sample_id):
   return f'{project_name if is_none_ish(parent_sample_id) else parent_sample_id}-'
 
-def get_project_samples(project_name):
+def get_samples(project_name):
 
   choices = []
   for filename in os.listdir(f'{base_path}/{project_name}'):
@@ -588,7 +588,8 @@ def get_project_samples(project_name):
   # Sort by id, in descending order
   choices.sort(reverse = True)
   
-  return [ 'NONE' ] + choices
+  # return [ 'NONE' ] + choices
+  return choices
 
 def get_projects():
   
@@ -646,12 +647,9 @@ def load_project(project_name):
         # Go through all the settings and set the value for settings_out_dict where the key is the element itself
         for key, value in loaded_settings.items():
           if key in UI.inputs_by_name and UI.inputs_by_name[key] in UI.project_settings:
-            print(f'Found setting {key} with value {value}')
             settings_out_dict[getattr(UI, key)] = value
           else:
             print(f'Warning: {key} is not a valid project setting')
-  
-    print('Valid settings:', settings_out_dict)
 
     # Write the last project name to settings.yaml
     with open(f'{base_path}/settings.yaml', 'w') as f:
@@ -662,7 +660,7 @@ def load_project(project_name):
   return {
     UI.create_project_box: gr.update( visible = is_new ),
     UI.settings_box: gr.update( visible = not is_new ),
-    UI.generation_column: gr.update( visible = not is_new ),
+    UI.generation_column: gr.update( visible = not is_new and len(get_samples(project_name)) > 0 ),
     **settings_out_dict
   }
 
@@ -855,9 +853,9 @@ with gr.Blocks(
         inputs = UI.project_name,
         outputs = UI.sample_tree,
         fn = lambda project_name: {
-          UI.sample_tree: gr.update( choices = get_project_samples(project_name) )
+          UI.sample_tree: gr.update( choices = get_samples(project_name) )
         },
-        api_name = 'get-project-samples'
+        api_name = 'get-samples'
       )
 
       UI.create_project_box.render()
@@ -904,10 +902,16 @@ with gr.Blocks(
             fn = save_project
           )
 
+      UI.generate_first_button.render().click(
+        inputs = [ UI.project_name, UI.sample_tree, *UI.generation_params ],
+        outputs = UI.sample_tree,
+        fn = generate,
+        api_name = 'generate',
+      )
+
     with UI.generation_column.render():
 
       UI.sample_tree.render()       
-      UI.generate_first_button.render()
       UI.picked_sample.render()
 
       UI.sample_tree.change(
@@ -915,14 +919,6 @@ with gr.Blocks(
         outputs = [ UI.picked_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.generate_first_button ],
         fn = refresh_siblings,
         api_name = 'get-siblings'        
-      )
-
-      # When the generate button is clicked, generate and update the child samples
-      UI.generate_first_button.click(
-        inputs = [ UI.project_name, UI.sample_tree, *UI.generation_params ],
-        outputs = UI.sample_tree,
-        fn = generate,
-        api_name = 'generate',
       )
 
       preview_args = dict(
