@@ -902,12 +902,12 @@ with gr.Blocks(
             fn = save_project
           )
 
-      UI.generate_first_button.render().click(
-        inputs = [ UI.project_name, UI.sample_tree, *UI.generation_params ],
-        outputs = UI.sample_tree,
-        fn = generate,
-        api_name = 'generate',
-      )
+        UI.generate_first_button.render().click(
+          inputs = [ UI.project_name, UI.sample_tree, *UI.generation_params ],
+          outputs = UI.sample_tree,
+          fn = generate,
+          api_name = 'generate',
+        )
 
     with UI.generation_column.render():
 
