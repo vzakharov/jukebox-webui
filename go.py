@@ -188,38 +188,6 @@ if total_duration != calculated_duration or reload_prior or reload_all:
 if not os.path.isdir(base_path):
   os.makedirs(base_path)
 
-### Projects
-
-def get_projects():
-  
-  global base_path
-
-  # print(f'Getting project list for {base_path}...')
-
-  project_names = []
-  for folder in os.listdir(base_path):
-    if os.path.isdir(base_path+'/'+folder) and not folder.startswith('_'):
-      project_names.append(folder)
-  # Sort project names alphabetically
-  project_names.sort()
-
-  print(f'Found {len(project_names)} projects: {project_names}')
-
-  # Add "CREATE NEW" option in the beginning
-  return ['CREATE NEW'] + project_names
-
-def get_meta(what):
-  items = []
-  # print(f'Getting {what} list...')
-  with urllib.request.urlopen(f'https://raw.githubusercontent.com/openai/jukebox/master/jukebox/data/ids/v2_{what}_ids.txt') as f:
-    for line in f:
-      item = line.decode('utf-8').split(';')[0]
-      item = item.replace('_', ' ').title()
-      items.append(item)
-  items.sort()
-  print(f'Loaded {len(items)} {what}s.')
-  return items
-
 try:
   calculated_metas
   print('Using existing calculated_metas')
@@ -347,6 +315,502 @@ class UI:
 
   inputs_by_name = { name: input for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
 
+def convert_name(name):
+  return re.sub(r'[^a-z0-9]+', '-', name.lower())
+
+def create_project(name):
+
+  global base_path
+
+  name = convert_name(name)
+
+  print(f'Creating project {name}...')
+
+  os.makedirs(f'{base_path}/{name}')
+
+  print(f'Project {name} created!')
+
+  return gr.update(
+    choices = get_projects(),
+    value = name
+  )
+
+def delete_sample(project_name, sample_id, confirm):
+
+  if not confirm:
+    return {}
+  
+  # New child sample is the one that goes after the deleted sample
+  siblings = get_siblings(project_name, sample_id)
+  new_sibling_to_use = siblings[ siblings.index(sample_id) + 1 ] if sample_id != siblings[-1] else None
+
+  # Remove the to-be-deleted sample from the list of child samples
+  siblings.remove(sample_id)
+
+  # Delete the sample
+  filename = f'{base_path}/{project_name}/{sample_id}'
+
+  for extension in [ '.z', '.wav' ]:
+    if os.path.isfile(f'{filename}{extension}'):
+      os.remove(f'{filename}{extension}')
+      print(f'Deleted {filename}{extension}')
+    else:
+      print(f'No {filename}{extension} found')
+  return {
+    UI.picked_sample: gr.update(
+      choices = siblings,
+      value = new_sibling_to_use,
+    ),
+    UI.sample_box: gr.update(
+      visible = len(siblings) > 0
+    ),            
+  }
+
+def generate(project_name, parent_sample_id, artist, genre, lyrics, n_samples, temperature, generation_length):
+
+  print('Generating...')
+
+  global total_duration
+  global calculated_metas
+  global hps, raw_to_tokens, chunk_size, lower_batch_size, lower_level_chunk_size
+  global top_prior, device
+  global metas, labels
+
+  hps.n_samples = n_samples
+
+  # If metas have changed, recalculate the metas
+  if calculated_metas != dict( artist = artist, genre = genre, lyrics = lyrics ):
+
+    print(f'Metas have changed, recalculating the model for {artist}, {genre}, {lyrics}')
+
+    metas = [dict(
+      artist = artist,
+      genre = genre,
+      total_length = hps.sample_length,
+      offset = 0,
+      lyrics = lyrics,
+    )] * n_samples
+
+    labels = top_prior.labeller.get_batch_labels(metas, device)
+
+    calculated_metas = {
+      'artist': artist,
+      'genre': genre,
+      'lyrics': lyrics
+    }
+
+    print('Done recalculating the model')
+
+  print(f'Generating {generation_length} seconds for {project_name}...')
+
+  if is_none_ish(parent_sample_id):
+    zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
+    print('No parent sample, generating from scratch')
+  else:
+    zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
+    print(f'Loaded parent sample {parent_sample_id} of shape {[ z.shape for z in zs ]}')
+    # zs is a list of tensors of torch.Size([loaded_n_samples, n_tokens])
+    # We need to turn it into a list of tensors of torch.Size([n_samples, n_tokens])
+    # We do this by repeating the first sample of each tensor n_samples times
+    zs = [ z[0].repeat(n_samples, 1) for z in zs ]
+    print(f'Converted to shape {[ z.shape for z in zs ]}')
+  
+  tokens_to_sample = seconds_to_tokens(generation_length)
+  sampling_kwargs = dict(
+    temp=temperature, fp16=True, max_batch_size=lower_batch_size,
+    chunk_size=lower_level_chunk_size
+  )
+
+  print(f'zs: {[ z.shape for z in zs ]}')
+  zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
+  print(f'Generated zs of shape {[ z.shape for z in zs ]}')
+
+  wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
+  print(f'Generated wavs of shape {wavs.shape}')
+
+  # filenames = write_files(base_path, project_name, zs, wav)
+  # print(f'- Files written: {filenames}')
+  
+  child_ids = get_children(project_name, parent_sample_id)
+  child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
+  first_new_child_index = max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
+  print(f'Existing children for parent {parent_sample_id}: {child_ids}')
+  print(f'First new child index: {first_new_child_index}')
+
+  # For each sample, write the z (a subarray of zs)
+  prefix = get_prefix(project_name, parent_sample_id)
+  for i in range(n_samples):
+    id = f'{prefix}{first_new_child_index + i}'
+    filename = f'{base_path}/{project_name}/{id}'
+
+    # zs is a list of 3 tensors, each of shape (n_samples, n_tokens)
+    # To write the z for a single sample, we need to take a subarray of each tensor
+    z = [ z[i:i+1] for z in zs ]
+
+    t.save(z, f'{filename}.z')
+    print(f'Wrote {filename}.z')
+    child_ids += [ id ]
+
+  return gr.update(
+    choices = get_project_samples(project_name),
+    value = child_ids[-1]
+  )
+
+def get_audio(project_name, sample_id):
+
+  global base_path, hps
+
+  filename = f'{base_path}/{project_name}/{sample_id}'
+
+  print(f'Loading {filename}.z')
+  z = t.load(f'{filename}.z')
+  wav = vqvae.decode(z[2:], start_level=2).cpu().numpy()
+  # wav is now of shape (1, sample_length, 1), we want (sample_length,)
+  wav = wav[0, :, 0]
+  print(f'Generated audio: {wav.shape}')
+
+  return ( hps.sr, wav )
+
+def get_children(project_name, parent_sample_id):
+
+  global base_path
+
+  prefix = get_prefix(project_name, parent_sample_id)
+  child_ids = []
+  for filename in os.listdir(f'{base_path}/{project_name}'):
+    match = re.match(f'{prefix}(\d+)\\.zs?', filename)
+    if match:
+      child_ids += [ filename.split('.')[0] ]
+    
+  custom_parents = get_custom_parents(project_name)
+
+  for sample_id in custom_parents:
+    if custom_parents[sample_id] == parent_sample_id:
+      child_ids += [ sample_id ]        
+
+  print(f'Children of {parent_sample_id}: {child_ids}')
+
+  return child_ids
+
+def get_custom_parents(project_name):
+
+  global base_path, custom_parents
+  
+  if not custom_parents or custom_parents['project_name'] != project_name:
+    print('Loading custom parents...')
+    custom_parents = {}
+    filename = f'{base_path}/{project_name}/{project_name}-parents.yaml'
+    if os.path.exists(filename):
+      print(f'Found {filename}')
+      with open(filename) as f:
+        loaded_dict = yaml.load(f, Loader=yaml.FullLoader)
+        print(f'Loaded as {loaded_dict}')
+        # Add project_name to the beginning of every key and value in the dictionary
+        custom_parents = { f'{project_name}-{k}': f'{project_name}-{v}' for k, v in loaded_dict.items() }
+
+    custom_parents['project_name'] = project_name
+    
+    print(f'Custom parents: {custom_parents}')
+
+  return custom_parents
+
+def get_last_project():
+
+  print('Getting last project...')
+
+  if len(UI.project_name.choices) == 1:
+    return 'CREATE NEW'
+
+  elif os.path.isfile(f'{base_path}/settings.yaml'):
+    with open(f'{base_path}/settings.yaml', 'r') as f:
+      settings = yaml.load(f, Loader=yaml.FullLoader)
+      print(f'Loaded settings: {settings}')
+      if 'last_project' in settings:
+        print(f'Last project: {settings["last_project"]}')
+        return settings['last_project']
+      else:
+        print('No last project found.')
+        return ''
+
+def get_meta(what):
+  items = []
+  # print(f'Getting {what} list...')
+  with urllib.request.urlopen(f'https://raw.githubusercontent.com/openai/jukebox/master/jukebox/data/ids/v2_{what}_ids.txt') as f:
+    for line in f:
+      item = line.decode('utf-8').split(';')[0]
+      item = item.replace('_', ' ').title()
+      items.append(item)
+  items.sort()
+  print(f'Loaded {len(items)} {what}s.')
+  return items
+
+def get_parent(project_name, sample_id):
+
+  global base_path
+  
+  custom_parents = get_custom_parents(project_name)
+
+  if sample_id in custom_parents:
+    return custom_parents[sample_id]
+
+  # Remove the project name and first dash from the sample id
+  path = sample_id[ len(project_name) + 1: ].split('-')
+  parent_sample_id = '-'.join([ project_name, *path[:-1] ]) if len(path) > 1 else None
+  print(f'Parent of {sample_id}: {parent_sample_id}')
+  return parent_sample_id
+
+def get_prefix(project_name, parent_sample_id):
+  return f'{project_name if is_none_ish(parent_sample_id) else parent_sample_id}-'
+
+def get_project_samples(project_name):
+
+  choices = []
+  for filename in os.listdir(f'{base_path}/{project_name}'):
+    if re.match(r'.*\.zs?$', filename):
+      id = filename.split('.')[0]
+      choices += [ id ]
+  
+  # Sort by id, in descending order
+  choices.sort(reverse = True)
+  
+  return [ 'NONE' ] + choices
+
+def get_projects():
+  
+  global base_path
+
+  # print(f'Getting project list for {base_path}...')
+
+  project_names = []
+  for folder in os.listdir(base_path):
+    if os.path.isdir(base_path+'/'+folder) and not folder.startswith('_'):
+      project_names.append(folder)
+  # Sort project names alphabetically
+  project_names.sort()
+
+  print(f'Found {len(project_names)} projects: {project_names}')
+
+  # Add "CREATE NEW" option in the beginning
+  return ['CREATE NEW'] + project_names
+
+def get_siblings(project_name, sample_id):
+
+  return get_children(project_name, get_parent(project_name, sample_id))
+
+def is_none_ish(string):
+  return not string or string == 'NONE'
+
+def load_project(project_name):
+
+  global base_path, loaded_settings
+
+  is_new = project_name == 'CREATE NEW'
+
+  # Start with default values for project settings
+  settings_out_dict = {
+    UI.artist: 'Unknown',
+    UI.genre: 'Unknown',
+    UI.lyrics: '',
+    UI.sample_tree: 'NONE',
+    UI.generation_length: 1,
+    UI.temperature: 0.98,
+    UI.n_samples: 2
+  }
+
+  # If not new, load the settings from settings.yaml in the project folder, if it exists
+  if not is_new:
+
+    print(f'Loading settings for {project_name}...')
+
+    settings_path = f'{base_path}/{project_name}/{project_name}.yaml'
+    if os.path.isfile(settings_path):
+      with open(settings_path, 'r') as f:
+        loaded_settings = yaml.load(f, Loader=yaml.FullLoader)
+        print(f'Loaded settings for {project_name}: {loaded_settings}')
+
+        # Go through all the settings and set the value for settings_out_dict where the key is the element itself
+        for key, value in loaded_settings.items():
+          if key in UI.inputs_by_name and UI.inputs_by_name[key] in UI.project_settings:
+            print(f'Found setting {key} with value {value}')
+            settings_out_dict[getattr(UI, key)] = value
+          else:
+            print(f'Warning: {key} is not a valid project setting')
+  
+    print('Valid settings:', settings_out_dict)
+
+    # Write the last project name to settings.yaml
+    with open(f'{base_path}/settings.yaml', 'w') as f:
+      print(f'Saving {project_name} as last project...')
+      yaml.dump({'last_project': project_name}, f)
+      print('Saved to settings.yaml')
+
+  return {
+    UI.create_project_box: gr.update( visible = is_new ),
+    UI.project_box: gr.update( visible = not is_new and project_name != '' ),
+    **settings_out_dict
+  }
+
+def pick_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec):
+
+  audio = get_audio(project_name, sample_id)
+  wav = audio[1]
+
+  # If trim_to_n_sec is set, trim the audio to that length
+  if trim_to_n_sec:
+    print(f'Trimming to {trim_to_n_sec} seconds')
+    wav = wav[ :int( trim_to_n_sec * hps.sr ) ]
+  
+  # If the preview_just_the_last_n_sec is set, only show the last n seconds
+  if preview_just_the_last_n_sec:
+    print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
+    wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
+
+  # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
+  # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
+  x = np.arange(0, len(wav)) / hps.sr
+  # Add total length in seconds minus the preview length to the x values
+  if preview_just_the_last_n_sec:
+    x += ( trim_to_n_sec or len(audio[1]) / hps.sr ) - preview_just_the_last_n_sec
+  y = wav
+  print(f'Plotting {len(x)} points from {x[0]} to {x[-1]} seconds')
+
+  figure = plt.figure()
+  # Set aspect ratio to 10:1
+  figure.set_size_inches(20, 2)
+
+  # Remove y axis; make x axis go through y=0          
+  ax = plt.gca()
+  ax.spines['bottom'].set_position('zero')
+  ax.spines['left'].set_visible(False)
+  ax.spines['right'].set_visible(False)
+  ax.spines['top'].set_visible(False)
+  # Set minor x ticks every 0.1 seconds
+  ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.1))
+  # Move x axis to the foreground
+  ax.set_axisbelow(False)
+
+  plt.plot(x, y)
+  plt.show()        
+
+  return {
+    UI.generated_audio: ( audio[0], wav ),
+    UI.audio_waveform: figure,
+    UI.go_to_children_button: gr.update(
+      visible = len(get_children(project_name, sample_id)) > 0
+    ),
+    UI.go_to_parent_button: gr.update(
+      visible = get_parent(project_name, sample_id) is not None
+    )
+  }
+
+def refresh_siblings(project_name, sample_id):
+  
+  if is_none_ish(sample_id):
+    return {
+      UI.picked_sample: gr.update( visible = False ),
+      UI.sample_box: gr.update( visible = False ),
+      UI.generate_first_button: gr.update( visible = True ),
+    }
+
+  print(f'Changing current sample to {sample_id}...')
+  siblings = get_siblings(project_name, sample_id)
+  return {
+    UI.picked_sample: gr.update(
+      choices = siblings,
+      value = sample_id,
+      visible = len(siblings) > 1
+    ),
+    UI.sample_box: gr.update( visible = True ),
+    UI.generate_first_button: gr.update( visible = False ),
+  }
+
+def rename_sample(project_name, old_sample_id, new_sample_id):
+
+  if not re.match(r'^[a-zA-Z0-9-]+$', new_sample_id):
+    raise ValueError('Sample ID must be alphanumeric and dashes only')
+
+  new_sample_id = f'{project_name}-{new_sample_id}'
+
+  print(f'Renaming {old_sample_id} to {new_sample_id}')
+
+  custom_parents = get_custom_parents(project_name)
+  print(f'Custom parents: {custom_parents}')
+  custom_parents[new_sample_id] = get_parent(project_name, old_sample_id)
+  print(f'Added {new_sample_id} -> {custom_parents[new_sample_id]} to custom parents')
+  if old_sample_id in custom_parents:
+    del custom_parents[old_sample_id]
+    print(f'Removed {old_sample_id} from custom parents')
+
+  # Find all samples that have this sample as a custom parent and update them
+  for child, parent in custom_parents.items():
+    if parent == old_sample_id:
+      custom_parents[child] = new_sample_id
+      print(f'Updated {child} -> {new_sample_id} in custom parents')
+  
+  print(f'Final custom parents: {custom_parents}')
+  
+  # Save the new custom parents
+  with open(f'{base_path}/{project_name}/{project_name}-parents.yaml', 'w') as f:
+    # Dump everything but the "project_name" key and remove the "project_name-" prefix
+    custom_parents_to_save = {
+      k[len(project_name)+1:]: v[len(project_name)+1:] for k, v in custom_parents.items() if k != 'project_name'
+    }
+    print(f'Writing: {custom_parents_to_save}')
+    yaml.dump(custom_parents_to_save, f)
+    print('Done.')
+
+  # Find all files in the project directory that start with the old sample ID and rename them
+  for filename in os.listdir(f'{base_path}/{project_name}'):
+    if filename.startswith(old_sample_id):
+      new_filename = filename.replace(old_sample_id, new_sample_id)
+      print(f'Renaming {filename} to {new_filename}')
+      os.rename(f'{base_path}/{project_name}/{filename}', f'{base_path}/{project_name}/{new_filename}')
+
+def save_project(project_name, *project_input_values):
+
+  print(f'Saving settings for {project_name}...')
+  print(f'Project input values: {project_input_values}')
+
+  # Go through all UI attributes and add the ones that are in the project settings to a dictionary
+  settings = {}
+
+  for i in range(len(UI.project_settings)):
+    settings[UI.input_names[UI.project_settings[i]]] = project_input_values[i]
+  
+  print(f'Settings: {settings}')
+
+  # If the settings are different from the loaded settings, save them to the project folder
+
+  if settings != loaded_settings:
+
+    with open(f'{base_path}/{project_name}/{project_name}.yaml', 'w') as f:
+      yaml.dump(settings, f)
+      print(f'Saved settings to {base_path}/{project_name}/{project_name}.yaml')
+  
+  else:
+    print('Settings are the same as loaded settings, not saving.')
+
+def seconds_to_tokens(sec):
+
+  global hps, raw_to_tokens, chunk_size
+
+  tokens = sec * hps.sr // raw_to_tokens
+  tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
+  return int(tokens)
+
+def trim(project_name, sample_id, n_sec):
+
+  filename = f'{base_path}/{project_name}/{sample_id}.z'
+  print(f'Loading {filename}...')
+  z = t.load(filename)
+  print(f'Loaded z, z[2] shape is {z[2].shape}')
+  n_tokens = seconds_to_tokens(n_sec)
+  print(f'Trimming to {n_tokens} tokens')
+  z[2] = z[2][:, :n_tokens]
+  print(f'z[2].shape = {z[2].shape}')
+  t.save(z, filename)
+  print(f'Saved z to {filename}')
+  return 0
 
 with gr.Blocks(
   css = """
@@ -363,70 +827,7 @@ with gr.Blocks(
     with gr.Column( scale = 1 ):
 
       UI.project_name.render()
-
-      def load_project(project_name):
-
-        global base_path, loaded_settings
-
-        is_new = project_name == 'CREATE NEW'
-
-        # Start with default values for project settings
-        settings_out_dict = {
-          UI.artist: 'Unknown',
-          UI.genre: 'Unknown',
-          UI.lyrics: '',
-          UI.sample_tree: 'NONE',
-          UI.generation_length: 1,
-          UI.temperature: 0.98,
-          UI.n_samples: 2
-        }
-
-        # If not new, load the settings from settings.yaml in the project folder, if it exists
-        if not is_new:
-
-          print(f'Loading settings for {project_name}...')
-
-          settings_path = f'{base_path}/{project_name}/{project_name}.yaml'
-          if os.path.isfile(settings_path):
-            with open(settings_path, 'r') as f:
-              loaded_settings = yaml.load(f, Loader=yaml.FullLoader)
-              print(f'Loaded settings for {project_name}: {loaded_settings}')
-
-              # Go through all the settings and set the value for settings_out_dict where the key is the element itself
-              for key, value in loaded_settings.items():
-                if key in UI.inputs_by_name and UI.inputs_by_name[key] in UI.project_settings:
-                  print(f'Found setting {key} with value {value}')
-                  settings_out_dict[getattr(UI, key)] = value
-                else:
-                  print(f'Warning: {key} is not a valid project setting')
-        
-          print('Valid settings:', settings_out_dict)
-
-          # Write the last project name to settings.yaml
-          with open(f'{base_path}/settings.yaml', 'w') as f:
-            print(f'Saving {project_name} as last project...')
-            yaml.dump({'last_project': project_name}, f)
-            print('Saved to settings.yaml')
-
-        return {
-          UI.create_project_box: gr.update( visible = is_new ),
-          UI.project_box: gr.update( visible = not is_new and project_name != '' ),
-          **settings_out_dict
-        }
-      
-      def get_project_samples(project_name):
-
-        choices = []
-        for filename in os.listdir(f'{base_path}/{project_name}'):
-          if re.match(r'.*\.zs?$', filename):
-            id = filename.split('.')[0]
-            choices += [ id ]
-        
-        # Sort by id, in descending order
-        choices.sort(reverse = True)
-        
-        return [ 'NONE' ] + choices
-      
+ 
       UI.project_name.change(
         inputs = UI.project_name,
         outputs = [ UI.create_project_box, UI.project_box, *UI.project_settings ],
@@ -443,39 +844,17 @@ with gr.Blocks(
         api_name = 'get-project-samples'
       )
 
-
       UI.create_project_box.render()
 
       with UI.create_project_box:
 
         UI.new_project_name.render()
 
-        # Wehn the new project name is unfocused, convert it to lowercase and replace non-alphanumeric characters with dashes
-        def convert_name(name):
-          return re.sub(r'[^a-z0-9]+', '-', name.lower())
-
         UI.new_project_name.blur(
           inputs = UI.new_project_name,
           outputs = UI.new_project_name,
           fn = convert_name,
         )
-
-        def create_project(name):
-
-          global base_path
-
-          name = convert_name(name)
-
-          print(f'Creating project {name}...')
-
-          os.makedirs(f'{base_path}/{name}')
-
-          print(f'Project {name} created!')
-
-          return gr.update(
-            choices = get_projects(),
-            value = name
-          )
 
         # When a project is created, create a subfolder for it and update the project list.
         create_args = dict(
@@ -490,30 +869,6 @@ with gr.Blocks(
       UI.project_box.render()
 
       with UI.project_box:
-
-        def save_project(project_name, *project_input_values):
-
-          print(f'Saving settings for {project_name}...')
-          print(f'Project input values: {project_input_values}')
-
-          # Go through all UI attributes and add the ones that are in the project settings to a dictionary
-          settings = {}
-
-          for i in range(len(UI.project_settings)):
-            settings[UI.input_names[UI.project_settings[i]]] = project_input_values[i]
-          
-          print(f'Settings: {settings}')
-
-          # If the settings are different from the loaded settings, save them to the project folder
-
-          if settings != loaded_settings:
-
-            with open(f'{base_path}/{project_name}/{project_name}.yaml', 'w') as f:
-              yaml.dump(settings, f)
-              print(f'Saved settings to {base_path}/{project_name}/{project_name}.yaml')
-          
-          else:
-            print('Settings are the same as loaded settings, not saving.')
 
         for component in UI.generation_params:
           component.render()
@@ -538,262 +893,6 @@ with gr.Blocks(
       UI.sample_tree.render()       
       UI.generate_first_button.render()
       UI.picked_sample.render()
-
-      def seconds_to_tokens(sec):
-
-        global hps, raw_to_tokens, chunk_size
-
-        tokens = sec * hps.sr // raw_to_tokens
-        tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
-        return int(tokens)
-
-      def is_none_ish(string):
-        return not string or string == 'NONE'
-
-      def get_prefix(project_name, parent_sample_id):
-        return f'{project_name if is_none_ish(parent_sample_id) else parent_sample_id}-'
-
-      def get_custom_parents(project_name):
-
-        global base_path, custom_parents
-        
-        if not custom_parents or custom_parents['project_name'] != project_name:
-          print('Loading custom parents...')
-          custom_parents = {}
-          filename = f'{base_path}/{project_name}/{project_name}-parents.yaml'
-          if os.path.exists(filename):
-            print(f'Found {filename}')
-            with open(filename) as f:
-              loaded_dict = yaml.load(f, Loader=yaml.FullLoader)
-              print(f'Loaded as {loaded_dict}')
-              # Add project_name to the beginning of every key and value in the dictionary
-              custom_parents = { f'{project_name}-{k}': f'{project_name}-{v}' for k, v in loaded_dict.items() }
-
-          custom_parents['project_name'] = project_name
-          
-          print(f'Custom parents: {custom_parents}')
-
-        return custom_parents
-
-      def get_parent(project_name, sample_id):
-
-        global base_path
-        
-        custom_parents = get_custom_parents(project_name)
-
-        if sample_id in custom_parents:
-          return custom_parents[sample_id]
-
-        # Remove the project name and first dash from the sample id
-        path = sample_id[ len(project_name) + 1: ].split('-')
-        parent_sample_id = '-'.join([ project_name, *path[:-1] ]) if len(path) > 1 else None
-        print(f'Parent of {sample_id}: {parent_sample_id}')
-        return parent_sample_id
-
-      def get_children(project_name, parent_sample_id):
-
-        global base_path
-
-        prefix = get_prefix(project_name, parent_sample_id)
-        child_ids = []
-        for filename in os.listdir(f'{base_path}/{project_name}'):
-          match = re.match(f'{prefix}(\d+)\\.zs?', filename)
-          if match:
-            child_ids += [ filename.split('.')[0] ]
-          
-        custom_parents = get_custom_parents(project_name)
-
-        for sample_id in custom_parents:
-          if custom_parents[sample_id] == parent_sample_id:
-            child_ids += [ sample_id ]        
-
-        print(f'Children of {parent_sample_id}: {child_ids}')
-
-        return child_ids
-
-      def get_siblings(project_name, sample_id):
-
-        return get_children(project_name, get_parent(project_name, sample_id))
-
-
-      def generate(project_name, parent_sample_id, artist, genre, lyrics, n_samples, temperature, generation_length):
-
-        print('Generating...')
-
-        global total_duration
-        global calculated_metas
-        global hps, raw_to_tokens, chunk_size, lower_batch_size, lower_level_chunk_size
-        global top_prior, device
-        global metas, labels
-
-        hps.n_samples = n_samples
-
-        # If metas have changed, recalculate the metas
-        if calculated_metas != dict( artist = artist, genre = genre, lyrics = lyrics ):
-
-          print(f'Metas have changed, recalculating the model for {artist}, {genre}, {lyrics}')
-
-          metas = [dict(
-            artist = artist,
-            genre = genre,
-            total_length = hps.sample_length,
-            offset = 0,
-            lyrics = lyrics,
-          )] * n_samples
-
-          labels = top_prior.labeller.get_batch_labels(metas, device)
-
-          calculated_metas = {
-            'artist': artist,
-            'genre': genre,
-            'lyrics': lyrics
-          }
-
-          print('Done recalculating the model')
-
-        print(f'Generating {generation_length} seconds for {project_name}...')
-
-        if is_none_ish(parent_sample_id):
-          zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
-          print('No parent sample, generating from scratch')
-        else:
-          zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
-          print(f'Loaded parent sample {parent_sample_id} of shape {[ z.shape for z in zs ]}')
-          # zs is a list of tensors of torch.Size([loaded_n_samples, n_tokens])
-          # We need to turn it into a list of tensors of torch.Size([n_samples, n_tokens])
-          # We do this by repeating the first sample of each tensor n_samples times
-          zs = [ z[0].repeat(n_samples, 1) for z in zs ]
-          print(f'Converted to shape {[ z.shape for z in zs ]}')
-        
-        tokens_to_sample = seconds_to_tokens(generation_length)
-        sampling_kwargs = dict(
-          temp=temperature, fp16=True, max_batch_size=lower_batch_size,
-          chunk_size=lower_level_chunk_size
-        )
-
-        print(f'zs: {[ z.shape for z in zs ]}')
-        zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
-        print(f'Generated zs of shape {[ z.shape for z in zs ]}')
-
-        wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
-        print(f'Generated wavs of shape {wavs.shape}')
-
-        # filenames = write_files(base_path, project_name, zs, wav)
-        # print(f'- Files written: {filenames}')
-        
-        child_ids = get_children(project_name, parent_sample_id)
-        child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
-        first_new_child_index = max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
-        print(f'Existing children for parent {parent_sample_id}: {child_ids}')
-        print(f'First new child index: {first_new_child_index}')
-
-        # For each sample, write the z (a subarray of zs)
-        prefix = get_prefix(project_name, parent_sample_id)
-        for i in range(n_samples):
-          id = f'{prefix}{first_new_child_index + i}'
-          filename = f'{base_path}/{project_name}/{id}'
-
-          # zs is a list of 3 tensors, each of shape (n_samples, n_tokens)
-          # To write the z for a single sample, we need to take a subarray of each tensor
-          z = [ z[i:i+1] for z in zs ]
-
-          t.save(z, f'{filename}.z')
-          print(f'Wrote {filename}.z')
-          child_ids += [ id ]
-
-        return gr.update(
-          choices = get_project_samples(project_name),
-          value = child_ids[-1]
-        )
-
-      def get_audio(project_name, sample_id):
-
-        global base_path, hps
-
-        filename = f'{base_path}/{project_name}/{sample_id}'
-
-        print(f'Loading {filename}.z')
-        z = t.load(f'{filename}.z')
-        wav = vqvae.decode(z[2:], start_level=2).cpu().numpy()
-        # wav is now of shape (1, sample_length, 1), we want (sample_length,)
-        wav = wav[0, :, 0]
-        print(f'Generated audio: {wav.shape}')
-
-        return ( hps.sr, wav )
-
-      def pick_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec):
-
-        audio = get_audio(project_name, sample_id)
-        wav = audio[1]
-
-        # If trim_to_n_sec is set, trim the audio to that length
-        if trim_to_n_sec:
-          print(f'Trimming to {trim_to_n_sec} seconds')
-          wav = wav[ :int( trim_to_n_sec * hps.sr ) ]
-        
-        # If the preview_just_the_last_n_sec is set, only show the last n seconds
-        if preview_just_the_last_n_sec:
-          print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
-          wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
-
-        # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
-        # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
-        x = np.arange(0, len(wav)) / hps.sr
-        # Add total length in seconds minus the preview length to the x values
-        if preview_just_the_last_n_sec:
-          x += ( trim_to_n_sec or len(audio[1]) / hps.sr ) - preview_just_the_last_n_sec
-        y = wav
-        print(f'Plotting {len(x)} points from {x[0]} to {x[-1]} seconds')
-
-        figure = plt.figure()
-        # Set aspect ratio to 10:1
-        figure.set_size_inches(20, 2)
-
-        # Remove y axis; make x axis go through y=0          
-        ax = plt.gca()
-        ax.spines['bottom'].set_position('zero')
-        ax.spines['left'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['top'].set_visible(False)
-        # Set minor x ticks every 0.1 seconds
-        ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.1))
-        # Move x axis to the foreground
-        ax.set_axisbelow(False)
-
-        plt.plot(x, y)
-        plt.show()        
-
-        return {
-          UI.generated_audio: ( audio[0], wav ),
-          UI.audio_waveform: figure,
-          UI.go_to_children_button: gr.update(
-            visible = len(get_children(project_name, sample_id)) > 0
-          ),
-          UI.go_to_parent_button: gr.update(
-            visible = get_parent(project_name, sample_id) is not None
-          )
-        }
-
-      def refresh_siblings(project_name, sample_id):
-        
-        if is_none_ish(sample_id):
-          return {
-            UI.picked_sample: gr.update( visible = False ),
-            UI.sample_box: gr.update( visible = False ),
-            UI.generate_first_button: gr.update( visible = True ),
-          }
-
-        print(f'Changing current sample to {sample_id}...')
-        siblings = get_siblings(project_name, sample_id)
-        return {
-          UI.picked_sample: gr.update(
-            choices = siblings,
-            value = sample_id,
-            visible = len(siblings) > 1
-          ),
-          UI.sample_box: gr.update( visible = True ),
-          UI.generate_first_button: gr.update( visible = False ),
-        }
 
       UI.sample_tree.change(
         inputs = [ UI.project_name, UI.sample_tree ],
@@ -856,37 +955,6 @@ with gr.Blocks(
           fn = lambda project_name, sample_id: get_children(project_name, sample_id)[0]
         )
 
-        def delete_sample(project_name, sample_id, confirm):
-
-          if not confirm:
-            return {}
-          
-          # New child sample is the one that goes after the deleted sample
-          siblings = get_siblings(project_name, sample_id)
-          new_sibling_to_use = siblings[ siblings.index(sample_id) + 1 ] if sample_id != siblings[-1] else None
-
-          # Remove the to-be-deleted sample from the list of child samples
-          siblings.remove(sample_id)
-
-          # Delete the sample
-          filename = f'{base_path}/{project_name}/{sample_id}'
-
-          for extension in [ '.z', '.wav' ]:
-            if os.path.isfile(f'{filename}{extension}'):
-              os.remove(f'{filename}{extension}')
-              print(f'Deleted {filename}{extension}')
-            else:
-              print(f'No {filename}{extension} found')
-          return {
-            UI.picked_sample: gr.update(
-              choices = siblings,
-              value = new_sibling_to_use,
-            ),
-            UI.sample_box: gr.update(
-              visible = len(siblings) > 0
-            ),            
-          }
-        
         gr.Button('Delete').click(
           inputs = [ UI.project_name, UI.picked_sample, gr.Checkbox(visible=False) ],
           outputs = [ UI.picked_sample, UI.sample_box ],
@@ -922,20 +990,6 @@ with gr.Blocks(
 
             UI.trim_button.render()
 
-            def trim(project_name, sample_id, n_sec):
-
-              filename = f'{base_path}/{project_name}/{sample_id}.z'
-              print(f'Loading {filename}...')
-              z = t.load(filename)
-              print(f'Loaded z, z[2] shape is {z[2].shape}')
-              n_tokens = seconds_to_tokens(n_sec)
-              print(f'Trimming to {n_tokens} tokens')
-              z[2] = z[2][:, :n_tokens]
-              print(f'z[2].shape = {z[2].shape}')
-              t.save(z, filename)
-              print(f'Saved z to {filename}')
-              return 0
-            
             UI.trim_button.click(
               inputs = [ UI.project_name, UI.picked_sample, UI.trim_to_n_sec ],
               outputs = UI.trim_to_n_sec,
@@ -950,74 +1004,12 @@ with gr.Blocks(
               placeholder = 'Alphanumeric and dashes only'
             )
 
-            def rename_sample(project_name, old_sample_id, new_sample_id):
-
-              if not re.match(r'^[a-zA-Z0-9-]+$', new_sample_id):
-                raise ValueError('Sample ID must be alphanumeric and dashes only')
-
-              new_sample_id = f'{project_name}-{new_sample_id}'
-
-              print(f'Renaming {old_sample_id} to {new_sample_id}')
-
-              custom_parents = get_custom_parents(project_name)
-              print(f'Custom parents: {custom_parents}')
-              custom_parents[new_sample_id] = get_parent(project_name, old_sample_id)
-              print(f'Added {new_sample_id} -> {custom_parents[new_sample_id]} to custom parents')
-              if old_sample_id in custom_parents:
-                del custom_parents[old_sample_id]
-                print(f'Removed {old_sample_id} from custom parents')
-
-              # Find all samples that have this sample as a custom parent and update them
-              for child, parent in custom_parents.items():
-                if parent == old_sample_id:
-                  custom_parents[child] = new_sample_id
-                  print(f'Updated {child} -> {new_sample_id} in custom parents')
-              
-              print(f'Final custom parents: {custom_parents}')
-              
-              # Save the new custom parents
-              with open(f'{base_path}/{project_name}/{project_name}-parents.yaml', 'w') as f:
-                # Dump everything but the "project_name" key and remove the "project_name-" prefix
-                custom_parents_to_save = {
-                  k[len(project_name)+1:]: v[len(project_name)+1:] for k, v in custom_parents.items() if k != 'project_name'
-                }
-                print(f'Writing: {custom_parents_to_save}')
-                yaml.dump(custom_parents_to_save, f)
-                print('Done.')
-
-              # Find all files in the project directory that start with the old sample ID and rename them
-              for filename in os.listdir(f'{base_path}/{project_name}'):
-                if filename.startswith(old_sample_id):
-                  new_filename = filename.replace(old_sample_id, new_sample_id)
-                  print(f'Renaming {filename} to {new_filename}')
-                  os.rename(f'{base_path}/{project_name}/{filename}', f'{base_path}/{project_name}/{new_filename}')
-
             gr.Button('Rename').click(
               inputs = [ UI.project_name, UI.picked_sample, new_sample_id ],
               outputs = UI.sample_tree,
               fn = rename_sample,
               api_name = 'rename-sample'
             )
-
-
-  # If the app is loaded and the list of projects is empty, set the project list to CREATE NEW. Otherwise, load the last project from settings.yaml, if it exists.
-  def get_last_project():
-
-    print('Getting last project...')
-
-    if len(UI.project_name.choices) == 1:
-      return 'CREATE NEW'
-
-    elif os.path.isfile(f'{base_path}/settings.yaml'):
-      with open(f'{base_path}/settings.yaml', 'r') as f:
-        settings = yaml.load(f, Loader=yaml.FullLoader)
-        print(f'Loaded settings: {settings}')
-        if 'last_project' in settings:
-          print(f'Last project: {settings["last_project"]}')
-          return settings['last_project']
-        else:
-          print('No last project found.')
-          return ''
 
   app.load(
     get_last_project,
