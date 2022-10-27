@@ -273,8 +273,18 @@ class UI:
 
   metas = [ artist, genre, lyrics ]
 
-  current_sample = gr.Dropdown(
-    label = 'Sample tree',
+  n_samples = gr.Slider(
+    label = 'Number of samples',
+    minimum = 1,
+    maximum = 10,
+    step = 1
+  )
+
+  temperature = gr.Slider(
+    label = 'Temperature',
+    minimum = 0,
+    maximum = 1.5,
+    step = 0.005
   )
 
   generation_length = gr.Slider(
@@ -282,6 +292,12 @@ class UI:
     minimum = 0.5,
     maximum = 10,
     step = 0.1
+  )
+
+  generation_params = [ artist, genre, lyrics, n_samples, temperature, generation_length ]
+
+  current_sample = gr.Dropdown(
+    label = 'Sample tree',
   )
 
   generate_first_button = gr.Button(
@@ -327,7 +343,7 @@ class UI:
 
   cut_button = gr.Button( 'Cut', visible = False )
 
-  project_settings = [ *metas, current_sample, generation_length, preview_just_the_last_n_sec ]
+  project_settings = [ *generation_params, current_sample, generation_length, preview_just_the_last_n_sec ]
 
   input_names = { input: name for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
 
@@ -362,6 +378,9 @@ with gr.Blocks(
           UI.genre: 'Unknown',
           UI.lyrics: '',
           UI.current_sample: 'NONE',
+          UI.generation_length: 1,
+          UI.temperature: 0.98,
+          UI.n_samples: 2
         }
 
         # If not new, load the settings from settings.yaml in the project folder, if it exists
@@ -498,7 +517,7 @@ with gr.Blocks(
           else:
             print('Settings are the same as loaded settings, not saving.')
 
-        for component in UI.metas:
+        for component in UI.generation_params:
           component.render()
 
         for component in UI.project_settings:
@@ -540,7 +559,6 @@ with gr.Blocks(
           api_name = 'get-parent-sample'
         )
 
-      UI.generation_length.render()
       UI.generate_first_button.render()
       UI.sibling_sample.render()
 
@@ -578,13 +596,9 @@ with gr.Blocks(
         return get_children(project_name, get_parent(sample_id))
 
 
-      def generate(project_name, parent_sample_id, artist, genre, lyrics, generation_length):
+      def generate(project_name, parent_sample_id, artist, genre, lyrics, n_samples, temperature, generation_length):
 
         print('Generating...')
-
-        n_samples = 2
-        temperature = 0.98
-        # The above is to be moved to parameters/the UI
 
         global total_duration
         global calculated_metas
@@ -771,9 +785,8 @@ with gr.Blocks(
       )
 
       # When the generate button is clicked, generate and update the child samples
-      generation_params = [ UI.artist, UI.genre, UI.lyrics, UI.generation_length ]
       UI.generate_first_button.click(
-        inputs = [ UI.project_name, UI.current_sample, *generation_params ],
+        inputs = [ UI.project_name, UI.current_sample, *UI.generation_params ],
         outputs = UI.current_sample,
         fn = generate,
         api_name = 'generate',
@@ -798,7 +811,7 @@ with gr.Blocks(
           value = 'Continue',
           variant = 'primary',
         ).click(
-          inputs =  [ UI.project_name, UI.sibling_sample, *generation_params ],
+          inputs =  [ UI.project_name, UI.sibling_sample, *UI.generation_params ],
           outputs = UI.current_sample,
           fn = generate,
         )
@@ -806,7 +819,7 @@ with gr.Blocks(
         gr.Button(
           value = 'Try again',          
         ).click(
-          inputs = [ UI.project_name, UI.sibling_sample, *generation_params ],
+          inputs = [ UI.project_name, UI.sibling_sample, *UI.generation_params ],
           outputs = UI.current_sample,
           fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(sample_id), *args),
         )
