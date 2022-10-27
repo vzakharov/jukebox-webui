@@ -245,7 +245,8 @@ class UI:
     placeholder = 'lowercase-digits-and-dashes-only'
   )
 
-  project_box = gr.Box(
+  project_box = gr.Accordion(
+    label = "Settings",
     visible = False
   )
 
