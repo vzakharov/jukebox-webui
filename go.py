@@ -676,23 +676,14 @@ with gr.Blocks(
 
         global base_path, hps
 
-        # If there is a wav file, use that
         filename = f'{base_path}/{project_name}/{sample_id}'
 
-        if os.path.isfile(f'{filename}.wav'):
-          print(f'Found {filename}.wav')
-          wav = librosa.load(f'{filename}.wav', sr=hps.sr)[0]
-          print(f'Loaded {filename}.wav: {wav.shape}')
-        
-        # Otherwise, generate the audio from the z file
-        else:
-          print(f'No {filename}.wav found, generating from {filename}.z')
-          z = t.load(f'{filename}.z')
-          print(f'Loaded {filename}.z of shape {z[2].shape}')
-          wav = vqvae.decode(z[2:], start_level=2).cpu().numpy()
-          # wav is now of shape (1, sample_length, 1), we want (sample_length,)
-          wav = wav[0, :, 0]
-          print(f'Generated audio: {wav.shape}')
+        print(f'Loading {filename}.z')
+        z = t.load(f'{filename}.z')
+        wav = vqvae.decode(z[2:], start_level=2).cpu().numpy()
+        # wav is now of shape (1, sample_length, 1), we want (sample_length,)
+        wav = wav[0, :, 0]
+        print(f'Generated audio: {wav.shape}')
 
         return ( hps.sr, wav )
 
