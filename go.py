@@ -202,8 +202,7 @@ class UI:
   ### General
 
   project_name = gr.Dropdown(
-    label = 'Project',
-    choices = get_projects()
+    label = 'Project'
   )
 
   create_project_box = gr.Box(
@@ -215,7 +214,7 @@ class UI:
     placeholder = 'lowercase-digits-and-dashes-only'
   )
 
-  project_box = gr.Accordion(
+  settings_box = gr.Accordion(
     label = "Settings",
     visible = False
   )
@@ -226,13 +225,11 @@ class UI:
 
   ## Metas (artist, genre, lyrics)
   artist = gr.Dropdown(
-    label = 'Artist',
-    choices = get_meta('artist')
+    label = 'Artist'
   )
 
   genre = gr.Dropdown(
-    label = 'Genre',
-    choices = get_meta('genre')
+    label = 'Genre'
   )
 
   lyrics = gr.Textbox(
@@ -265,6 +262,8 @@ class UI:
   )
 
   generation_params = [ artist, genre, lyrics, n_samples, temperature, generation_length ]
+
+  generation_column = gr.Column( scale = 3 )
 
   sample_tree = gr.Dropdown(
     label = 'Sample tree',
@@ -514,23 +513,39 @@ def get_custom_parents(project_name):
 
   return custom_parents
 
-def get_last_project():
+def on_load():
 
-  print('Getting last project...')
+  print('Loading Jukebox Web UI...')
 
-  if len(UI.project_name.choices) == 1:
-    return 'CREATE NEW'
+  projects = get_projects()
 
-  elif os.path.isfile(f'{base_path}/settings.yaml'):
-    with open(f'{base_path}/settings.yaml', 'r') as f:
-      settings = yaml.load(f, Loader=yaml.FullLoader)
-      print(f'Loaded settings: {settings}')
-      if 'last_project' in settings:
-        print(f'Last project: {settings["last_project"]}')
-        return settings['last_project']
-      else:
-        print('No last project found.')
-        return ''
+  def get_last_project():
+    if len(projects) == 1:
+      return 'CREATE NEW'
+
+    elif os.path.isfile(f'{base_path}/settings.yaml'):
+      with open(f'{base_path}/settings.yaml', 'r') as f:
+        settings = yaml.load(f, Loader=yaml.FullLoader)
+        print(f'Loaded settings: {settings}')
+        if 'last_project' in settings:
+          print(f'Last project: {settings["last_project"]}')
+          return settings['last_project']
+        else:
+          print('No last project found.')
+          return projects[0]
+  
+  return {
+    UI.project_name: gr.update(
+      choices = projects,
+      value = get_last_project()
+    ),
+    UI.artist: gr.update(
+      choices = get_meta('artist'),
+    ),
+    UI.genre: gr.update(
+      choices = get_meta('genre'),
+    ),
+  }
 
 def get_meta(what):
   items = []
@@ -604,7 +619,7 @@ def load_project(project_name):
 
   global base_path, loaded_settings
 
-  is_new = project_name == 'CREATE NEW'
+  is_new = project_name == 'CREATE NEW' or not project_name
 
   # Start with default values for project settings
   settings_out_dict = {
@@ -646,7 +661,8 @@ def load_project(project_name):
 
   return {
     UI.create_project_box: gr.update( visible = is_new ),
-    UI.project_box: gr.update( visible = not is_new and project_name != '' ),
+    UI.settings_box: gr.update( visible = not is_new ),
+    UI.generation_column: gr.update( visible = not is_new ),
     **settings_out_dict
   }
 
@@ -830,7 +846,7 @@ with gr.Blocks(
  
       UI.project_name.change(
         inputs = UI.project_name,
-        outputs = [ UI.create_project_box, UI.project_box, *UI.project_settings ],
+        outputs = [ UI.create_project_box, UI.settings_box, *UI.project_settings, UI.generation_column ],
         fn = load_project,
         api_name = 'set-project'
       )
@@ -866,9 +882,9 @@ with gr.Blocks(
         UI.new_project_name.submit( **create_args )
         gr.Button('Create project').click( **create_args )
 
-      UI.project_box.render()
+      UI.settings_box.render()
 
-      with UI.project_box:
+      with UI.settings_box:
 
         for component in UI.generation_params:
           component.render()
@@ -888,7 +904,7 @@ with gr.Blocks(
             fn = save_project
           )
 
-    with gr.Column( scale = 3 ):
+    with UI.generation_column.render():
 
       UI.sample_tree.render()       
       UI.generate_first_button.render()
@@ -1012,9 +1028,10 @@ with gr.Blocks(
             )
 
   app.load(
-    get_last_project,
+    on_load,
     inputs = None,
-    outputs = UI.project_name
+    outputs = [ UI.project_name, UI.artist, UI.genre ],
+    api_name = 'initialize'
   )
 
   app.launch( share = share_gradio, debug = debug_gradio )
