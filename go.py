@@ -305,7 +305,7 @@ class UI:
     variant = 'primary'
   )
 
-  sibling_sample = gr.Radio(
+  picked_sample = gr.Radio(
     label = 'Sibling samples',
   )
 
@@ -543,7 +543,7 @@ with gr.Blocks(
 
       UI.sample_tree.render()       
       UI.generate_first_button.render()
-      UI.sibling_sample.render()
+      UI.picked_sample.render()
 
       def seconds_to_tokens(sec):
 
@@ -756,7 +756,7 @@ with gr.Blocks(
         
         if is_none_ish(sample_id):
           return {
-            UI.sibling_sample: gr.update( visible = False ),
+            UI.picked_sample: gr.update( visible = False ),
             UI.sample_box: gr.update( visible = False ),
             UI.generate_first_button: gr.update( visible = True ),
           }
@@ -764,7 +764,7 @@ with gr.Blocks(
         print(f'Changing current sample to {sample_id}...')
         siblings = get_siblings(project_name, sample_id)
         return {
-          UI.sibling_sample: gr.update(
+          UI.picked_sample: gr.update(
             choices = siblings,
             value = sample_id,
             visible = len(siblings) > 1
@@ -775,7 +775,7 @@ with gr.Blocks(
 
       UI.sample_tree.change(
         inputs = [ UI.project_name, UI.sample_tree ],
-        outputs = [ UI.sibling_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.generate_first_button ],
+        outputs = [ UI.picked_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.generate_first_button ],
         fn = refresh_siblings,
         api_name = 'get-siblings'        
       )
@@ -789,7 +789,7 @@ with gr.Blocks(
       )
 
       preview_args = dict(
-        inputs = [ UI.project_name, UI.sibling_sample, UI.preview_just_the_last_n_sec, UI.cut_n_sec_from_end ],
+        inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.cut_n_sec_from_end ],
         outputs = [ 
           UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec, UI.cut_n_sec_from_end,
           UI.go_to_children_button, UI.go_to_parent_button 
@@ -797,7 +797,7 @@ with gr.Blocks(
         fn = pick_sample,
       )
 
-      UI.sibling_sample.change(**preview_args, api_name = 'get-audio-preview')
+      UI.picked_sample.change(**preview_args, api_name = 'get-audio-preview')
 
       UI.sample_box.render()
 
@@ -810,7 +810,7 @@ with gr.Blocks(
           value = 'Continue',
           variant = 'primary',
         ).click(
-          inputs =  [ UI.project_name, UI.sibling_sample, *UI.generation_params ],
+          inputs =  [ UI.project_name, UI.picked_sample, *UI.generation_params ],
           outputs = UI.sample_tree,
           fn = generate,
         )
@@ -818,21 +818,21 @@ with gr.Blocks(
         gr.Button(
           value = 'Try again',          
         ).click(
-          inputs = [ UI.project_name, UI.sibling_sample, *UI.generation_params ],
+          inputs = [ UI.project_name, UI.picked_sample, *UI.generation_params ],
           outputs = UI.sample_tree,
           fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(project_name, sample_id), *args),
         )
 
         UI.go_to_parent_button.render()
         UI.go_to_parent_button.click(
-          inputs = [ UI.project_name, UI.sibling_sample ],
+          inputs = [ UI.project_name, UI.picked_sample ],
           outputs = UI.sample_tree,
           fn = get_parent
         )
 
         UI.go_to_children_button.render()
         UI.go_to_children_button.click(
-          inputs = [ UI.project_name, UI.sibling_sample ], 
+          inputs = [ UI.project_name, UI.picked_sample ], 
           outputs = UI.sample_tree,
           fn = lambda project_name, sample_id: get_children(project_name, sample_id)[0]
         )
@@ -859,7 +859,7 @@ with gr.Blocks(
             else:
               print(f'No {filename}{extension} found')
           return {
-            UI.sibling_sample: gr.update(
+            UI.picked_sample: gr.update(
               choices = siblings,
               value = new_sibling_to_use,
             ),
@@ -869,8 +869,8 @@ with gr.Blocks(
           }
         
         gr.Button('Delete').click(
-          inputs = [ UI.project_name, UI.sibling_sample, gr.Checkbox(visible=False) ],
-          outputs = [ UI.sibling_sample, UI.sample_box ],
+          inputs = [ UI.project_name, UI.picked_sample, gr.Checkbox(visible=False) ],
+          outputs = [ UI.picked_sample, UI.sample_box ],
           fn = delete_sample,
           _js = """
             ( project_name, child_sample_id ) => {
@@ -917,7 +917,7 @@ with gr.Blocks(
             return 0
           
           UI.cut_button.click(
-            inputs = [ UI.project_name, UI.sibling_sample, UI.cut_n_sec_from_end ],
+            inputs = [ UI.project_name, UI.picked_sample, UI.cut_n_sec_from_end ],
             outputs = UI.cut_n_sec_from_end,
             fn = cut_n_seconds_from_end,
             api_name = 'cut-n-sec-from-end'
