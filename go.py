@@ -337,15 +337,15 @@ class UI:
     value = 0
   )
 
-  cut_n_sec_from_end = gr.Slider(
-    label = 'Cut ... seconds from the end',
+  trim_to_n_sec = gr.Slider(
+    label = 'Trim to ... seconds (0 to disable)',
     minimum = 0,
     maximum = 200,
     step = 0.05,
     value = 0
   )
 
-  cut_button = gr.Button( 'Cut', visible = False )
+  trim_button = gr.Button( 'Trim', visible = False )
 
   project_settings = [ *generation_params, sample_tree, generation_length, preview_just_the_last_n_sec ]
 
@@ -691,20 +691,18 @@ with gr.Blocks(
 
         return ( hps.sr, wav )
 
-      def pick_sample(project_name, sample_id, preview_just_the_last_n_sec, cut_n_sec_from_end):
+      def pick_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec):
 
         audio = get_audio(project_name, sample_id)
         wav = audio[1]
 
-        # If cut_n_sec_from_end is set, cut that many seconds from the end, and decrease the preview length accordingly
-        if cut_n_sec_from_end > 0:
-          print(f'Cutting {cut_n_sec_from_end} seconds from the end')
-          wav = wav[:-cut_n_sec_from_end * hps.sr]
-          preview_just_the_last_n_sec = max(0, preview_just_the_last_n_sec - cut_n_sec_from_end)
-          print(f'Updated preview length: {preview_just_the_last_n_sec} seconds')
+        # If trim_to_n_sec is set, trim the audio to that length
+        if trim_to_n_sec:
+          print(f'Trimming to {trim_to_n_sec} seconds')
+          wav = wav[ :int( trim_to_n_sec * hps.sr ) ]
         
         # If the preview_just_the_last_n_sec is set, only show the last n seconds
-        if preview_just_the_last_n_sec > 0:
+        if preview_just_the_last_n_sec:
           print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
           wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
 
@@ -712,7 +710,8 @@ with gr.Blocks(
         # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
         x = np.arange(0, len(wav)) / hps.sr
         # Add total length in seconds minus the preview length to the x values
-        x += len(audio[1]) / hps.sr - preview_just_the_last_n_sec - cut_n_sec_from_end
+        if preview_just_the_last_n_sec:
+          x += ( trim_to_n_sec or len(audio[1]) / hps.sr ) - preview_just_the_last_n_sec
         y = wav
         print(f'Plotting {len(x)} points from {x[0]} to {x[-1]} seconds')
 
@@ -740,9 +739,8 @@ with gr.Blocks(
           UI.preview_just_the_last_n_sec: gr.update(
             maximum = int( len(audio[1]) / audio[0] )
           ),
-          UI.cut_n_sec_from_end: gr.update(
+          UI.trim_to_n_sec: gr.update(
             maximum = int( len(audio[1]) / audio[0] ),
-            # value = cut_n_sec_from_end
           ),
           UI.go_to_children_button: gr.update(
             visible = len(get_children(project_name, sample_id)) > 0
@@ -789,9 +787,9 @@ with gr.Blocks(
       )
 
       preview_args = dict(
-        inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.cut_n_sec_from_end ],
+        inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec ],
         outputs = [ 
-          UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec, UI.cut_n_sec_from_end,
+          UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec,
           UI.go_to_children_button, UI.go_to_parent_button 
         ],
         fn = pick_sample,
@@ -889,38 +887,37 @@ with gr.Blocks(
           UI.preview_just_the_last_n_sec.render()
           UI.preview_just_the_last_n_sec.change(**preview_args)
 
-          UI.cut_n_sec_from_end.render()
-          UI.cut_n_sec_from_end.change(**preview_args)
+          UI.trim_to_n_sec.render()
+          UI.trim_to_n_sec.change(**preview_args)
 
           # Also make the cut button visible or not depending on whether the cut value is 0
-          UI.cut_n_sec_from_end.change(
-            inputs = UI.cut_n_sec_from_end,
-            outputs = UI.cut_button,
-            fn = lambda cut_n_sec_from_end: gr.update( visible = cut_n_sec_from_end > 0 )
+          UI.trim_to_n_sec.change(
+            inputs = UI.trim_to_n_sec,
+            outputs = UI.trim_button,
+            fn = lambda trim_to_n_sec: gr.update( visible = trim_to_n_sec > 0 )
           )
 
-          UI.cut_button.render()
+          UI.trim_button.render()
 
-          def cut_n_seconds_from_end(project_name, sample_id, n_sec):
+          def trim(project_name, sample_id, n_sec):
 
-            # Load z, find out how many tokens are in n_sec, cut that many tokens from the end, and save z
             filename = f'{base_path}/{project_name}/{sample_id}.z'
             print(f'Loading {filename}...')
             z = t.load(filename)
             print(f'Loaded z, z[2] shape is {z[2].shape}')
             n_tokens = seconds_to_tokens(n_sec)
-            print(f'Cutting {n_tokens} tokens from the end')
-            z[2] = z[2][:, :-n_tokens]
+            print(f'Trimming to {n_tokens} tokens')
+            z[2] = z[2][:, :n_tokens]
             print(f'z[2].shape = {z[2].shape}')
             t.save(z, filename)
             print(f'Saved z to {filename}')
             return 0
           
-          UI.cut_button.click(
-            inputs = [ UI.project_name, UI.picked_sample, UI.cut_n_sec_from_end ],
-            outputs = UI.cut_n_sec_from_end,
-            fn = cut_n_seconds_from_end,
-            api_name = 'cut-n-sec-from-end'
+          UI.trim_button.click(
+            inputs = [ UI.project_name, UI.picked_sample, UI.trim_to_n_sec ],
+            outputs = UI.trim_to_n_sec,
+            fn = trim,
+            api_name = 'trim'
           )       
 
 
