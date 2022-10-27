@@ -4,6 +4,7 @@ try:
 
   is_colab # If is_colab is defined, we don't need to check again
   print('Re-running the cell')
+  !nvidia-smi
 
 except:
   
@@ -57,8 +58,8 @@ import matplotlib.pyplot as plt
 
 import yaml
 
-# Dump strings as literal blocks in YAML
-yaml.add_representer(str, lambda dumper, value: dumper.represent_scalar('tag:yaml.org,2002:str', value, style='|'))
+# # Dump strings as literal blocks in YAML
+# yaml.add_representer(str, lambda dumper, value: dumper.represent_scalar('tag:yaml.org,2002:str', value, style='|'))
 
 
 if is_colab:
@@ -226,6 +227,7 @@ except:
   calculated_metas = {}
 
 loaded_settings = {}
+custom_parents = None
 
 class UI:
 
@@ -339,7 +341,7 @@ class UI:
 
   trim_button = gr.Button( 'Trim', visible = False )
 
-  project_settings = [ *generation_params, sample_tree, generation_length, preview_just_the_last_n_sec ]
+  project_settings = [ *generation_params, sample_tree, preview_just_the_last_n_sec ]
 
   input_names = { input: name for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
 
@@ -362,7 +364,7 @@ with gr.Blocks(
 
       UI.project_name.render()
 
-      def set_project(project_name):
+      def load_project(project_name):
 
         global base_path, loaded_settings
 
@@ -428,7 +430,7 @@ with gr.Blocks(
       UI.project_name.change(
         inputs = UI.project_name,
         outputs = [ UI.create_project_box, UI.project_box, *UI.project_settings ],
-        fn = set_project,
+        fn = load_project,
         api_name = 'set-project'
       )
 
@@ -489,7 +491,7 @@ with gr.Blocks(
 
       with UI.project_box:
 
-        def save_project_settings(project_name, *project_input_values):
+        def save_project(project_name, *project_input_values):
 
           print(f'Saving settings for {project_name}...')
           print(f'Project input values: {project_input_values}')
@@ -528,7 +530,7 @@ with gr.Blocks(
           handler(
             inputs = inputs,
             outputs = None,
-            fn = save_project_settings
+            fn = save_project
           )
 
     with gr.Column( scale = 3 ):
@@ -551,6 +553,43 @@ with gr.Blocks(
       def get_prefix(project_name, parent_sample_id):
         return f'{project_name if is_none_ish(parent_sample_id) else parent_sample_id}-'
 
+      def get_custom_parents(project_name):
+
+        global base_path, custom_parents
+        
+        if not custom_parents or custom_parents['project_name'] != project_name:
+          print('Loading custom parents...')
+          custom_parents = {}
+          filename = f'{base_path}/{project_name}/{project_name}-parents.yaml'
+          if os.path.exists(filename):
+            print(f'Found {filename}')
+            with open(filename) as f:
+              loaded_dict = yaml.load(f, Loader=yaml.FullLoader)
+              print(f'Loaded as {loaded_dict}')
+              # Add project_name to the beginning of every key and value in the dictionary
+              custom_parents = { f'{project_name}-{k}': f'{project_name}-{v}' for k, v in loaded_dict.items() }
+
+          custom_parents['project_name'] = project_name
+          
+          print(f'Custom parents: {custom_parents}')
+
+        return custom_parents
+
+      def get_parent(project_name, sample_id):
+
+        global base_path
+        
+        custom_parents = get_custom_parents(project_name)
+
+        if sample_id in custom_parents:
+          return custom_parents[sample_id]
+
+        # Remove the project name and first dash from the sample id
+        path = sample_id[ len(project_name) + 1: ].split('-')
+        parent_sample_id = '-'.join([ project_name, *path[:-1] ]) if len(path) > 1 else None
+        print(f'Parent of {sample_id}: {parent_sample_id}')
+        return parent_sample_id
+
       def get_children(project_name, parent_sample_id):
 
         global base_path
@@ -561,18 +600,17 @@ with gr.Blocks(
           match = re.match(f'{prefix}(\d+)\\.zs?', filename)
           if match:
             child_ids += [ filename.split('.')[0] ]
+          
+        custom_parents = get_custom_parents(project_name)
+
+        for sample_id in custom_parents:
+          if custom_parents[sample_id] == parent_sample_id:
+            child_ids += [ sample_id ]        
 
         print(f'Children of {parent_sample_id}: {child_ids}')
 
         return child_ids
-      
-      def get_parent(project_name, sample_id):
-        # Remove the project name and first dash from the sample id
-        path = sample_id[ len(project_name) + 1: ].split('-')
-        parent_sample_id = '-'.join([ project_name, *path[:-1] ]) if len(path) > 1 else None
-        print(f'Parent of {sample_id}: {parent_sample_id}')
-        return parent_sample_id
-      
+
       def get_siblings(project_name, sample_id):
 
         return get_children(project_name, get_parent(project_name, sample_id))
@@ -867,41 +905,99 @@ with gr.Blocks(
 
         with gr.Accordion( 'Advanced', open = False ):
 
-          UI.preview_just_the_last_n_sec.render()
-          UI.preview_just_the_last_n_sec.blur(**preview_args)
+          with gr.Tab('Manipulate audio'):
 
-          UI.trim_to_n_sec.render()
-          UI.trim_to_n_sec.blur(**preview_args)
+            UI.preview_just_the_last_n_sec.render()
+            UI.preview_just_the_last_n_sec.blur(**preview_args)
 
-          # Also make the cut button visible or not depending on whether the cut value is 0
-          UI.trim_to_n_sec.change(
-            inputs = UI.trim_to_n_sec,
-            outputs = UI.trim_button,
-            fn = lambda trim_to_n_sec: gr.update( visible = trim_to_n_sec )
-          )
+            UI.trim_to_n_sec.render()
+            UI.trim_to_n_sec.blur(**preview_args)
 
-          UI.trim_button.render()
+            # Also make the cut button visible or not depending on whether the cut value is 0
+            UI.trim_to_n_sec.change(
+              inputs = UI.trim_to_n_sec,
+              outputs = UI.trim_button,
+              fn = lambda trim_to_n_sec: gr.update( visible = trim_to_n_sec )
+            )
 
-          def trim(project_name, sample_id, n_sec):
+            UI.trim_button.render()
 
-            filename = f'{base_path}/{project_name}/{sample_id}.z'
-            print(f'Loading {filename}...')
-            z = t.load(filename)
-            print(f'Loaded z, z[2] shape is {z[2].shape}')
-            n_tokens = seconds_to_tokens(n_sec)
-            print(f'Trimming to {n_tokens} tokens')
-            z[2] = z[2][:, :n_tokens]
-            print(f'z[2].shape = {z[2].shape}')
-            t.save(z, filename)
-            print(f'Saved z to {filename}')
-            return 0
+            def trim(project_name, sample_id, n_sec):
+
+              filename = f'{base_path}/{project_name}/{sample_id}.z'
+              print(f'Loading {filename}...')
+              z = t.load(filename)
+              print(f'Loaded z, z[2] shape is {z[2].shape}')
+              n_tokens = seconds_to_tokens(n_sec)
+              print(f'Trimming to {n_tokens} tokens')
+              z[2] = z[2][:, :n_tokens]
+              print(f'z[2].shape = {z[2].shape}')
+              t.save(z, filename)
+              print(f'Saved z to {filename}')
+              return 0
+            
+            UI.trim_button.click(
+              inputs = [ UI.project_name, UI.picked_sample, UI.trim_to_n_sec ],
+              outputs = UI.trim_to_n_sec,
+              fn = trim,
+              api_name = 'trim'
+            )
           
-          UI.trim_button.click(
-            inputs = [ UI.project_name, UI.picked_sample, UI.trim_to_n_sec ],
-            outputs = UI.trim_to_n_sec,
-            fn = trim,
-            api_name = 'trim'
-          )       
+          with gr.Tab('Rename sample'):
+
+            new_sample_id = gr.Textbox(
+              label = 'New sample id',
+              placeholder = 'Alphanumeric and dashes only'
+            )
+
+            def rename_sample(project_name, old_sample_id, new_sample_id):
+
+              if not re.match(r'^[a-zA-Z0-9-]+$', new_sample_id):
+                raise ValueError('Sample ID must be alphanumeric and dashes only')
+
+              new_sample_id = f'{project_name}-{new_sample_id}'
+
+              print(f'Renaming {old_sample_id} to {new_sample_id}')
+
+              custom_parents = get_custom_parents(project_name)
+              print(f'Custom parents: {custom_parents}')
+              custom_parents[new_sample_id] = get_parent(project_name, old_sample_id)
+              print(f'Added {new_sample_id} -> {custom_parents[new_sample_id]} to custom parents')
+              if old_sample_id in custom_parents:
+                del custom_parents[old_sample_id]
+                print(f'Removed {old_sample_id} from custom parents')
+
+              # Find all samples that have this sample as a custom parent and update them
+              for child, parent in custom_parents.items():
+                if parent == old_sample_id:
+                  custom_parents[child] = new_sample_id
+                  print(f'Updated {child} -> {new_sample_id} in custom parents')
+              
+              print(f'Final custom parents: {custom_parents}')
+              
+              # Save the new custom parents
+              with open(f'{base_path}/{project_name}/{project_name}-parents.yaml', 'w') as f:
+                # Dump everything but the "project_name" key and remove the "project_name-" prefix
+                custom_parents_to_save = {
+                  k[len(project_name)+1:]: v[len(project_name)+1:] for k, v in custom_parents.items() if k != 'project_name'
+                }
+                print(f'Writing: {custom_parents_to_save}')
+                yaml.dump(custom_parents_to_save, f)
+                print('Done.')
+
+              # Find all files in the project directory that start with the old sample ID and rename them
+              for filename in os.listdir(f'{base_path}/{project_name}'):
+                if filename.startswith(old_sample_id):
+                  new_filename = filename.replace(old_sample_id, new_sample_id)
+                  print(f'Renaming {filename} to {new_filename}')
+                  os.rename(f'{base_path}/{project_name}/{filename}', f'{base_path}/{project_name}/{new_filename}')
+
+            gr.Button('Rename').click(
+              inputs = [ UI.project_name, UI.picked_sample, new_sample_id ],
+              outputs = UI.sample_tree,
+              fn = rename_sample,
+              api_name = 'rename-sample'
+            )
 
 
   # If the app is loaded and the list of projects is empty, set the project list to CREATE NEW. Otherwise, load the last project from settings.yaml, if it exists.
