@@ -329,20 +329,12 @@ class UI:
     value = '> children',
   )
 
-  preview_just_the_last_n_sec = gr.Slider(
-    label = 'Preview just the last ... seconds (0 to disable)',
-    minimum = 0,
-    maximum = 200,
-    step = 0.1,
-    value = 0
+  preview_just_the_last_n_sec = gr.Number(
+    label = 'Preview just the last ... seconds (0 to disable)'
   )
 
-  trim_to_n_sec = gr.Slider(
-    label = 'Trim to ... seconds (0 to disable)',
-    minimum = 0,
-    maximum = 200,
-    step = 0.05,
-    value = 0
+  trim_to_n_sec = gr.Number(
+    label = 'Trim to ... seconds (0 to disable)'
   )
 
   trim_button = gr.Button( 'Trim', visible = False )
@@ -736,12 +728,6 @@ with gr.Blocks(
         return {
           UI.generated_audio: ( audio[0], wav ),
           UI.audio_waveform: figure,
-          UI.preview_just_the_last_n_sec: gr.update(
-            maximum = int( len(audio[1]) / audio[0] )
-          ),
-          UI.trim_to_n_sec: gr.update(
-            maximum = int( len(audio[1]) / audio[0] ),
-          ),
           UI.go_to_children_button: gr.update(
             visible = len(get_children(project_name, sample_id)) > 0
           ),
@@ -788,10 +774,7 @@ with gr.Blocks(
 
       preview_args = dict(
         inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec ],
-        outputs = [ 
-          UI.generated_audio, UI.audio_waveform, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec,
-          UI.go_to_children_button, UI.go_to_parent_button 
-        ],
+        outputs = [ UI.generated_audio, UI.audio_waveform, UI.go_to_children_button, UI.go_to_parent_button ],
         fn = pick_sample,
       )
 
@@ -885,16 +868,16 @@ with gr.Blocks(
         with gr.Accordion( 'Advanced', open = False ):
 
           UI.preview_just_the_last_n_sec.render()
-          UI.preview_just_the_last_n_sec.change(**preview_args)
+          UI.preview_just_the_last_n_sec.blur(**preview_args)
 
           UI.trim_to_n_sec.render()
-          UI.trim_to_n_sec.change(**preview_args)
+          UI.trim_to_n_sec.blur(**preview_args)
 
           # Also make the cut button visible or not depending on whether the cut value is 0
           UI.trim_to_n_sec.change(
             inputs = UI.trim_to_n_sec,
             outputs = UI.trim_button,
-            fn = lambda trim_to_n_sec: gr.update( visible = trim_to_n_sec > 0 )
+            fn = lambda trim_to_n_sec: gr.update( visible = trim_to_n_sec )
           )
 
           UI.trim_button.render()
