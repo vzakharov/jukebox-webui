@@ -1027,7 +1027,15 @@ with gr.Blocks(
     on_load,
     inputs = None,
     outputs = [ UI.project_name, UI.artist, UI.genre ],
-    api_name = 'initialize'
+    api_name = 'initialize',
+    _js = """(...args) => {
+      // Create and inject a wavesurfer script
+      const wavesurferScript = document.createElement('script')
+      wavesurferScript.src = 'https://unpkg.com/wavesurfer.js'
+      document.head.appendChild(wavesurferScript)
+      console.log(args)
+      return args
+    }"""
   )
 
   app.launch( share = share_gradio, debug = debug_gradio )
