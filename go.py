@@ -274,6 +274,11 @@ class UI:
     label = 'Sample tree',
   )
 
+  show_leafs_only = gr.Checkbox(
+    label = 'Do not show intermediate samples',
+  )
+
+
   picked_sample = gr.Radio(
     label = 'Sibling samples',
   )
@@ -322,7 +327,7 @@ class UI:
 
   trim_button = gr.Button( 'Trim', visible = False )
 
-  project_settings = [ *generation_params, sample_tree, preview_just_the_last_n_sec ]
+  project_settings = [ *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec ]
 
   input_names = { input: name for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
 
@@ -379,7 +384,7 @@ def delete_sample(project_name, sample_id, confirm):
     ),            
   }
 
-def generate(project_name, parent_sample_id, artist, genre, lyrics, n_samples, temperature, generation_length):
+def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length):
 
   print('Generating...')
 
@@ -465,7 +470,7 @@ def generate(project_name, parent_sample_id, artist, genre, lyrics, n_samples, t
     child_ids += [ id ]
 
   return gr.update(
-    choices = get_samples(project_name),
+    choices = get_samples(project_name, show_leafs_only),
     value = child_ids[-1]
   )
 
@@ -591,12 +596,14 @@ def get_parent(project_name, sample_id):
 def get_prefix(project_name, parent_sample_id):
   return f'{project_name if is_none_ish(parent_sample_id) else parent_sample_id}-'
 
-def get_samples(project_name):
+def get_samples(project_name, show_leafs_only):
 
   choices = []
   for filename in os.listdir(f'{base_path}/{project_name}'):
     if re.match(r'.*\.zs?$', filename):
       id = filename.split('.')[0]
+      if show_leafs_only and len( get_children(project_name, id) ) > 0:
+        continue
       choices += [ id ]
   
   # Sort by id, in descending order
@@ -868,10 +875,10 @@ with gr.Blocks(
       )
 
       UI.project_name.change(
-        inputs = UI.project_name,
+        inputs = [ UI.project_name, UI.show_leafs_only ],
         outputs = UI.sample_tree,
-        fn = lambda project_name: {
-          UI.sample_tree: gr.update( choices = get_samples(project_name) )
+        fn = lambda *args: {
+          UI.sample_tree: gr.update( choices = get_samples(*args) )
         },
         api_name = 'get-samples'
       )
@@ -921,7 +928,7 @@ with gr.Blocks(
           )
 
         UI.generate_first_button.render().click(
-          inputs = [ UI.project_name, UI.sample_tree, *UI.generation_params ],
+          inputs = [ UI.project_name, UI.sample_tree, UI.show_leafs_only, *UI.generation_params ],
           outputs = UI.sample_tree,
           fn = generate,
           api_name = 'generate',
@@ -929,7 +936,11 @@ with gr.Blocks(
 
     with UI.generation_column.render():
 
-      UI.sample_tree.render()       
+      with gr.Row():
+        
+        UI.sample_tree.render()
+        UI.show_leafs_only.render()
+
       UI.picked_sample.render()
 
       UI.sample_tree.change(
@@ -976,7 +987,7 @@ with gr.Blocks(
           value = 'Generate further',
           variant = 'primary',
         ).click(
-          inputs =  [ UI.project_name, UI.picked_sample, *UI.generation_params ],
+          inputs =  [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
           outputs = UI.sample_tree,
           fn = generate,
         )
@@ -984,7 +995,7 @@ with gr.Blocks(
         gr.Button(
           value = 'Generate more variations',          
         ).click(
-          inputs = [ UI.project_name, UI.picked_sample, *UI.generation_params ],
+          inputs = [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
           outputs = UI.sample_tree,
           fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(project_name, sample_id), *args),
         )
