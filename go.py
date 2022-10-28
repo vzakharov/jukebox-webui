@@ -64,17 +64,15 @@ import yaml
 # yaml.add_representer(str, lambda dumper, value: dumper.represent_scalar('tag:yaml.org,2002:str', value, style='|'))
 
 
-if is_colab:
+import jukebox
+import jukebox.utils.dist_adapter as dist
 
-  import jukebox
-  import jukebox.utils.dist_adapter as dist
-
-  from jukebox.make_models import make_vqvae, make_prior, MODELS
-  from jukebox.hparams import Hyperparams, setup_hparams, REMOTE_PREFIX
-  from jukebox.utils.dist_utils import setup_dist_from_mpi
-  from jukebox.utils.remote_utils import download
-  from jukebox.utils.torch_utils import empty_cache
-  from jukebox.sample import load_prompts, sample_partial_window
+from jukebox.make_models import make_vqvae, make_prior, MODELS
+from jukebox.hparams import Hyperparams, setup_hparams, REMOTE_PREFIX
+from jukebox.utils.dist_utils import setup_dist_from_mpi
+from jukebox.utils.remote_utils import download
+from jukebox.utils.torch_utils import empty_cache
+from jukebox.sample import load_prompts, sample_partial_window
 
 ### Model
 
@@ -1109,7 +1107,7 @@ with gr.Blocks(
               secondaryColor: '#ccc',
               primaryFontColor: '#eee',
               secondaryFontColor: '#ccc',
-              formatTimeCallback: time => parseInt(getAudioTime(time))
+              formatTimeCallback: time => Math.round(getAudioTime(time))
             })
           ]
         })
