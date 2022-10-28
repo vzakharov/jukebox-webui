@@ -289,16 +289,16 @@ class UI:
     elem_id = "generated-audio"
   )
 
-  audio_waveform = gr.Plot(
-    label = 'Waveform'
+  # audio_waveform = gr.Plot(
+  #   label = 'Waveform'
+  # )
+
+  audio_waveform = gr.HTML(
+    elem_id = 'audio-waveform'
   )
 
-  wavesurfer_html = gr.HTML(
-    elem_id = 'wavesurfer',
-  )
-
-  wavesurfer_reload_token = gr.HTML(
-    elem_id = 'wavesurfer-reload-token',
+  audio_timeline = gr.HTML(
+    elem_id = 'audio-timeline'
   )
 
   go_to_parent_button = gr.Button(
@@ -690,42 +690,37 @@ def pick_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_
     print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
     wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
 
-  # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
-  # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
-  x = np.arange(0, len(wav)) / hps.sr
-  # Add total length in seconds minus the preview length to the x values
-  if preview_just_the_last_n_sec:
-    x += ( trim_to_n_sec or len(audio[1]) / hps.sr ) - preview_just_the_last_n_sec
-  y = wav
-  print(f'Plotting {len(x)} points from {x[0]} to {x[-1]} seconds')
+  # # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
+  # # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
+  # x = np.arange(0, len(wav)) / hps.sr
+  # # Add total length in seconds minus the preview length to the x values
+  # if preview_just_the_last_n_sec:
+  #   x += ( trim_to_n_sec or len(audio[1]) / hps.sr ) - preview_just_the_last_n_sec
+  # y = wav
+  # print(f'Plotting {len(x)} points from {x[0]} to {x[-1]} seconds')
 
-  figure = plt.figure()
-  # Set aspect ratio to 10:1
-  figure.set_size_inches(20, 2)
+  # figure = plt.figure()
+  # # Set aspect ratio to 10:1
+  # figure.set_size_inches(20, 2)
 
-  # Remove y axis; make x axis go through y=0          
-  ax = plt.gca()
-  ax.spines['bottom'].set_position('zero')
-  ax.spines['left'].set_visible(False)
-  ax.spines['right'].set_visible(False)
-  ax.spines['top'].set_visible(False)
-  # Set minor x ticks every 0.1 seconds
-  ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.1))
-  # Move x axis to the foreground
-  ax.set_axisbelow(False)
+  # # Remove y axis; make x axis go through y=0          
+  # ax = plt.gca()
+  # ax.spines['bottom'].set_position('zero')
+  # ax.spines['left'].set_visible(False)
+  # ax.spines['right'].set_visible(False)
+  # ax.spines['top'].set_visible(False)
+  # # Set minor x ticks every 0.1 seconds
+  # ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.1))
+  # # Move x axis to the foreground
+  # ax.set_axisbelow(False)
 
-  plt.plot(x, y)
-  plt.show()        
-
-  # Save the wav as 'tmp/preview.wav' in the root folder (create the folder if it doesn't exist)
-  print(f'Saving tmp/preview.wav...')
-  os.makedirs('tmp', exist_ok = True)
-  librosa.output.write_wav('tmp/preview.wav', wav, hps.sr)
+  # plt.plot(x, y)
+  # plt.show()        
 
   return {
     UI.generated_audio: ( audio[0], wav ),
-    UI.audio_waveform: figure,
-    UI.wavesurfer_reload_token: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    # UI.audio_waveform: figure,
+    # UI.wavesurfer_reload_token: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
     ),
@@ -849,10 +844,6 @@ with gr.Blocks(
       /* add margin to the button */
       margin: 5px 5px 5px 5px;
     }
-
-    #wavesurfer-reload-token {
-      display: none;
-    }
   """,
   title = 'Jukebox Web UI',
 ) as app:
@@ -937,14 +928,14 @@ with gr.Blocks(
 
       UI.sample_tree.change(
         inputs = [ UI.project_name, UI.sample_tree ],
-        outputs = [ UI.picked_sample, UI.sample_box, UI.generated_audio, UI.audio_waveform, UI.generate_first_button ],
+        outputs = [ UI.picked_sample, UI.sample_box, UI.generated_audio, UI.generate_first_button ],
         fn = refresh_siblings,
         api_name = 'get-siblings'        
       )
 
       preview_args = dict(
         inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec ],
-        outputs = [ UI.generated_audio, UI.audio_waveform, UI.wavesurfer_reload_token, UI.go_to_children_button, UI.go_to_parent_button ],
+        outputs = [ UI.generated_audio, UI.go_to_children_button, UI.go_to_parent_button ],
         fn = pick_sample,
       )
 
@@ -956,19 +947,11 @@ with gr.Blocks(
 
         for this in [ 
           UI.generated_audio, 
-          UI.audio_waveform, 
-          UI.wavesurfer_html,
-          UI.wavesurfer_reload_token
+          UI.audio_waveform,
+          UI.audio_timeline
         ]:
           this.render()
 
-        UI.generated_audio.change(
-          inputs = UI.generated_audio,
-          outputs = None,
-          fn = lambda audio: print(f'Generated audio: {audio}'),
-          _js = 'audio => console.log(audio), audio'
-        )
-        
         gr.HTML("""
           <button class="gr-button gr-button-lg gr-button-secondary"
             onclick = "
@@ -1073,23 +1056,43 @@ with gr.Blocks(
     api_name = 'initialize',
     _js = """(...args) => {
 
-      // Create and inject a wavesurfer script
-      const wavesurferScript = document.createElement('script')
-      wavesurferScript.src = 'https://unpkg.com/wavesurfer.js'
-      document.head.appendChild(wavesurferScript)
+      // Create and inject wavesurfer scripts
+      let require = url => {
+        let script = document.createElement('script')
+        script.src = url
+        document.head.appendChild(script)
+        return new Promise( resolve => script.onload = resolve )
+      }
 
-      // Wait for wavesurfer script to load
-      wavesurferScript.onload = () => {
+      Promise.all( [
+        'https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/wavesurfer.min.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/plugin/wavesurfer.timeline.min.js'
+      ].map( require ) ).then( () => {
 
         // The wavesurfer element is hidden inside a shadow DOM hosted by <gradio-app>, so we need to get it from there
-        let wavesurferDiv = document.querySelector('gradio-app').shadowRoot.querySelector('#wavesurfer')
-        console.log(`Found wavesurfer div:`, wavesurferDiv)
+        let shadowSelector = selector => document.querySelector('gradio-app').shadowRoot.querySelector(selector)
+
+        let waveformDiv = shadowSelector('#audio-waveform')
+        console.log(`Found waveform div:`, waveformDiv)
+
+        let timelineDiv = shadowSelector('#audio-timeline')
+        console.log(`Found timeline div:`, timelineDiv)
         
         // Create a (global) wavesurfer object with and attach it to the div
         window.wavesurfer = WaveSurfer.create({
-          container: wavesurferDiv,
-          waveColor: 'violet',
-          progressColor: 'purple',
+          container: waveformDiv,
+          waveColor: 'skyblue',
+          progressColor: 'steelblue',
+          plugins: [
+            WaveSurfer.timeline.create({
+              container: timelineDiv,
+              // Light colors, as the background is dark
+              primaryColor: '#eee',
+              secondaryColor: '#ccc',
+              primaryFontColor: '#eee',
+              secondaryFontColor: '#ccc',
+            })
+          ]
         })
 
         // Put an observer on #generated-audio (also in the shadow DOM) to reload the audio from its inner <audio> element
@@ -1102,7 +1105,7 @@ with gr.Blocks(
           if ( audioElement ) {
             
             console.log('Found audio element:', audioElement)
-            
+
             // If so, create an observer on it while removing the observer on the parent
             parentObserver.disconnect()
 
@@ -1130,7 +1133,7 @@ with gr.Blocks(
 
         parentObserver.observe(parentElement, { childList: true, subtree: true })
 
-      }
+      })
 
       return args
     }"""
