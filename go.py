@@ -302,11 +302,11 @@ class UI:
   )
 
   go_to_parent_button = gr.Button(
-    value = '< parent',
+    value = 'To parent generation',
   )
 
   go_to_children_button = gr.Button(
-    value = '> children',
+    value = 'To child generations',
   )
 
   total_audio_length = gr.Number(
@@ -975,7 +975,7 @@ with gr.Blocks(
 
 
         gr.Button(
-          value = 'Continue',
+          value = 'Generate further',
           variant = 'primary',
         ).click(
           inputs =  [ UI.project_name, UI.picked_sample, *UI.generation_params ],
@@ -984,7 +984,7 @@ with gr.Blocks(
         )
 
         gr.Button(
-          value = 'Try again',          
+          value = 'Generate more variations',          
         ).click(
           inputs = [ UI.project_name, UI.picked_sample, *UI.generation_params ],
           outputs = UI.sample_tree,
@@ -1109,7 +1109,7 @@ with gr.Blocks(
               secondaryColor: '#ccc',
               primaryFontColor: '#eee',
               secondaryFontColor: '#ccc',
-              formatTimeCallback: getAudioTime
+              formatTimeCallback: time => parseInt(getAudioTime(time))
             })
           ]
         })
