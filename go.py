@@ -953,12 +953,16 @@ with gr.Blocks(
           this.render()
 
         gr.HTML("""
+          <!-- Button to play/pause the audio -->
           <button class="gr-button gr-button-lg gr-button-secondary"
             onclick = "
               wavesurfer.playPause()
               this.innerText = wavesurfer.isPlaying() ? '⏸️' : '▶️'
             "
           >▶️</button>
+
+          <!-- Textbox showing current time -->
+          <input type="number" class="gr-box gr-input gr-text-input" id="audio-time" value="0" readonly>
         """)
 
 
@@ -1093,6 +1097,17 @@ with gr.Blocks(
               secondaryFontColor: '#ccc',
             })
           ]
+        })
+
+        // Add a seek event listener to the wavesurfer object, modifying the #audio-time input
+        wavesurfer.on('seek', progress => {
+          let time = Math.round( progress * wavesurfer.getDuration() * 100 ) / 100
+          shadowSelector('#audio-time').value = time
+        })
+
+        // Also update the time when the audio is playing
+        wavesurfer.on('audioprocess', time => {
+          shadowSelector('#audio-time').value = Math.round( time * 100 ) / 100
         })
 
         // Put an observer on #generated-audio (also in the shadow DOM) to reload the audio from its inner <audio> element
