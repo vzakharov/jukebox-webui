@@ -1,9 +1,22 @@
-import datetime
-import os
-import uuid
+total_duration = 200 #@param {type:"slider", min:60, max:300, step:10}
+
+colab_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
+local_path = 'G:/Мой диск/jukebox-webui'
+
+colab_data_path = '/content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
+local_data_path = 'G:/Мой диск/jukebox-webui/_data'
+
+base_path = colab_path if is_colab else local_path
+data_path = colab_data_path if is_colab else local_data_path
+
+share_gradio = True #@param{type:'boolean'}
+debug_gradio = True #@param{type:'boolean'}
+
+reload_all = False #@param{type:'boolean'}
 
 try:
 
+  assert not reload_all
   is_colab # If is_colab is defined, we don't need to check again
   print('Re-running the cell')
   !nvidia-smi
@@ -29,34 +42,11 @@ except:
     is_colab = False
   
 
-total_duration = 200 #@param {type:"slider", min:60, max:300, step:10}
-
-colab_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
-local_path = 'G:/Мой диск/jukebox-webui'
-
-colab_data_path = '/content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
-local_data_path = 'G:/Мой диск/jukebox-webui/_data'
-
-base_path = colab_path if is_colab else local_path
-data_path = colab_data_path if is_colab else local_data_path
-
-share_gradio = True #@param{type:'boolean'}
-debug_gradio = True #@param{type:'boolean'}
-
-import random
-from time import sleep
 import gradio as gr
-import json
-import shutil
-import glob
-import numpy as np
-import urllib.request
+import os
 import re
 import torch as t
-import librosa
-
-import matplotlib
-import matplotlib.pyplot as plt
+import urllib.request
 
 import yaml
 
@@ -72,7 +62,7 @@ from jukebox.hparams import Hyperparams, setup_hparams, REMOTE_PREFIX
 from jukebox.utils.dist_utils import setup_dist_from_mpi
 from jukebox.utils.remote_utils import download
 from jukebox.utils.torch_utils import empty_cache
-from jukebox.sample import load_prompts, sample_partial_window
+from jukebox.sample import sample_partial_window
 
 ### Model
 
@@ -88,7 +78,6 @@ hps.levels = 3
 hps.hop_fraction = [ 0.5, 0.5, 0.125 ]
 hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
 
-reload_all = False #@param{type:'boolean'}
 reload_dist = False #@param{type:'boolean'}
 
 try:
@@ -136,9 +125,9 @@ except:
     print("Restored from {}".format(restore))
     return checkpoint
 
-  # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
-  for model_path in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
-    download_to_cache(f'{REMOTE_PREFIX}{model_path}', os.path.join(data_path, model_path))
+  # # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
+  # for model_path in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
+  #   download_to_cache(f'{REMOTE_PREFIX}{model_path}', os.path.join(data_path, model_path))
 
   jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
 
