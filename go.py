@@ -1,4 +1,6 @@
+import datetime
 import os
+import uuid
 
 try:
 
@@ -283,11 +285,20 @@ class UI:
   )
 
   generated_audio = gr.Audio(
-    label = 'Generated audio'
+    label = 'Generated audio',
+    elem_id = "generated-audio"
   )
 
   audio_waveform = gr.Plot(
     label = 'Waveform'
+  )
+
+  wavesurfer_html = gr.HTML(
+    elem_id = 'wavesurfer',
+  )
+
+  wavesurfer_reload_token = gr.HTML(
+    elem_id = 'wavesurfer-reload-token',
   )
 
   go_to_parent_button = gr.Button(
@@ -706,9 +717,15 @@ def pick_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_
   plt.plot(x, y)
   plt.show()        
 
+  # Save the wav as 'tmp/preview.wav' in the root folder (create the folder if it doesn't exist)
+  print(f'Saving tmp/preview.wav...')
+  os.makedirs('tmp', exist_ok = True)
+  librosa.output.write_wav('tmp/preview.wav', wav, hps.sr)
+
   return {
     UI.generated_audio: ( audio[0], wav ),
     UI.audio_waveform: figure,
+    UI.wavesurfer_reload_token: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
     ),
@@ -832,6 +849,10 @@ with gr.Blocks(
       /* add margin to the button */
       margin: 5px 5px 5px 5px;
     }
+
+    #wavesurfer-reload-token {
+      display: none;
+    }
   """,
   title = 'Jukebox Web UI',
 ) as app:
@@ -923,7 +944,7 @@ with gr.Blocks(
 
       preview_args = dict(
         inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec ],
-        outputs = [ UI.generated_audio, UI.audio_waveform, UI.go_to_children_button, UI.go_to_parent_button ],
+        outputs = [ UI.generated_audio, UI.audio_waveform, UI.wavesurfer_reload_token, UI.go_to_children_button, UI.go_to_parent_button ],
         fn = pick_sample,
       )
 
@@ -933,8 +954,30 @@ with gr.Blocks(
 
       with UI.sample_box:
 
-        UI.generated_audio.render()
-        UI.audio_waveform.render()
+        for this in [ 
+          UI.generated_audio, 
+          UI.audio_waveform, 
+          UI.wavesurfer_html,
+          UI.wavesurfer_reload_token
+        ]:
+          this.render()
+
+        UI.generated_audio.change(
+          inputs = UI.generated_audio,
+          outputs = None,
+          fn = lambda audio: print(f'Generated audio: {audio}'),
+          _js = 'audio => console.log(audio), audio'
+        )
+        
+        gr.HTML("""
+          <button class="gr-button gr-button-lg gr-button-secondary"
+            onclick = "
+              wavesurfer.playPause()
+              this.innerText = wavesurfer.isPlaying() ? '⏸️' : '▶️'
+            "
+          >▶️</button>
+        """)
+
 
         gr.Button(
           value = 'Continue',
@@ -1029,11 +1072,66 @@ with gr.Blocks(
     outputs = [ UI.project_name, UI.artist, UI.genre ],
     api_name = 'initialize',
     _js = """(...args) => {
+
       // Create and inject a wavesurfer script
       const wavesurferScript = document.createElement('script')
       wavesurferScript.src = 'https://unpkg.com/wavesurfer.js'
       document.head.appendChild(wavesurferScript)
-      console.log(args)
+
+      // Wait for wavesurfer script to load
+      wavesurferScript.onload = () => {
+
+        // The wavesurfer element is hidden inside a shadow DOM hosted by <gradio-app>, so we need to get it from there
+        let wavesurferDiv = document.querySelector('gradio-app').shadowRoot.querySelector('#wavesurfer')
+        console.log(`Found wavesurfer div:`, wavesurferDiv)
+        
+        // Create a (global) wavesurfer object with and attach it to the div
+        window.wavesurfer = WaveSurfer.create({
+          container: wavesurferDiv,
+          waveColor: 'violet',
+          progressColor: 'purple',
+        })
+
+        // Put an observer on #generated-audio (also in the shadow DOM) to reload the audio from its inner <audio> element
+        let parentElement = document.querySelector('gradio-app').shadowRoot.querySelector('#generated-audio')
+        let parentObserver
+
+        parentObserver = new MutationObserver( mutations => {
+          // Check if there is an inner <audio> element
+          let audioElement = parentElement.querySelector('audio')
+          if ( audioElement ) {
+            
+            console.log('Found audio element:', audioElement)
+            
+            // If so, create an observer on it while removing the observer on the parent
+            parentObserver.disconnect()
+
+            let audioSrc
+
+            let reloadAudio = () => {
+              // Check if the audio element has a src attribute and if it has changed
+              if ( audioElement.src && audioElement.src !== audioSrc ) {
+                // If so, reload the audio
+                audioSrc = audioElement.src
+                console.log('Reloading audio from', audioSrc)
+                wavesurfer.load(audioSrc)
+              }
+            }
+
+            reloadAudio()
+
+            let audioObserver = new MutationObserver( reloadAudio )
+
+            audioObserver.observe(audioElement, { attributes: true })
+
+          }
+
+        })
+
+        parentObserver.observe(parentElement, { childList: true, subtree: true })
+
+      }
+
       return args
     }"""
   )
