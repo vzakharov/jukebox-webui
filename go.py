@@ -309,6 +309,11 @@ class UI:
     value = '> children',
   )
 
+  total_audio_length = gr.Number(
+    label = 'Total audio length, sec',
+    elem_id = 'total-audio-length'
+  )
+
   preview_just_the_last_n_sec = gr.Number(
     label = 'Preview just the last ... seconds (0 to disable)'
   )
@@ -688,6 +693,8 @@ def pick_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_
   # If the preview_just_the_last_n_sec is set, only show the last n seconds
   if preview_just_the_last_n_sec:
     print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
+    # As the audio length can be non-integer, add its fractional part to the preview length
+    preview_just_the_last_n_sec += ( len(wav) / hps.sr ) % 1
     wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
 
   # # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
@@ -721,6 +728,7 @@ def pick_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_
     UI.generated_audio: ( audio[0], wav ),
     # UI.audio_waveform: figure,
     # UI.wavesurfer_reload_token: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    UI.total_audio_length: int( len(audio[1]) / hps.sr * 100 ) / 100,
     UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
     ),
@@ -935,7 +943,7 @@ with gr.Blocks(
 
       preview_args = dict(
         inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec ],
-        outputs = [ UI.generated_audio, UI.go_to_children_button, UI.go_to_parent_button ],
+        outputs = [ UI.generated_audio, UI.total_audio_length, UI.go_to_children_button, UI.go_to_parent_button ],
         fn = pick_sample,
       )
 
@@ -1017,11 +1025,9 @@ with gr.Blocks(
 
           with gr.Tab('Manipulate audio'):
 
-            UI.preview_just_the_last_n_sec.render()
-            UI.preview_just_the_last_n_sec.blur(**preview_args)
-
-            UI.trim_to_n_sec.render()
-            UI.trim_to_n_sec.blur(**preview_args)
+            UI.total_audio_length.render()
+            UI.preview_just_the_last_n_sec.render().blur(**preview_args)
+            UI.trim_to_n_sec.render().blur(**preview_args)
 
             # Also make the cut button visible or not depending on whether the cut value is 0
             UI.trim_to_n_sec.change(
@@ -1082,6 +1088,14 @@ with gr.Blocks(
         let timelineDiv = shadowSelector('#audio-timeline')
         console.log(`Found timeline div:`, timelineDiv)
         
+        let getAudioTime = time => {
+          let previewDuration = wavesurfer.getDuration()
+          // Take total duration from #total-audio-length's input
+          let totalDuration = parseFloat(shadowSelector('#total-audio-length input').value)
+          let additionalDuration = totalDuration - previewDuration
+          return Math.round( ( time + additionalDuration ) * 100 ) / 100          
+        }
+
         // Create a (global) wavesurfer object with and attach it to the div
         window.wavesurfer = WaveSurfer.create({
           container: waveformDiv,
@@ -1095,19 +1109,19 @@ with gr.Blocks(
               secondaryColor: '#ccc',
               primaryFontColor: '#eee',
               secondaryFontColor: '#ccc',
+              formatTimeCallback: getAudioTime
             })
           ]
         })
-
+        
         // Add a seek event listener to the wavesurfer object, modifying the #audio-time input
         wavesurfer.on('seek', progress => {
-          let time = Math.round( progress * wavesurfer.getDuration() * 100 ) / 100
-          shadowSelector('#audio-time').value = time
+          shadowSelector('#audio-time').value = getAudioTime(progress * wavesurfer.getDuration())
         })
 
         // Also update the time when the audio is playing
         wavesurfer.on('audioprocess', time => {
-          shadowSelector('#audio-time').value = Math.round( time * 100 ) / 100
+          shadowSelector('#audio-time').value = getAudioTime(time)
         })
 
         // Put an observer on #generated-audio (also in the shadow DOM) to reload the audio from its inner <audio> element
