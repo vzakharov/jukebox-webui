@@ -1,5 +1,7 @@
 # Jukebox Web UI: Getting started
 
+([permalink](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md)
+
 ## Steps
 
 1. Create a project
@@ -12,7 +14,7 @@
 
 ## Managing expectations
 
-### You don’t ge tan entire song in one click
+### You don’t get an entire song in one click
 
 Neither this app nor Jukebox is meant to generate entire songs at once. You go through a process of generating samples, listening to them, and selecting the ones you like.
 
