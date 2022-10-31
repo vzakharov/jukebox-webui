@@ -74,7 +74,7 @@ from jukebox.hparams import Hyperparams, setup_hparams, REMOTE_PREFIX
 from jukebox.utils.dist_utils import setup_dist_from_mpi
 from jukebox.utils.remote_utils import download
 from jukebox.utils.torch_utils import empty_cache
-from jukebox.sample import sample_partial_window
+from jukebox.sample import sample_partial_window, load_prompts
 
 ### Model
 
@@ -103,45 +103,67 @@ except:
 reload_monkey_patch = False #param{type:'boolean'}
 try:
   assert not reload_monkey_patch and not reload_all
-  monkey_patched_load_checkpoint
-  print('load_checkpoint already monkey patched.')
+  monkey_patched_load_checkpoint, monkey_patched_load_audio
+  print('Jukebox methods already monkey patched.')
 except:
 
-  print('load_checkpoint not monkey patched; monkey patching...')
+  print('Monkey patching Jukebox methods...')
 
-  def download_to_cache(remote_path, local_path):
-    print(f'Caching {remote_path} to {local_path}')
-    if not os.path.exists(os.path.dirname(local_path)):
-      print(f'Creating directory {os.path.dirname(local_path)}')
-      os.makedirs(os.path.dirname(local_path))
-    if not os.path.exists(local_path):
-      print('Downloading...')
-      download(remote_path, local_path)
-      print('Done.')
-    else:
-      print('Already cached.')
+  try:
+    monkey_patched_load_checkpoint
+    print('load_checkpoint already monkey patched.')
+  except:
+    # Monkey patch load_checkpoint, allowing to load models from arbitrary paths
+    def download_to_cache(remote_path, local_path):
+      print(f'Caching {remote_path} to {local_path}')
+      if not os.path.exists(os.path.dirname(local_path)):
+        print(f'Creating directory {os.path.dirname(local_path)}')
+        os.makedirs(os.path.dirname(local_path))
+      if not os.path.exists(local_path):
+        print('Downloading...')
+        download(remote_path, local_path)
+        print('Done.')
+      else:
+        print('Already cached.')
 
-  def monkey_patched_load_checkpoint(path):
-    global models_path
-    restore = path
-    if restore.startswith(REMOTE_PREFIX):
-        remote_path = restore
-        local_path = os.path.join(models_path, remote_path[len(REMOTE_PREFIX):])
-        if dist.get_rank() % 8 == 0:
-            download_to_cache(remote_path, local_path)
-        restore = local_path
-    dist.barrier()
-    checkpoint = t.load(restore, map_location=t.device('cpu'))
-    print("Restored from {}".format(restore))
-    return checkpoint
+    def monkey_patched_load_checkpoint(path):
+      global models_path
+      restore = path
+      if restore.startswith(REMOTE_PREFIX):
+          remote_path = restore
+          local_path = os.path.join(models_path, remote_path[len(REMOTE_PREFIX):])
+          if dist.get_rank() % 8 == 0:
+              download_to_cache(remote_path, local_path)
+          restore = local_path
+      dist.barrier()
+      checkpoint = t.load(restore, map_location=t.device('cpu'))
+      print("Restored from {}".format(restore))
+      return checkpoint
 
-  # # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
-  # for model_path in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
-  #   download_to_cache(f'{REMOTE_PREFIX}{model_path}', os.path.join(data_path, model_path))
+    jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
+    print('load_checkpoint monkey patched.')
 
-  jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
+    # # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
+    # for model_path in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
+    #   download_to_cache(f'{REMOTE_PREFIX}{model_path}', os.path.join(data_path, model_path))
 
-  print('Monkey patched load_checkpoint and downloaded the checkpoints')
+  try:
+    monkey_patched_load_audio
+    print('load_audio already monkey patched.')
+  except:
+
+    # Monkey patch load_audio, allowing for duration = None
+    def monkey_patched_load_audio(file, sr, offset, duration, mono=False):
+      # Librosa loads more filetypes than soundfile
+      x, _ = librosa.load(file, sr=sr, mono=mono, offset=offset/sr, duration=None if duration is None else duration/sr)
+      if len(x.shape) == 1:
+          x = x.reshape((1, -1))
+      return x
+
+    jukebox.utils.audio_utils.load_audio = monkey_patched_load_audio
+    print('load_audio monkey patched.')
+
+  print('Monkey patching done.')
 
 reload_prior = False #param{type:'boolean'}
 
@@ -187,6 +209,21 @@ custom_parents = None
 
 class UI:
 
+  ### Meta
+
+  separate_tab_warning = gr.Box(
+    visible = False
+  )
+
+  separate_tab_link = gr.Textbox(
+    interactive = False,
+    label = "This app is designed to be used in a separate browser tab. Use the following link:"
+  )
+
+  main_window = gr.Row(
+    visible = False
+  )
+
   ### General
 
   project_name = gr.Dropdown(
@@ -221,9 +258,9 @@ class UI:
   )
 
   lyrics = gr.Textbox(
-    label = 'Lyrics',
+    label = 'Lyrics (optional)',
     max_lines = 5,
-    placeholder = 'Shift+Enter for new line'
+    placeholder = 'Shift+Enter for a new line'
   )
 
   metas = [ artist, genre, lyrics ]
@@ -372,12 +409,12 @@ def delete_sample(project_name, sample_id, confirm):
 
 def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length):
 
-  print('Generating...')
+  print(f'Generating {n_samples} sample(s) of {generation_length} sec each for project {project_name}...')
 
   global total_duration
   global calculated_metas
   global hps, raw_to_tokens, chunk_size, lower_batch_size, lower_level_chunk_size
-  global top_prior, device
+  global top_prior, device, priors
   global metas, labels
 
   hps.n_samples = n_samples
@@ -407,10 +444,7 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
 
   print(f'Generating {generation_length} seconds for {project_name}...')
 
-  if not parent_sample_id:
-    zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
-    print('No parent sample, generating from scratch')
-  else:
+  if parent_sample_id:
     zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
     print(f'Loaded parent sample {parent_sample_id} of shape {[ z.shape for z in zs ]}')
     # zs is a list of tensors of torch.Size([loaded_n_samples, n_tokens])
@@ -418,6 +452,10 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
     # We do this by repeating the first sample of each tensor n_samples times
     zs = [ z[0].repeat(n_samples, 1) for z in zs ]
     print(f'Converted to shape {[ z.shape for z in zs ]}')
+
+  else:
+    zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
+    print('No parent sample provided, generating from scratch')
   
   tokens_to_sample = seconds_to_tokens(generation_length)
   sampling_kwargs = dict(
@@ -518,11 +556,21 @@ def get_custom_parents(project_name):
 
   return custom_parents
 
-def on_load(href):
+def on_load(rendered_in_notebook, href):
 
-  print(f'⚡⚡⚡ Note: You can open the UI in a separate tab by clicking this link: {href}')
-  print('')
-  print('Loading Jukebox Web UI...')
+  if not rendered_in_notebook:
+    print(f'Please open this app in a separate browser tab: {href}')
+
+    return {
+      UI.separate_tab_warning: gr.update(
+        visible = True,
+      ),
+      UI.separate_tab_link: href,
+      UI.main_window: gr.update(
+        visible = False,
+      ),
+    }
+
 
   projects = get_projects()
 
@@ -554,6 +602,12 @@ def on_load(href):
     ),
     UI.getting_started_column: gr.update(
       visible = len(projects) == 1
+    ),
+    UI.separate_tab_warning: gr.update(
+      visible = False
+    ),
+    UI.main_window: gr.update(
+      visible = True
     )
   }
 
@@ -671,7 +725,7 @@ def get_project(project_name):
       visible = False
     )
 
-    projects = get_samples(project_name, settings_out_dict[ UI.show_leafs_only ] or False)
+    projects = get_samples(project_name, settings_out_dict[ UI.show_leafs_only ] if UI.show_leafs_only in settings_out_dict else False)
     settings_out_dict[ UI.sample_tree ] = gr.update(
       choices = projects,
       value = settings_out_dict[ UI.sample_tree ] or projects[0] if len(projects) > 0 else None
@@ -681,7 +735,7 @@ def get_project(project_name):
   return {
     UI.create_project_box: gr.update( visible = is_this_new ),
     UI.settings_box: gr.update( visible = not is_this_new ),
-    UI.workspace_column: gr.update( visible = not is_this_new and len(get_samples(project_name, False)) > 0 ),
+    UI.workspace_column: gr.update( visible = not is_this_new  ),
     **settings_out_dict
   }
 
@@ -839,8 +893,16 @@ with gr.Blocks(
   """,
   title = 'Jukebox Web UI',
 ) as app:
+
+  with UI.separate_tab_warning.render():
+
+    UI.separate_tab_link.render()
+
+    gr.Button('Open in new tab', variant = 'primary' ).click( inputs = UI.separate_tab_link, outputs = None, fn = None,
+      _js = "link => window.open(link, '_blank')"
+    )
   
-  with gr.Row():
+  with UI.main_window.render():
 
     with gr.Column( scale = 1 ):
 
@@ -881,7 +943,7 @@ with gr.Blocks(
 
         for component in UI.generation_params:
           component.render()
-
+        
         for component in UI.project_settings:
 
           # Whenever a project setting is changed, save all the settings to settings.yaml in the project folder
@@ -895,29 +957,8 @@ with gr.Blocks(
             inputs = inputs,
             outputs = None,
             fn = save_project,
-            _js = 
-            # If this is a new project, don't save the settings
-            """
-              args => {
-                console.log(args)
-                // if args is not an array, convert it to one
-                if ( !Array.isArray(args) ) {
-                  args = [ args ]
-                }
-                if (args[0] == 'CREATE NEW') {
-                  throw new Error('New project; not saving settings')
-                }
-                return args
-              }
-            """
           )
 
-        UI.generate_first_button.render().click(
-          inputs = [ UI.project_name, UI.sample_tree, UI.show_leafs_only, *UI.generation_params ],
-          outputs = UI.sample_tree,
-          fn = generate,
-          api_name = 'generate',
-        )
 
     with UI.getting_started_column.render():
 
@@ -928,10 +969,23 @@ with gr.Blocks(
 
     with UI.workspace_column.render():
 
+      UI.generate_first_button.render().click(
+        inputs = [ UI.project_name, UI.sample_tree, UI.show_leafs_only, *UI.generation_params ],
+        outputs = UI.sample_tree,
+        fn = generate,
+        api_name = 'generate',
+      )
+
       with gr.Row():
         
         UI.sample_tree.render()
         UI.show_leafs_only.render()
+        
+        UI.show_leafs_only.change(
+          inputs = [ UI.project_name, UI.show_leafs_only ],
+          outputs = UI.sample_tree,
+          fn = lambda *args: gr.update( choices = get_samples(*args) ),
+        )
 
       UI.picked_sample.render()
 
@@ -1062,23 +1116,27 @@ with gr.Blocks(
 
   app.load(
     on_load,
-    inputs = gr.Textbox(visible = False),
-    outputs = [ UI.project_name, UI.artist, UI.genre, UI.getting_started_column ],
+    inputs = [ gr.Checkbox(visible = False), gr.Textbox(visible = False) ],
+    outputs = [ UI.project_name, UI.artist, UI.genre, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window ],
     api_name = 'initialize',
-    _js = """(...args) => {
+    _js = """async (...args) => {
+      
+      try {
 
-      // Create and inject wavesurfer scripts
-      let require = url => {
-        let script = document.createElement('script')
-        script.src = url
-        document.head.appendChild(script)
-        return new Promise( resolve => script.onload = resolve )
-      }
+        // Create and inject wavesurfer scripts
+        let require = url => {
+          console.log(`Injecting ${url}`)
+          let script = document.createElement('script')
+          script.src = url
+          document.head.appendChild(script)
+          return new Promise( resolve => script.onload = () => {
+            console.log(`Injected ${url}`)
+            resolve()
+          } )
+        }
 
-      Promise.all( [
-        'https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/wavesurfer.min.js',
-        'https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/plugin/wavesurfer.timeline.min.js'
-      ].map( require ) ).then( () => {
+        await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/wavesurfer.min.js')
+        await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/plugin/wavesurfer.timeline.min.js')
 
         // The wavesurfer element is hidden inside a shadow DOM hosted by <gradio-app>, so we need to get it from there
         let shadowSelector = selector => document.querySelector('gradio-app').shadowRoot.querySelector(selector)
@@ -1098,29 +1156,22 @@ with gr.Blocks(
         }
 
         // Create a (global) wavesurfer object with and attach it to the div
-        try {
-          window.wavesurfer = WaveSurfer.create({
-            container: waveformDiv,
-            waveColor: 'skyblue',
-            progressColor: 'steelblue',
-            plugins: [
-              WaveSurfer.timeline.create({
-                container: timelineDiv,
-                // Light colors, as the background is dark
-                primaryColor: '#eee',
-                secondaryColor: '#ccc',
-                primaryFontColor: '#eee',
-                secondaryFontColor: '#ccc',
-                formatTimeCallback: time => Math.round(getAudioTime(time))
-              })
-            ]
-          })
-        } catch (e) {
-          // Most likely, some of the require's failed, so we'll need to reload the page
-          console.error(e)
-          window.confirm(`Something went wrong: ${e}. Most likely, some of the required scripts failed to load. Click OK to reload the page to try again.`)
-          window.location.reload()
-        }
+        window.wavesurfer = WaveSurfer.create({
+          container: waveformDiv,
+          waveColor: 'skyblue',
+          progressColor: 'steelblue',
+          plugins: [
+            WaveSurfer.timeline.create({
+              container: timelineDiv,
+              // Light colors, as the background is dark
+              primaryColor: '#eee',
+              secondaryColor: '#ccc',
+              primaryFontColor: '#eee',
+              secondaryFontColor: '#ccc',
+              formatTimeCallback: time => Math.round(getAudioTime(time))
+            })
+          ]
+        })
         
         // Add a seek event listener to the wavesurfer object, modifying the #audio-time input
         wavesurfer.on('seek', progress => {
@@ -1170,10 +1221,18 @@ with gr.Blocks(
 
         parentObserver.observe(parentElement, { childList: true, subtree: true })
 
-      })
+        // Return the current URL to pass it to the Python code
+        return [ true, window.location.href ]
 
-      // Return the current URL to pass it to the Python code
-      return [ window.location.href ]
+      } catch (e) {
+
+        console.error(e)
+
+        // If anything went wrong, perhaps we're running the UI from inside the notebook, so let's return false
+
+        return [ false, window.location.href ]
+
+      }
     }"""
   )
 
