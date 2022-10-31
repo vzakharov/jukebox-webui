@@ -2,7 +2,7 @@
 
 #@markdown This Notebook allows you to creating music with OpenAI’s Jukebox model using a simple, web-based UI that uses your Colab Notebook as a backend.
 #@markdown
-#@markdown I strongly suggest that you refer to the [manual](https://github.com/vzakharov/jukebox-webui/blob/master/docs/getting-started.md) or at least its [Managing Expectations](https://github.com/vzakharov/jukebox-webui/blob/master/docs/managing-expectations.md) section before running it.
+#@markdown I strongly suggest that you refer to the [manual](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md) or at least its [Managing Expectations](https://github.com/vzakharov/jukebox-webui/blob/main/docs/managing-expectations.md) section before running it.
 #@markdown 
 #@markdown ***
 
@@ -30,7 +30,7 @@ share_gradio = True #param{type:'boolean'}
 # ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
 
 #@markdown ---
-#@markdown That’s it, you can now run the cell. Once again, make sure to read the [manual](https://github.com/vzakharov/jukebox-webui/blob/master/docs/getting-started.md) if you don’t know what you’re doing or exactly how Jukebox works.
+#@markdown That’s it, you can now run the cell. Once again, make sure to read the [manual](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md) if you don’t know what you’re doing or exactly how Jukebox works.
 
 debug_gradio = True #param{type:'boolean'}
 
@@ -256,7 +256,7 @@ class UI:
     variant = 'primary'
   )
 
-  getting_started_column = gr.Column( scale = 2 )
+  getting_started_column = gr.Column( scale = 2, elem_id = 'getting-started-column' )
   
   workspace_column = gr.Column( scale = 3, visible = False )
 
@@ -818,6 +818,11 @@ with gr.Blocks(
       /* add margin to the button */
       margin: 5px 5px 5px 5px;
     }
+
+    #getting-started-column {
+      /* add a considerable margin to the left of the column */
+      margin-left: 20px;
+    }
   """,
   title = 'Jukebox Web UI',
 ) as app:
@@ -899,7 +904,7 @@ with gr.Blocks(
     with UI.getting_started_column.render():
 
       # Load the getting started text from github (vzakharov/jukebox-webui/docs/getting-started.md) via urllib
-      with urllib.request.urlopen('https://raw.githubusercontent.com/vzakharov/jukebox-webui/master/docs/getting-started.md') as f:
+      with urllib.request.urlopen('https://raw.githubusercontent.com/vzakharov/jukebox-webui/main/docs/getting-started.md') as f:
         getting_started_text = f.read().decode('utf-8')
         gr.Markdown(getting_started_text)
 
