@@ -1,6 +1,6 @@
 # Jukebox Web UI: Getting started
 
-([permalink](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md)
+([permalink](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md))
 
 ## Steps
 
@@ -48,6 +48,6 @@ A: You probably can if you manage to install Jukebox and have a powerful enough 
 
 ## Roadmap
 
-* [x] v0.1: Initial release
-* [ ] v0.2: Add support for using your own audio as a starting point
-* [ ] v0.3: Add support for upsampling
+[x] v0.1: Initial release
+[ ] v0.2: Add support for using your own audio as a starting point
+[ ] v0.3: Add support for upsampling

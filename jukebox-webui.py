@@ -28,7 +28,7 @@ share_gradio = True #param{type:'boolean'}
 # ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
 
 #@markdown ---
-#@markdown That’s it, you can now run the cell. Once again, make sure to read the [manual](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md) if you don’t know what you’re doing or exactly how Jukebox works.
+#@markdown That’s it, you can now run the cell. Note that the first time you run it, it will take a few minutes to download the model. Afterwards, re-running the cell will be much faster.
 
 debug_gradio = True #param{type:'boolean'}
 
