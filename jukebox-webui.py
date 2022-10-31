@@ -16,7 +16,7 @@ use_google_drive = True #@param{type:'boolean'}
 #@markdown
 
 #@markdown ### *Path for projects*
-base_path = '/content/drive/My Drive/jukebox-webui-test' #@param{type:'string'}
+base_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
 #@markdown This is where your projects will go. ```/content/drive/My Drive/``` refers to the very top of your Google Drive. The folder will be automatically created if it doesn’t exist, so you don’t need to create it manually.
 #@markdown
 
