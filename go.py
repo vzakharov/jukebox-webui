@@ -624,11 +624,14 @@ def get_siblings(project_name, sample_id):
 
   return get_children(project_name, get_parent(project_name, sample_id))
 
-def load_project(project_name):
+def is_new(project_name):
+  return project_name == 'CREATE NEW' or not project_name
+  
+def get_project(project_name):
 
   global base_path, loaded_settings
 
-  is_new = project_name == 'CREATE NEW' or not project_name
+  is_this_new = is_new(project_name)
 
   # Start with default values for project settings
   settings_out_dict = {
@@ -641,7 +644,7 @@ def load_project(project_name):
   }
 
   # If not new, load the settings from settings.yaml in the project folder, if it exists
-  if not is_new:
+  if not is_this_new:
 
     print(f'Loading settings for {project_name}...')
 
@@ -668,10 +671,17 @@ def load_project(project_name):
       visible = False
     )
 
+    projects = get_samples(project_name, settings_out_dict[ UI.show_leafs_only ] or False)
+    settings_out_dict[ UI.sample_tree ] = gr.update(
+      choices = projects,
+      value = settings_out_dict[ UI.sample_tree ] or projects[0] if len(projects) > 0 else None
+    )
+
+
   return {
-    UI.create_project_box: gr.update( visible = is_new ),
-    UI.settings_box: gr.update( visible = not is_new ),
-    UI.workspace_column: gr.update( visible = not is_new and len(get_samples(project_name, False)) > 0 ),
+    UI.create_project_box: gr.update( visible = is_this_new ),
+    UI.settings_box: gr.update( visible = not is_this_new ),
+    UI.workspace_column: gr.update( visible = not is_this_new and len(get_samples(project_name, False)) > 0 ),
     **settings_out_dict
   }
 
@@ -768,6 +778,9 @@ def rename_sample(project_name, old_sample_id, new_sample_id):
 
 def save_project(project_name, *project_input_values):
 
+  if is_new(project_name):
+    return
+
   print(f'Saving settings for {project_name}...')
   print(f'Project input values: {project_input_values}')
 
@@ -835,19 +848,9 @@ with gr.Blocks(
  
       UI.project_name.change(
         inputs = UI.project_name,
-        outputs = [ UI.create_project_box, UI.settings_box, *UI.project_settings, UI.workspace_column ],
-        fn = load_project,
-        api_name = 'set-project'
-      )
-
-      UI.project_name.change(
-        inputs = [ UI.project_name, UI.show_leafs_only ],
-        outputs = [ UI.sample_tree, UI.getting_started_column ],
-        fn = lambda *args: {
-          UI.sample_tree: gr.update( choices = get_samples(*args) ),
-          UI.getting_started_column: gr.update( visible = False ),
-        },
-        api_name = 'get-samples'
+        outputs = [ UI.create_project_box, UI.settings_box, *UI.project_settings, UI.workspace_column, UI.getting_started_column ],
+        fn = get_project,
+        api_name = 'get-project'
       )
 
       UI.create_project_box.render()
@@ -891,7 +894,22 @@ with gr.Blocks(
           handler(
             inputs = inputs,
             outputs = None,
-            fn = save_project
+            fn = save_project,
+            _js = 
+            # If this is a new project, don't save the settings
+            """
+              args => {
+                console.log(args)
+                // if args is not an array, convert it to one
+                if ( !Array.isArray(args) ) {
+                  args = [ args ]
+                }
+                if (args[0] == 'CREATE NEW') {
+                  throw new Error('New project; not saving settings')
+                }
+                return args
+              }
+            """
           )
 
         UI.generate_first_button.render().click(
@@ -1100,7 +1118,7 @@ with gr.Blocks(
         } catch (e) {
           // Most likely, some of the require's failed, so we'll need to reload the page
           console.error(e)
-          window.confirm('Something went wrong. Most likely, some of the required scripts failed to load. Click OK to reload the page to try again.')
+          window.confirm(`Something went wrong: ${e}. Most likely, some of the required scripts failed to load. Click OK to reload the page to try again.`)
           window.location.reload()
         }
         
