@@ -18,6 +18,10 @@
 
 Neither this app nor Jukebox is meant to generate entire songs at once. You go through a process of generating samples, listening to them, and selecting the ones you like.
 
+### You don’t get to generate individual tracks
+
+Jukebox is a model that generates the “master track” of a song. You can’t tell it to generate a bassline, a drum track, or a melody to later combine into a song. You can only generate the song as a whole.
+
 ### It takes time
 
 Even with the lowest quality (the only one that is currently supported), it takes 30-60 seconds to generate ONE second of music.
