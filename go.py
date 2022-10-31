@@ -2,7 +2,7 @@
 
 #@markdown This Notebook allows you to creating music with OpenAI’s Jukebox model using a simple, web-based UI that uses your Colab Notebook as a backend.
 #@markdown
-#@markdown I strongly suggest that you refer to the [manual](https://github.com/vzakharov/jukebox-webui/blob/master/docs/rtfm.md) or at least its [Managing Expectations](https://github.com/vzakharov/jukebox-webui/blob/master/docs/managing-expectations.md) section before running it.
+#@markdown I strongly suggest that you refer to the [manual](https://github.com/vzakharov/jukebox-webui/blob/master/docs/getting-started.md) or at least its [Managing Expectations](https://github.com/vzakharov/jukebox-webui/blob/master/docs/managing-expectations.md) section before running it.
 #@markdown 
 #@markdown ***
 
@@ -18,7 +18,7 @@ use_google_drive = True #@param{type:'boolean'}
 #@markdown
 
 #@markdown ### *Path for projects*
-base_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
+base_path = '/content/drive/My Drive/jukebox-webui-test' #@param{type:'string'}
 #@markdown This is where your projects will go. ```/content/drive/My Drive/``` refers to the very top of your Google Drive. The folder will be automatically created if it doesn’t exist, so you don’t need to create it manually.
 #@markdown
 
@@ -30,7 +30,7 @@ share_gradio = True #param{type:'boolean'}
 # ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
 
 #@markdown ---
-#@markdown That’s it, you can now run the cell. Once again, make sure to read the [manual](https://github.com/vzakharov/jukebox-webui/blob/master/docs/rtfm.md) if you don’t know what you’re doing or exactly how Jukebox works.
+#@markdown That’s it, you can now run the cell. Once again, make sure to read the [manual](https://github.com/vzakharov/jukebox-webui/blob/master/docs/getting-started.md) if you don’t know what you’re doing or exactly how Jukebox works.
 
 debug_gradio = True #param{type:'boolean'}
 
@@ -256,7 +256,9 @@ class UI:
     variant = 'primary'
   )
 
-  generation_column = gr.Column( scale = 3, visible = False )
+  getting_started_column = gr.Column( scale = 2 )
+  
+  workspace_column = gr.Column( scale = 3, visible = False )
 
   sample_tree = gr.Dropdown(
     label = 'Sample tree',
@@ -550,6 +552,9 @@ def on_load(href):
     UI.genre: gr.update(
       choices = get_meta('genre'),
     ),
+    UI.getting_started_column: gr.update(
+      visible = len(projects) == 1
+    )
   }
 
 def get_meta(what):
@@ -658,11 +663,15 @@ def load_project(project_name):
       print(f'Saving {project_name} as last project...')
       yaml.dump({'last_project': project_name}, f)
       print('Saved to settings.yaml')
+    
+    settings_out_dict[UI.getting_started_column] = gr.update(
+      visible = False
+    )
 
   return {
     UI.create_project_box: gr.update( visible = is_new ),
     UI.settings_box: gr.update( visible = not is_new ),
-    UI.generation_column: gr.update( visible = not is_new and len(get_samples(project_name, False)) > 0 ),
+    UI.workspace_column: gr.update( visible = not is_new and len(get_samples(project_name, False)) > 0 ),
     **settings_out_dict
   }
 
@@ -821,16 +830,17 @@ with gr.Blocks(
  
       UI.project_name.change(
         inputs = UI.project_name,
-        outputs = [ UI.create_project_box, UI.settings_box, *UI.project_settings, UI.generation_column ],
+        outputs = [ UI.create_project_box, UI.settings_box, *UI.project_settings, UI.workspace_column ],
         fn = load_project,
         api_name = 'set-project'
       )
 
       UI.project_name.change(
         inputs = [ UI.project_name, UI.show_leafs_only ],
-        outputs = UI.sample_tree,
+        outputs = [ UI.sample_tree, UI.getting_started_column ],
         fn = lambda *args: {
-          UI.sample_tree: gr.update( choices = get_samples(*args) )
+          UI.sample_tree: gr.update( choices = get_samples(*args) ),
+          UI.getting_started_column: gr.update( visible = False ),
         },
         api_name = 'get-samples'
       )
@@ -886,7 +896,14 @@ with gr.Blocks(
           api_name = 'generate',
         )
 
-    with UI.generation_column.render():
+    with UI.getting_started_column.render():
+
+      # Load the getting started text from github (vzakharov/jukebox-webui/docs/getting-started.md) via urllib
+      with urllib.request.urlopen('https://raw.githubusercontent.com/vzakharov/jukebox-webui/master/docs/getting-started.md') as f:
+        getting_started_text = f.read().decode('utf-8')
+        gr.Markdown(getting_started_text)
+
+    with UI.workspace_column.render():
 
       with gr.Row():
         
@@ -1022,8 +1039,8 @@ with gr.Blocks(
 
   app.load(
     on_load,
-    inputs = gr.Textbox(),
-    outputs = [ UI.project_name, UI.artist, UI.genre ],
+    inputs = gr.Textbox(visible = False),
+    outputs = [ UI.project_name, UI.artist, UI.genre, UI.getting_started_column ],
     api_name = 'initialize',
     _js = """(...args) => {
 
@@ -1058,22 +1075,29 @@ with gr.Blocks(
         }
 
         // Create a (global) wavesurfer object with and attach it to the div
-        window.wavesurfer = WaveSurfer.create({
-          container: waveformDiv,
-          waveColor: 'skyblue',
-          progressColor: 'steelblue',
-          plugins: [
-            WaveSurfer.timeline.create({
-              container: timelineDiv,
-              // Light colors, as the background is dark
-              primaryColor: '#eee',
-              secondaryColor: '#ccc',
-              primaryFontColor: '#eee',
-              secondaryFontColor: '#ccc',
-              formatTimeCallback: time => Math.round(getAudioTime(time))
-            })
-          ]
-        })
+        try {
+          window.wavesurfer = WaveSurfer.create({
+            container: waveformDiv,
+            waveColor: 'skyblue',
+            progressColor: 'steelblue',
+            plugins: [
+              WaveSurfer.timeline.create({
+                container: timelineDiv,
+                // Light colors, as the background is dark
+                primaryColor: '#eee',
+                secondaryColor: '#ccc',
+                primaryFontColor: '#eee',
+                secondaryFontColor: '#ccc',
+                formatTimeCallback: time => Math.round(getAudioTime(time))
+              })
+            ]
+          })
+        } catch (e) {
+          // Most likely, some of the require's failed, so we'll need to reload the page
+          console.error(e)
+          window.confirm('Something went wrong. Most likely, some of the required scripts failed to load. Click OK to reload the page to try again.')
+          window.location.reload()
+        }
         
         // Add a seek event listener to the wavesurfer object, modifying the #audio-time input
         wavesurfer.on('seek', progress => {
