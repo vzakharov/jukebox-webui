@@ -1,46 +1,62 @@
+#@title Jukebox Web UI
+
+#@markdown This Notebook allows you to creating music with OpenAI’s Jukebox model using a simple, web-based UI that uses your Colab Notebook as a backend.
+#@markdown
+#@markdown I strongly suggest that you refer to the [manual](https://github.com/vzakharov/jukebox-webui/blob/master/docs/rtfm.md) or at least its [Managing Expectations](https://github.com/vzakharov/jukebox-webui/blob/master/docs/managing-expectations.md) section before running it.
+#@markdown 
+#@markdown ***
+
+#@markdown ## Parameters
+#@markdown ### *Song duration in seconds*
 total_duration = 200 #@param {type:"slider", min:60, max:300, step:10}
+#@markdown This is the only generation parameter you need to set in advance (instead of setting it in the UI later), as changing the duration requires reloading the model. If you do want to do this, stop the cell and run it again with the new value.
+#@markdown
 
-colab_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
-local_path = 'G:/Мой диск/jukebox-webui'
+#@markdown ### *Google Drive or Colab’s (non-persistent!) storage*
+use_google_drive = True #@param{type:'boolean'}
+#@markdown Uncheck if you want to store data locally (or in your Colab instance) instead of Google Drive. Note that in this case your data will be lost when the Colab instance is stopped.
+#@markdown
 
-colab_data_path = '/content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
-local_data_path = 'G:/Мой диск/jukebox-webui/_data'
+#@markdown ### *Path for projects*
+base_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
+#@markdown This is where your projects will go. ```/content/drive/My Drive/``` refers to the very top of your Google Drive. The folder will be automatically created if it doesn’t exist, so you don’t need to create it manually.
+#@markdown
 
-base_path = colab_path if is_colab else local_path
-data_path = colab_data_path if is_colab else local_data_path
+#@markdown ### *Path for models*
+models_path = '/content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
+#@markdown This is where your models will be stored. This app is capable of loading the model from an arbitrary path, so storing it on Google Drive will save you the hassle (and time) of having to download or copy it every time you start the instance. The models will be downloaded automatically if they don’t exist, so you don’t need to download them manually.
 
-share_gradio = True #@param{type:'boolean'}
-debug_gradio = True #@param{type:'boolean'}
+share_gradio = True #param{type:'boolean'}
+# ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
 
-reload_all = False #@param{type:'boolean'}
+#@markdown ---
+#@markdown That’s it, you can now run the cell. Once again, make sure to read the [manual](https://github.com/vzakharov/jukebox-webui/blob/master/docs/rtfm.md) if you don’t know what you’re doing or exactly how Jukebox works.
 
+debug_gradio = True #param{type:'boolean'}
+
+reload_all = False #param{type:'boolean'}
+
+# If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
 try:
 
-  assert not reload_all
-  is_colab # If is_colab is defined, we don't need to check again
-  print('Re-running the cell')
   !nvidia-smi
+  assert not reload_all
+  repeated_run
+  # ^ If this doesn't give an error, it means we're in Colab and re-running the notebook (because repeated_run is defined in the first run)
+  print('Re-running the notebook')
 
 except:
   
-  try:
-
+  if use_google_drive:
     from google.colab import drive
     drive.mount('/content/drive')
 
-    !nvidia-smi
-    !pip install git+https://github.com/openai/jukebox.git
-    !pip install gradio
-    # os.system('pip install git+https://github.com/openai/jukebox.git')
-    # os.system('pip install gradio')
-    # TODO: Fing a way to do the !stuff so that it runs in non-colab environments
+  !nvidia-smi
+  !pip install git+https://github.com/openai/jukebox.git
+  !pip install gradio
 
-    is_colab = True
-
-  except:
-    print('Not running on Colab')
-    is_colab = False
-  
+  repeated_run = True
+ 
 
 import gradio as gr
 import os
@@ -49,10 +65,6 @@ import torch as t
 import urllib.request
 
 import yaml
-
-# # Dump strings as literal blocks in YAML
-# yaml.add_representer(str, lambda dumper, value: dumper.represent_scalar('tag:yaml.org,2002:str', value, style='|'))
-
 
 import jukebox
 import jukebox.utils.dist_adapter as dist
@@ -68,7 +80,6 @@ from jukebox.sample import sample_partial_window
 
 raw_to_tokens = 128
 chunk_size = 16
-model = '5b_lyrics'
 lower_batch_size = 16
 lower_level_chunk_size = 32
 
@@ -78,7 +89,7 @@ hps.levels = 3
 hps.hop_fraction = [ 0.5, 0.5, 0.125 ]
 hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
 
-reload_dist = False #@param{type:'boolean'}
+reload_dist = False #param{type:'boolean'}
 
 try:
   assert not reload_dist and not reload_all
@@ -89,9 +100,8 @@ except:
   print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
 # Monkey patch jukebox.make_models.load_checkpoint to load cached checkpoints from local_data_path instead of '~/.cache'
-reload_monkey_patch = False #@param{type:'boolean'}
+reload_monkey_patch = False #param{type:'boolean'}
 try:
-  print('Checking monkey patch...')
   assert not reload_monkey_patch and not reload_all
   monkey_patched_load_checkpoint
   print('load_checkpoint already monkey patched.')
@@ -112,11 +122,11 @@ except:
       print('Already cached.')
 
   def monkey_patched_load_checkpoint(path):
-    global data_path
+    global models_path
     restore = path
     if restore.startswith(REMOTE_PREFIX):
         remote_path = restore
-        local_path = os.path.join(data_path, remote_path[len(REMOTE_PREFIX):])
+        local_path = os.path.join(models_path, remote_path[len(REMOTE_PREFIX):])
         if dist.get_rank() % 8 == 0:
             download_to_cache(remote_path, local_path)
         restore = local_path
@@ -133,24 +143,13 @@ except:
 
   print('Monkey patched load_checkpoint and downloaded the checkpoints')
 
+reload_prior = False #param{type:'boolean'}
+
 try:
   vqvae, priors, top_prior
+  assert total_duration == calculated_duration and not reload_prior and not reload_all
   print('Model already loaded.')
 except:
-  vqvae = None
-  priors = None
-  top_prior = None
-  reload_prior = True
-  print('Model not loaded; loading...')
-
-reload_prior = False #@param{type:'boolean'}
-
-try:
-  calculated_duration
-except:
-  calculated_duration = 0
-
-if total_duration != calculated_duration or reload_prior or reload_all:
 
   print(f'Loading vqvae and top_prior for duration {total_duration}...')
 
@@ -164,7 +163,7 @@ if total_duration != calculated_duration or reload_prior or reload_all:
   except:
     print('Either vqvae or top_prior is not defined; skipping deletion')
 
-  vqvae, *priors = MODELS[model]
+  vqvae, *priors = MODELS['5b_lyrics']
 
   vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
 
@@ -179,7 +178,7 @@ if not os.path.isdir(base_path):
 
 try:
   calculated_metas
-  print('Using existing calculated_metas')
+  print('Using calculated metas')
 except:
   calculated_metas = {}
 
@@ -280,10 +279,6 @@ class UI:
     label = 'Generated audio',
     elem_id = "generated-audio"
   )
-
-  # audio_waveform = gr.Plot(
-  #   label = 'Waveform'
-  # )
 
   audio_waveform = gr.HTML(
     elem_id = 'audio-waveform'
@@ -410,7 +405,7 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
 
   print(f'Generating {generation_length} seconds for {project_name}...')
 
-  if is_none_ish(parent_sample_id):
+  if not parent_sample_id:
     zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
     print('No parent sample, generating from scratch')
   else:
@@ -521,8 +516,10 @@ def get_custom_parents(project_name):
 
   return custom_parents
 
-def on_load():
+def on_load(href):
 
+  print(f'⚡⚡⚡ Note: You can open the UI in a separate tab by clicking this link: {href}')
+  print('')
   print('Loading Jukebox Web UI...')
 
   projects = get_projects()
@@ -583,7 +580,7 @@ def get_parent(project_name, sample_id):
   return parent_sample_id
 
 def get_prefix(project_name, parent_sample_id):
-  return f'{project_name if is_none_ish(parent_sample_id) else parent_sample_id}-'
+  return f'{parent_sample_id or project_name}-'
 
 def get_samples(project_name, show_leafs_only):
 
@@ -598,7 +595,6 @@ def get_samples(project_name, show_leafs_only):
   # Sort by id, in descending order
   choices.sort(reverse = True)
   
-  # return [ 'NONE' ] + choices
   return choices
 
 def get_projects():
@@ -623,9 +619,6 @@ def get_siblings(project_name, sample_id):
 
   return get_children(project_name, get_parent(project_name, sample_id))
 
-def is_none_ish(string):
-  return not string or string == 'NONE'
-
 def load_project(project_name):
 
   global base_path, loaded_settings
@@ -637,7 +630,6 @@ def load_project(project_name):
     UI.artist: 'Unknown',
     UI.genre: 'Unknown',
     UI.lyrics: '',
-    UI.sample_tree: 'NONE',
     UI.generation_length: 1,
     UI.temperature: 0.98,
     UI.n_samples: 2
@@ -670,11 +662,11 @@ def load_project(project_name):
   return {
     UI.create_project_box: gr.update( visible = is_new ),
     UI.settings_box: gr.update( visible = not is_new ),
-    UI.generation_column: gr.update( visible = not is_new and len(get_samples(project_name)) > 0 ),
+    UI.generation_column: gr.update( visible = not is_new and len(get_samples(project_name, False)) > 0 ),
     **settings_out_dict
   }
 
-def pick_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec):
+def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec):
 
   audio = get_audio(project_name, sample_id)
   wav = audio[1]
@@ -691,66 +683,37 @@ def pick_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_
     preview_just_the_last_n_sec += ( len(wav) / hps.sr ) % 1
     wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
 
-  # # The audio is a tuple of (sr, wav), where wav is of shape (sample_length,)
-  # # To plot it, we need to convert it to a list of (x, y) points where x is the time in seconds and y is the amplitude
-  # x = np.arange(0, len(wav)) / hps.sr
-  # # Add total length in seconds minus the preview length to the x values
-  # if preview_just_the_last_n_sec:
-  #   x += ( trim_to_n_sec or len(audio[1]) / hps.sr ) - preview_just_the_last_n_sec
-  # y = wav
-  # print(f'Plotting {len(x)} points from {x[0]} to {x[-1]} seconds')
-
-  # figure = plt.figure()
-  # # Set aspect ratio to 10:1
-  # figure.set_size_inches(20, 2)
-
-  # # Remove y axis; make x axis go through y=0          
-  # ax = plt.gca()
-  # ax.spines['bottom'].set_position('zero')
-  # ax.spines['left'].set_visible(False)
-  # ax.spines['right'].set_visible(False)
-  # ax.spines['top'].set_visible(False)
-  # # Set minor x ticks every 0.1 seconds
-  # ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.1))
-  # # Move x axis to the foreground
-  # ax.set_axisbelow(False)
-
-  # plt.plot(x, y)
-  # plt.show()        
-
   return {
     UI.generated_audio: ( audio[0], wav ),
-    # UI.audio_waveform: figure,
-    # UI.wavesurfer_reload_token: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     UI.total_audio_length: int( len(audio[1]) / hps.sr * 100 ) / 100,
     UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
     ),
     UI.go_to_parent_button: gr.update(
       visible = get_parent(project_name, sample_id) is not None
+    ),
+    UI.sample_box: gr.update(
+      visible = True
+    ),
+    UI.generate_first_button: gr.update(
+      visible = False
     )
   }
 
 def refresh_siblings(project_name, sample_id):
   
-  if is_none_ish(sample_id):
+  if not sample_id:
     return {
-      UI.picked_sample: gr.update( visible = False ),
-      UI.sample_box: gr.update( visible = False ),
-      UI.generate_first_button: gr.update( visible = True ),
+      UI.picked_sample: gr.update( visible = False )
     }
 
   print(f'Changing current sample to {sample_id}...')
   siblings = get_siblings(project_name, sample_id)
-  return {
-    UI.picked_sample: gr.update(
-      choices = siblings,
-      value = sample_id,
-      visible = len(siblings) > 1
-    ),
-    UI.sample_box: gr.update( visible = True ),
-    UI.generate_first_button: gr.update( visible = False ),
-  }
+  return gr.update(
+    choices = siblings,
+    value = sample_id,
+    visible = len(siblings) > 1
+  )
 
 def rename_sample(project_name, old_sample_id, new_sample_id):
 
@@ -787,9 +750,9 @@ def rename_sample(project_name, old_sample_id, new_sample_id):
     yaml.dump(custom_parents_to_save, f)
     print('Done.')
 
-  # Find all files in the project directory that start with the old sample ID and rename them
+  # Find all files in the project directory that start with the old sample ID followed by either a dash or a dot and rename them
   for filename in os.listdir(f'{base_path}/{project_name}'):
-    if filename.startswith(old_sample_id):
+    if re.match(rf'^{old_sample_id}[-.]', filename):
       new_filename = filename.replace(old_sample_id, new_sample_id)
       print(f'Renaming {filename} to {new_filename}')
       os.rename(f'{base_path}/{project_name}/{filename}', f'{base_path}/{project_name}/{new_filename}')
@@ -934,18 +897,18 @@ with gr.Blocks(
 
       UI.sample_tree.change(
         inputs = [ UI.project_name, UI.sample_tree ],
-        outputs = [ UI.picked_sample, UI.sample_box, UI.generated_audio, UI.generate_first_button ],
+        outputs = UI.picked_sample,
         fn = refresh_siblings,
         api_name = 'get-siblings'        
       )
 
       preview_args = dict(
         inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec ],
-        outputs = [ UI.generated_audio, UI.total_audio_length, UI.go_to_children_button, UI.go_to_parent_button ],
-        fn = pick_sample,
+        outputs = [ UI.generated_audio, UI.total_audio_length, UI.go_to_children_button, UI.go_to_parent_button, UI.sample_box, UI.generate_first_button ],
+        fn = get_sample,
       )
 
-      UI.picked_sample.change(**preview_args, api_name = 'get-audio-preview')
+      UI.picked_sample.change(**preview_args, api_name = 'get-sample')
 
       UI.sample_box.render()
 
@@ -1059,7 +1022,7 @@ with gr.Blocks(
 
   app.load(
     on_load,
-    inputs = None,
+    inputs = gr.Textbox(),
     outputs = [ UI.project_name, UI.artist, UI.genre ],
     api_name = 'initialize',
     _js = """(...args) => {
@@ -1162,7 +1125,8 @@ with gr.Blocks(
 
       })
 
-      return args
+      // Return the current URL to pass it to the Python code
+      return [ window.location.href ]
     }"""
   )
 
