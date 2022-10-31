@@ -1,9 +1,7 @@
 #@title Jukebox Web UI
 
 #@markdown This Notebook allows you to creating music with OpenAI’s Jukebox model using a simple, web-based UI that uses your Colab Notebook as a backend.
-#@markdown
-#@markdown I strongly suggest that you refer to the [manual](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md) or at least its [Managing Expectations](https://github.com/vzakharov/jukebox-webui/blob/main/docs/managing-expectations.md) section before running it.
-#@markdown 
+#@markdown I strongly suggest that you refer to the [getting started page](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md) before running it.
 #@markdown ***
 
 #@markdown ## Parameters
