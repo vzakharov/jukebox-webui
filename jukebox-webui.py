@@ -56,14 +56,16 @@ except:
   repeated_run = True
  
 
-import glob
+# import glob
 import gradio as gr
 import librosa
 import os
 import re
+# from matplotlib import pyplot as plt
+import numpy as np
 import torch as t
 import urllib.request
-import uuid
+# import uuid
 import yaml
 
 import jukebox
@@ -291,9 +293,11 @@ class UI:
   
   workspace_column = gr.Column( scale = 3, visible = False )
 
+  STAGE_SELECTOR_CHOICES = [ 'Start from scratch', 'Continue from a generated sample' ]
+
   stage_selector = gr.Dropdown(
     label = 'Stage',
-    choices = [ 'Start from scratch', 'Continue from a generated sample' ],
+    choices = STAGE_SELECTOR_CHOICES,
     type = 'index',
   )
 
@@ -302,12 +306,6 @@ class UI:
   primed_audio = gr.Audio(
     label = 'Audio to start from (optional)',
     source = 'microphone'
-  )
-
-  primed_audio_source = gr.Radio(
-    label = 'Audio source',
-    choices = [ 'microphone', 'upload' ],
-    value = 'microphone'
   )
 
   continue_generation_row = gr.Row(
@@ -436,10 +434,10 @@ def generate(project_name, stage, parent_sample_id, show_leafs_only, artist, gen
 
   hps.n_samples = n_samples
 
-  # If metas have changed, recalculate the metas
-  if calculated_metas != dict( artist = artist, genre = genre, lyrics = lyrics ):
+  # If metas or n_samples have changed, recalculate the metas
+  if calculated_metas != dict( artist = artist, genre = genre, lyrics = lyrics ) or len(metas) != n_samples:
 
-    print(f'Metas have changed, recalculating the model for {artist}, {genre}, {lyrics}')
+    print(f'Metas or n_samples have changed, recalculating the model for {artist}, {genre}, {lyrics}, {n_samples} samples...')
 
     metas = [dict(
       artist = artist,
@@ -469,55 +467,33 @@ def generate(project_name, stage, parent_sample_id, show_leafs_only, artist, gen
       # stage == 0 means start from scratch
       # In this case, parent_sample_id contains an array of the following form (example):
       # (48000, array([        0,         0,         0, ..., -26209718, -25768554,       -25400996], dtype=int32))
+      # dtype=int16 is also possible
+      # Or, if it is a stereo file, audio[1] is [[left, right], [left, right], ...]
       
       audio = parent_sample_id
+      print(f'Audio: {audio}')
+      # breakpoint()
       print(f'Audio length: {len(audio[1])} samples, sample rate: {audio[0]} Hz')
 
-      # To get the new parent sample id, we find the first z file starting with {project_name}-prime[index] and increment the index
-      parent_sample_index = 1
-      for file in glob.glob(f'{base_path}/{project_name}/{project_name}-prime*.z'):
-        has_integer_index = re.match(f'{base_path}/{project_name}/{project_name}-prime([0-9]+).z', file)
-        if has_integer_index:
-          parent_sample_index = max(parent_sample_index, int(has_integer_index.group(1)) + 1)
+      parent_sample_id = f'{project_name}-primed'
+      
+      # If it is a stereo file, we need to convert it to mono by averaging the left and right channels
+      if len(audio[1].shape) > 1:
+        audio = (audio[0], audio[1].mean(axis=1))
+        print(f'Converted stereo to mono (shape: {audio[1].shape})')
 
-      parent_sample_id = f'{project_name}-prime{parent_sample_index}'
-      print(f"Resulting generations will start with '{parent_sample_id}-...'")
+      # Convert the audio to float depending on the dtype
 
-      # There is the code from original jukebox repo for loading samples from wav files:
+      x = audio[1] / 2**31 if audio[1].dtype == np.int32 else audio[1] / 2**15
+      print(f'Converted to [-1, 1]; min = {x.min()}, max = {x.max()}')
 
-      # def load_audio(file, sr, offset, duration, mono=False):
-      #   x, _ = librosa.load(file, sr=sr, mono=mono, offset=offset/sr, duration=duration/sr)
-      #   if len(x.shape) == 1:
-      #       x = x.reshape((1, -1))
-      #   return x    
-
-      # def load_prompts(audio_files, duration, hps):
-      #     xs = []
-      #     for audio_file in audio_files:
-      #         x = load_audio(audio_file, sr=hps.sr, duration=duration, offset=0.0, mono=True)
-      #         x = x.T # CT -> TC
-      #         xs.append(x)
-      #     while len(xs) < hps.n_samples:
-      #         xs.extend(xs)
-      #     xs = xs[:hps.n_samples]
-      #     x = t.stack([t.from_numpy(x) for x in xs])
-      #     x = x.to('cuda', non_blocking=True)
-      #     return 
-
-
-      # So, to make the same with our `audio`, we need to do the following:
-      # 1. Normalize the audio to [-1, 1]
-
-      x = audio[1] / 2**31
-      print(f'Normalized audio to [-1, 1]')
-
-      # 2. Resample the audio to hps.sr (if needed)
+      # Resample the audio to hps.sr (if needed)
 
       if audio[0] != hps.sr:
         x = librosa.resample(x, audio[0], hps.sr)
         print(f'Resampled audio to {hps.sr}')
 
-      # 3. Convert the audio to a tensor (e.g. from array([[-1.407e-03, -4.461e-04, ..., -3.042e-05,  1.277e-05]], dtype=float32) to tensor([[-1.407e-03], [-4.461e-04], ..., [-3.042e-05], [ 1.277e-05]], dtype=float32))
+      # Convert the audio to a tensor (e.g. from array([[-1.407e-03, -4.461e-04, ..., -3.042e-05,  1.277e-05]], dtype=float32) to tensor([[-1.407e-03], [-4.461e-04], ..., [-3.042e-05], [ 1.277e-05]], dtype=float32))
 
       if len(x.shape) == 1:
         x = x.reshape((1, -1))
@@ -654,10 +630,12 @@ def get_custom_parents(project_name):
 
   return custom_parents
 
-def on_load(rendered_in_notebook, href):
+def on_load(rendered_in_notebook, href, error_message):
 
   if not rendered_in_notebook:
-    print(f'Please open this app in a separate browser tab: {href}')
+    if error_message:
+      print(f'Please open this app in a separate browser tab: {href}')
+      print(f'Error message from the client (for debugging only; you can ignore this): {error_message}')
 
     return {
       UI.separate_tab_warning: gr.update(
@@ -793,11 +771,12 @@ def get_project(project_name):
     UI.generation_length: 1,
     UI.temperature: 0.98,
     UI.n_samples: 2,
-    UI.stage_selector: 'Start from scratch',
+    UI.stage_selector: UI.STAGE_SELECTOR_CHOICES[0],
     UI.sample_tree: None
   }
 
   samples = []
+  sample = None
 
   # If not new, load the settings from settings.yaml in the project folder, if it exists
   if not is_this_new:
@@ -945,8 +924,8 @@ def save_project(project_name, *project_input_values):
   if is_new(project_name):
     return
 
-  print(f'Saving settings for {project_name}...')
-  print(f'Project input values: {project_input_values}')
+  # print(f'Saving settings for {project_name}...')
+  # print(f'Project input values: {project_input_values}')
 
   # Go through all UI attributes and add the ones that are in the project settings to a dictionary
   settings = {}
@@ -954,7 +933,7 @@ def save_project(project_name, *project_input_values):
   for i in range(len(UI.project_settings)):
     settings[UI.input_names[UI.project_settings[i]]] = project_input_values[i]
   
-  print(f'Settings: {settings}')
+  # print(f'Settings: {settings}')
 
   # If the settings are different from the loaded settings, save them to the project folder
 
@@ -962,10 +941,10 @@ def save_project(project_name, *project_input_values):
 
     with open(f'{base_path}/{project_name}/{project_name}.yaml', 'w') as f:
       yaml.dump(settings, f)
-      print(f'Saved settings to {base_path}/{project_name}/{project_name}.yaml')
+      print(f'Saved settings to {base_path}/{project_name}/{project_name}.yaml: {settings}')
   
-  else:
-    print('Settings are the same as loaded settings, not saving.')
+  # else:
+  #   print('Settings are the same as loaded settings, not saving.')
 
 def seconds_to_tokens(sec):
 
@@ -1006,11 +985,9 @@ with gr.Blocks(
 
   with UI.separate_tab_warning.render():
 
-    gr.Markdown("## This app is designed to be used in a separate browser tab. Click below to open one.")
-
     UI.separate_tab_link.render()
 
-    gr.Button('Open in new tab', variant = 'primary' ).click( inputs = UI.separate_tab_link, outputs = None, fn = None,
+    gr.Button('Open the UI', variant = 'primary' ).click( inputs = UI.separate_tab_link, outputs = None, fn = None,
       _js = "link => window.open(link, '_blank')"
     )
   
@@ -1087,16 +1064,40 @@ with gr.Blocks(
 
         with gr.Column():
 
-          gr.Markdown('Start from your own audio — or let the model dream up something new, the choice is yours!')
+          with gr.Accordion( "Start with your own audio", open = False ):
 
-          with gr.Row():
+            primed_audio_source = gr.Radio(
+              label = 'Audio source',
+              choices = [ 'microphone', 'upload' ],
+              value = 'microphone'
+            )
 
             UI.primed_audio.render()
-
-            UI.primed_audio_source.render().change(
-              inputs = UI.primed_audio_source,
+            
+            primed_audio_source.change(
+              inputs = primed_audio_source,
               outputs = UI.primed_audio,
               fn = lambda source: gr.update( source = source ),
+            )
+
+            sec_to_trim_primed_audio = gr.Number(
+              label = 'Trim starting audio to ... seconds from the beginning',
+            )
+
+            def trim_primed_audio(audio, sec):
+              print(f'Trimming {audio} to {sec} seconds')
+              # # Plot the audio to console for debugging
+              # plt.plot(audio)
+              # plt.show()              
+              # Audio is of the form (sr, audio)
+              trimmed_audio = audio[1][:int(sec * audio[0])]
+              print(f'Trimmed audio shape is {trimmed_audio.shape}')
+              return ( audio[0], trimmed_audio )
+
+            sec_to_trim_primed_audio.submit(
+              inputs = [ UI.primed_audio, sec_to_trim_primed_audio ],
+              outputs = UI.primed_audio,
+              fn = trim_primed_audio
             )
 
           gr.Button(
@@ -1104,8 +1105,8 @@ with gr.Blocks(
             variant = 'primary'
           ).click(
             inputs = [ UI.project_name, UI.stage_selector, UI.primed_audio, UI.show_leafs_only, *UI.generation_params ],
-            outputs = UI.sample_tree,
-            fn = generate,
+            outputs = [ UI.sample_tree, UI.stage_selector ],
+            fn = lambda *args: [ generate(*args), UI.STAGE_SELECTOR_CHOICES[1] ],
             api_name = 'generate',
           )
 
@@ -1254,7 +1255,7 @@ with gr.Blocks(
 
   app.load(
     on_load,
-    inputs = [ gr.Checkbox(visible = False), gr.Textbox(visible = False) ],
+    inputs = [ gr.Checkbox(visible = False), gr.Textbox(visible = False), gr.Textbox(visible = False) ],
     outputs = [ UI.project_name, UI.artist, UI.genre, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window ],
     api_name = 'initialize',
     _js = """async (...args) => {
@@ -1360,7 +1361,7 @@ with gr.Blocks(
         parentObserver.observe(parentElement, { childList: true, subtree: true })
 
         // Return the current URL to pass it to the Python code
-        return [ true, window.location.href ]
+        return [ true, window.location.href, '' ]
 
       } catch (e) {
 
@@ -1368,7 +1369,7 @@ with gr.Blocks(
 
         // If anything went wrong, perhaps we're running the UI from inside the notebook, so let's return false
 
-        return [ false, window.location.href ]
+        return [ false, window.location.href, e.toString() ]
 
       }
     }"""
