@@ -56,12 +56,14 @@ except:
   repeated_run = True
  
 
+import glob
 import gradio as gr
+import librosa
 import os
 import re
 import torch as t
 import urllib.request
-
+import uuid
 import yaml
 
 import jukebox
@@ -297,6 +299,17 @@ class UI:
 
   first_generation_row = gr.Row()
 
+  primed_audio = gr.Audio(
+    label = 'Audio to start from (optional)',
+    source = 'microphone'
+  )
+
+  primed_audio_source = gr.Radio(
+    label = 'Audio source',
+    choices = [ 'microphone', 'upload' ],
+    value = 'microphone'
+  )
+
   continue_generation_row = gr.Row(
     visible = False
   )
@@ -411,7 +424,7 @@ def delete_sample(project_name, sample_id, confirm):
     ),            
   }
 
-def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length):
+def generate(project_name, stage, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length):
 
   print(f'Generating {n_samples} sample(s) of {generation_length} sec each for project {project_name}...')
 
@@ -448,18 +461,99 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
 
   print(f'Generating {generation_length} seconds for {project_name}...')
 
+
   if parent_sample_id:
-    zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
-    print(f'Loaded parent sample {parent_sample_id} of shape {[ z.shape for z in zs ]}')
-    # zs is a list of tensors of torch.Size([loaded_n_samples, n_tokens])
-    # We need to turn it into a list of tensors of torch.Size([n_samples, n_tokens])
-    # We do this by repeating the first sample of each tensor n_samples times
-    zs = [ z[0].repeat(n_samples, 1) for z in zs ]
-    print(f'Converted to shape {[ z.shape for z in zs ]}')
+
+    if stage == 0:
+
+      # stage == 0 means start from scratch
+      # In this case, parent_sample_id contains an array of the following form (example):
+      # (48000, array([        0,         0,         0, ..., -26209718, -25768554,       -25400996], dtype=int32))
+      
+      audio = parent_sample_id
+      print(f'Audio length: {len(audio[1])} samples, sample rate: {audio[0]} Hz')
+
+      # To get the new parent sample id, we find the first z file starting with {project_name}-prime[index] and increment the index
+      parent_sample_index = 1
+      for file in glob.glob(f'{base_path}/{project_name}/{project_name}-prime*.z'):
+        has_integer_index = re.match(f'{base_path}/{project_name}/{project_name}-prime([0-9]+).z', file)
+        if has_integer_index:
+          parent_sample_index = max(parent_sample_index, int(has_integer_index.group(1)) + 1)
+
+      parent_sample_id = f'{project_name}-prime{parent_sample_index}'
+      print(f"Resulting generations will start with '{parent_sample_id}-...'")
+
+      # There is the code from original jukebox repo for loading samples from wav files:
+
+      # def load_audio(file, sr, offset, duration, mono=False):
+      #   x, _ = librosa.load(file, sr=sr, mono=mono, offset=offset/sr, duration=duration/sr)
+      #   if len(x.shape) == 1:
+      #       x = x.reshape((1, -1))
+      #   return x    
+
+      # def load_prompts(audio_files, duration, hps):
+      #     xs = []
+      #     for audio_file in audio_files:
+      #         x = load_audio(audio_file, sr=hps.sr, duration=duration, offset=0.0, mono=True)
+      #         x = x.T # CT -> TC
+      #         xs.append(x)
+      #     while len(xs) < hps.n_samples:
+      #         xs.extend(xs)
+      #     xs = xs[:hps.n_samples]
+      #     x = t.stack([t.from_numpy(x) for x in xs])
+      #     x = x.to('cuda', non_blocking=True)
+      #     return 
+
+
+      # So, to make the same with our `audio`, we need to do the following:
+      # 1. Normalize the audio to [-1, 1]
+
+      x = audio[1] / 2**31
+      print(f'Normalized audio to [-1, 1]')
+
+      # 2. Resample the audio to hps.sr (if needed)
+
+      if audio[0] != hps.sr:
+        x = librosa.resample(x, audio[0], hps.sr)
+        print(f'Resampled audio to {hps.sr}')
+
+      # 3. Convert the audio to a tensor (e.g. from array([[-1.407e-03, -4.461e-04, ..., -3.042e-05,  1.277e-05]], dtype=float32) to tensor([[-1.407e-03], [-4.461e-04], ..., [-3.042e-05], [ 1.277e-05]], dtype=float32))
+
+      if len(x.shape) == 1:
+        x = x.reshape((1, -1))
+        print(f'Reshaped audio to {x.shape}')
+
+      x = x.T
+      print(f'Transposed audio to {x.shape}')
+      
+      xs = []
+      for i in range(n_samples):
+        xs.append(x)
+
+      print(f'Created {len(xs)} samples of {x.shape} shape each')
+
+      x = t.stack([t.from_numpy(x) for x in xs])
+      print(f'Stacked samples to {x.shape}')
+
+      x = x.to(device, non_blocking=True)
+      print(f'Moved samples to {device}')
+
+      zs = top_prior.encode( x, start_level=0, end_level=len(priors), bs_chunks=x.shape[0] )
+      print(f'Encoded audio to zs of shape {[ z.shape for z in zs ]}')
+
+    else:
+
+      zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
+      print(f'Loaded parent sample {parent_sample_id} of shape {[ z.shape for z in zs ]}')
+      # zs is a list of tensors of torch.Size([loaded_n_samples, n_tokens])
+      # We need to turn it into a list of tensors of torch.Size([n_samples, n_tokens])
+      # We do this by repeating the first sample of each tensor n_samples times
+      zs = [ z[0].repeat(n_samples, 1) for z in zs ]
+      print(f'Converted to shape {[ z.shape for z in zs ]}')
 
   else:
     zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
-    print('No parent sample provided, generating from scratch')
+    print('No parent sample or primer provided, starting from scratch')
   
   tokens_to_sample = seconds_to_tokens(generation_length)
   sampling_kwargs = dict(
@@ -991,17 +1085,29 @@ with gr.Blocks(
 
       with UI.first_generation_row.render():
 
-        gr.Markdown('Start from your own audio — or let the model dream up something new, the choice is yours!')
+        with gr.Column():
 
-        gr.Button(
-          'Generate',
-          variant = 'primary'
-        ).click(
-          inputs = [ UI.project_name, UI.sample_tree, UI.show_leafs_only, *UI.generation_params ],
-          outputs = UI.sample_tree,
-          fn = generate,
-          api_name = 'generate',
-        )
+          gr.Markdown('Start from your own audio — or let the model dream up something new, the choice is yours!')
+
+          with gr.Row():
+
+            UI.primed_audio.render()
+
+            UI.primed_audio_source.render().change(
+              inputs = UI.primed_audio_source,
+              outputs = UI.primed_audio,
+              fn = lambda source: gr.update( source = source ),
+            )
+
+          gr.Button(
+            'Generate',
+            variant = 'primary'
+          ).click(
+            inputs = [ UI.project_name, UI.stage_selector, UI.primed_audio, UI.show_leafs_only, *UI.generation_params ],
+            outputs = UI.sample_tree,
+            fn = generate,
+            api_name = 'generate',
+          )
 
       with UI.continue_generation_row.render():
 
@@ -1065,7 +1171,7 @@ with gr.Blocks(
               value = 'Generate further',
               variant = 'primary',
             ).click(
-              inputs =  [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
+              inputs =  [ UI.project_name, UI.stage_selector, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
               outputs = UI.sample_tree,
               fn = generate,
             )
@@ -1073,9 +1179,9 @@ with gr.Blocks(
             gr.Button(
               value = 'Generate more variations',          
             ).click(
-              inputs = [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
+              inputs = [ UI.project_name, UI.stage_selector, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
               outputs = UI.sample_tree,
-              fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(project_name, sample_id), *args),
+              fn = lambda project_name, stage, sample_id, *args: generate(project_name, stage, get_parent(project_name, sample_id), *args),
             )
 
             UI.go_to_parent_button.render()
