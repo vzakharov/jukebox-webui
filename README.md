@@ -8,7 +8,7 @@ This is a web UI for [Jukebox](https://openai.com/blog/jukebox/), a music genera
 
 2. Create a new notebook
 
-3. Copy and paste the content of `jukebox-webui.py` ([link](https://github.com/vzakharov/jukebox-webui/blob/main/jukebox-webui.py))
+3. Copy and paste the content of `jukebox-webui.py`
 
 4. Run the notebook
 
