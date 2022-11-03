@@ -56,12 +56,18 @@ except:
   repeated_run = True
  
 
+# import glob
+from datetime import datetime
+import random
 import gradio as gr
+import librosa
 import os
 import re
+# from matplotlib import pyplot as plt
+import numpy as np
 import torch as t
 import urllib.request
-
+# import uuid
 import yaml
 
 import jukebox
@@ -214,8 +220,7 @@ class UI:
   )
 
   separate_tab_link = gr.Textbox(
-    interactive = False,
-    label = "This app is designed to be used in a separate browser tab. Use the following link:"
+    visible = False
   )
 
   main_window = gr.Row(
@@ -286,14 +291,32 @@ class UI:
 
   generation_params = [ artist, genre, lyrics, n_samples, temperature, generation_length ]
 
-  generate_first_button = gr.Button(
-    'Generate',
-    variant = 'primary'
-  )
-
   getting_started_column = gr.Column( scale = 2, elem_id = 'getting-started-column' )
   
   workspace_column = gr.Column( scale = 3, visible = False )
+
+  primed_audio = gr.Audio(
+    label = 'Audio to start from (optional)',
+    source = 'microphone'
+  )
+
+  # Virtual timestamp textbox to do certain things once the audio is primed (and this textbox is updated), accurate to the millisecond
+  prime_timestamp = gr.Textbox(
+    value = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'),
+    visible = False
+  )
+
+  first_generation_row = gr.Row(
+    visible = False
+  )
+
+  generation_progress = gr.Markdown('', elem_id = 'generation-progress')
+
+  routed_sample_id = gr.State()
+
+  sample_tree_row = gr.Row(
+    visible = False
+  )
 
   sample_tree = gr.Dropdown(
     label = 'Sample tree',
@@ -374,6 +397,73 @@ def create_project(name):
     value = name
   )
 
+def convert_audio_to_sample(project_name, audio, sec_to_trim_primed_audio, show_leafs_only):
+
+  global hps, base_path
+
+  # audio is of the following form:
+  # (48000, array([        0,         0,         0, ..., -26209718, -25768554,       -25400996], dtype=int32))
+  # dtype=int16 is also possible
+  # Or, if it is a stereo file, audio[1] is [[left, right], [left, right], ...]
+  
+  print(f'Audio: {audio}')
+  # breakpoint()
+  print(f'Audio length: {len(audio[1])} samples, sample rate: {audio[0]} Hz')
+
+  # If it is a stereo file, we need to convert it to mono by averaging the left and right channels
+  if len(audio[1].shape) > 1:
+    audio = (audio[0], audio[1].mean(axis=1))
+    print(f'Converted stereo to mono (shape: {audio[1].shape})')
+
+  if sec_to_trim_primed_audio:
+    audio = (audio[0], audio[1][:int(audio[0] * sec_to_trim_primed_audio)])
+    print(f'Trimmed audio to {sec_to_trim_primed_audio} seconds')
+
+  # Convert the audio to float depending on the dtype
+
+  x = audio[1] / 2**31 if audio[1].dtype == np.int32 else audio[1] / 2**15
+  print(f'Converted to [-1, 1]; min = {x.min()}, max = {x.max()}')
+
+  # Resample the audio to hps.sr (if needed)
+
+  if audio[0] != hps.sr:
+    x = librosa.resample(x, audio[0], hps.sr)
+    print(f'Resampled audio to {hps.sr}')
+
+  # Convert the audio to a tensor (e.g. from array([[-1.407e-03, -4.461e-04, ..., -3.042e-05,  1.277e-05]], dtype=float32) to tensor([[-1.407e-03], [-4.461e-04], ..., [-3.042e-05], [ 1.277e-05]], dtype=float32))
+
+  if len(x.shape) == 1:
+    x = x.reshape((1, -1))
+    print(f'Reshaped audio to {x.shape}')
+
+  x = x.T
+  print(f'Transposed audio to {x.shape}')
+  
+  xs = [ x ]
+
+  print(f'Created {len(xs)} samples of {x.shape} shape each')
+
+  x = t.stack([t.from_numpy(x) for x in xs])
+  print(f'Stacked samples to {x.shape}')
+
+  x = x.to(device, non_blocking=True)
+  print(f'Moved samples to {device}')
+
+  zs = top_prior.encode( x, start_level=0, end_level=len(priors), bs_chunks=x.shape[0] )
+  print(f'Encoded audio to zs of shape {[ z.shape for z in zs ]}')
+
+  primed_sample_id = f'{project_name}-{get_first_free_index(project_name)}'
+  filename = f'{base_path}/{project_name}/{primed_sample_id}.z'
+  t.save(zs, filename)
+
+  return {
+    UI.sample_tree: gr.update(
+      choices = get_samples(project_name, show_leafs_only),
+      value = primed_sample_id
+    ),
+    UI.prime_timestamp: datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'),
+  }
+
 def delete_sample(project_name, sample_id, confirm):
 
   if not confirm:
@@ -417,10 +507,10 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
 
   hps.n_samples = n_samples
 
-  # If metas have changed, recalculate the metas
-  if calculated_metas != dict( artist = artist, genre = genre, lyrics = lyrics ):
+  # If metas or n_samples have changed, recalculate the metas
+  if calculated_metas != dict( artist = artist, genre = genre, lyrics = lyrics ) or len(metas) != n_samples:
 
-    print(f'Metas have changed, recalculating the model for {artist}, {genre}, {lyrics}')
+    print(f'Metas or n_samples have changed, recalculating the model for {artist}, {genre}, {lyrics}, {n_samples} samples...')
 
     metas = [dict(
       artist = artist,
@@ -443,17 +533,15 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   print(f'Generating {generation_length} seconds for {project_name}...')
 
   if parent_sample_id:
+
     zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
     print(f'Loaded parent sample {parent_sample_id} of shape {[ z.shape for z in zs ]}')
-    # zs is a list of tensors of torch.Size([loaded_n_samples, n_tokens])
-    # We need to turn it into a list of tensors of torch.Size([n_samples, n_tokens])
-    # We do this by repeating the first sample of each tensor n_samples times
     zs = [ z[0].repeat(n_samples, 1) for z in zs ]
     print(f'Converted to shape {[ z.shape for z in zs ]}')
 
   else:
     zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
-    print('No parent sample provided, generating from scratch')
+    print('No parent sample or primer provided, starting from scratch')
   
   tokens_to_sample = seconds_to_tokens(generation_length)
   sampling_kwargs = dict(
@@ -468,14 +556,7 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
   print(f'Generated wavs of shape {wavs.shape}')
 
-  # filenames = write_files(base_path, project_name, zs, wav)
-  # print(f'- Files written: {filenames}')
-  
-  child_ids = get_children(project_name, parent_sample_id)
-  child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
-  first_new_child_index = max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
-  print(f'Existing children for parent {parent_sample_id}: {child_ids}')
-  print(f'First new child index: {first_new_child_index}')
+  first_new_child_index = get_first_free_index(project_name, parent_sample_id)
 
   # For each sample, write the z (a subarray of zs)
   prefix = get_prefix(project_name, parent_sample_id)
@@ -489,12 +570,14 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
 
     t.save(z, f'{filename}.z')
     print(f'Wrote {filename}.z')
-    child_ids += [ id ]
 
-  return gr.update(
-    choices = get_samples(project_name, show_leafs_only),
-    value = child_ids[-1]
-  )
+  return {
+    UI.sample_tree: gr.update(
+      choices = get_samples(project_name, show_leafs_only),
+      value = id
+    ),
+    UI.generation_progress: f'Generation completed at {datetime.now().strftime("%H:%M:%S")}'
+  }
 
 def get_audio(project_name, sample_id):
 
@@ -528,7 +611,7 @@ def get_children(project_name, parent_sample_id):
     if custom_parents[sample_id] == parent_sample_id:
       child_ids += [ sample_id ]        
 
-  print(f'Children of {parent_sample_id}: {child_ids}')
+  # print(f'Children of {parent_sample_id}: {child_ids}')
 
   return child_ids
 
@@ -554,10 +637,16 @@ def get_custom_parents(project_name):
 
   return custom_parents
 
-def on_load(rendered_in_notebook, href):
+def get_first_free_index(project_name, parent_sample_id = None):
+  child_ids = get_children(project_name, parent_sample_id)
+  child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
+  return max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
 
-  if not rendered_in_notebook:
+def on_load( href, query_string, error_message ):
+
+  if error_message:
     print(f'Please open this app in a separate browser tab: {href}')
+    print(f'Error message from the client (for debugging only; you can ignore this): {error_message}')
 
     return {
       UI.separate_tab_warning: gr.update(
@@ -587,16 +676,32 @@ def on_load(rendered_in_notebook, href):
           print('No last project found.')
           return projects[0]
   
+  # If there is a query string, it will be of the form project_name-sample_id or project_name
+  if query_string:
+    print(f'Query string: {query_string}')
+    if '-' in query_string:
+      project_name, sample_id = re.match('^(.*?)-(.*)$', query_string).groups()
+      sample_id = f'{project_name}-{sample_id}'
+      print(f'Routed to project {project_name} and sample {sample_id}')
+    else:
+      project_name = query_string
+      sample_id = None
+      print(f'Routed to project {project_name}')
+  else:
+    project_name = get_last_project()
+    sample_id = None
+
   return {
     UI.project_name: gr.update(
       choices = projects,
-      value = get_last_project()
+      value = project_name,
     ),
+    UI.routed_sample_id: sample_id,
     UI.artist: gr.update(
-      choices = get_meta('artist'),
+      choices = get_list('artist'),
     ),
     UI.genre: gr.update(
-      choices = get_meta('genre'),
+      choices = get_list('genre'),
     ),
     UI.getting_started_column: gr.update(
       visible = len(projects) == 1
@@ -609,16 +714,23 @@ def on_load(rendered_in_notebook, href):
     )
   }
 
-def get_meta(what):
+lists = {}
+def get_list(what):
   items = []
   # print(f'Getting {what} list...')
-  with urllib.request.urlopen(f'https://raw.githubusercontent.com/openai/jukebox/master/jukebox/data/ids/v2_{what}_ids.txt') as f:
-    for line in f:
-      item = line.decode('utf-8').split(';')[0]
-      item = item.replace('_', ' ').title()
-      items.append(item)
-  items.sort()
-  print(f'Loaded {len(items)} {what}s.')
+  # If list already exists, return it
+  if what in lists:
+    # print(f'{what} list already exists.')
+    return lists[what]
+  else:
+    with urllib.request.urlopen(f'https://raw.githubusercontent.com/openai/jukebox/master/jukebox/data/ids/v2_{what}_ids.txt') as f:
+      for line in f:
+        item = line.decode('utf-8').split(';')[0]
+        item = item.replace('_', ' ').title()
+        items.append(item)
+    items.sort()
+    print(f'Loaded {len(items)} {what}s.')
+    lists[what] = items
   return items
 
 def get_parent(project_name, sample_id):
@@ -633,7 +745,7 @@ def get_parent(project_name, sample_id):
   # Remove the project name and first dash from the sample id
   path = sample_id[ len(project_name) + 1: ].split('-')
   parent_sample_id = '-'.join([ project_name, *path[:-1] ]) if len(path) > 1 else None
-  print(f'Parent of {sample_id}: {parent_sample_id}')
+  # print(f'Parent of {sample_id}: {parent_sample_id}')
   return parent_sample_id
 
 def get_prefix(project_name, parent_sample_id):
@@ -679,7 +791,7 @@ def get_siblings(project_name, sample_id):
 def is_new(project_name):
   return project_name == 'CREATE NEW' or not project_name
   
-def get_project(project_name):
+def get_project(project_name, routed_sample_id):
 
   global base_path, loaded_settings
 
@@ -692,8 +804,12 @@ def get_project(project_name):
     UI.lyrics: '',
     UI.generation_length: 1,
     UI.temperature: 0.98,
-    UI.n_samples: 2
+    UI.n_samples: 2,
+    UI.sample_tree: None
   }
+
+  samples = []
+  sample = None
 
   # If not new, load the settings from settings.yaml in the project folder, if it exists
   if not is_this_new:
@@ -709,7 +825,16 @@ def get_project(project_name):
         # Go through all the settings and set the value for settings_out_dict where the key is the element itself
         for key, value in loaded_settings.items():
           if key in UI.inputs_by_name and UI.inputs_by_name[key] in UI.project_settings:
+
+            input = UI.inputs_by_name[key]
+
+            # If the value is an integer (i) but the element is an instance of gr.components.Radio or gr.components.Dropdown, take the i-th item from the choices
+            if isinstance(value, int) and isinstance(input, (gr.components.Radio, gr.components.Dropdown)):
+              print(f'Converting {key} value {value} to {input.choices[value]}')
+              value = input.choices[value]
+            
             settings_out_dict[getattr(UI, key)] = value
+
           else:
             print(f'Warning: {key} is not a valid project setting')
 
@@ -719,14 +844,21 @@ def get_project(project_name):
       yaml.dump({'last_project': project_name}, f)
       print('Saved to settings.yaml')
     
-    settings_out_dict[UI.getting_started_column] = gr.update(
+    settings_out_dict[ UI.getting_started_column ] = gr.update(
       visible = False
     )
 
-    projects = get_samples(project_name, settings_out_dict[ UI.show_leafs_only ] if UI.show_leafs_only in settings_out_dict else False)
+    samples = get_samples(project_name, settings_out_dict[ UI.show_leafs_only ] if UI.show_leafs_only in settings_out_dict else False)
+
+    sample = routed_sample_id or (
+      (
+        settings_out_dict[ UI.sample_tree ] or samples[0] 
+      ) if len(samples) > 0 else None
+    )
+
     settings_out_dict[ UI.sample_tree ] = gr.update(
-      choices = projects,
-      value = settings_out_dict[ UI.sample_tree ] or projects[0] if len(projects) > 0 else None
+      choices = samples,
+      value = sample 
     )
 
 
@@ -734,6 +866,9 @@ def get_project(project_name):
     UI.create_project_box: gr.update( visible = is_this_new ),
     UI.settings_box: gr.update( visible = not is_this_new ),
     UI.workspace_column: gr.update( visible = not is_this_new  ),
+    UI.sample_box: gr.update( visible = sample is not None ),
+    UI.first_generation_row: gr.update( visible = len(samples) == 0 ),
+    UI.sample_tree_row: gr.update( visible = len(samples) > 0 ),
     **settings_out_dict
   }
 
@@ -766,9 +901,6 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
     UI.sample_box: gr.update(
       visible = True
     ),
-    UI.generate_first_button: gr.update(
-      visible = False
-    )
   }
 
 def refresh_siblings(project_name, sample_id):
@@ -833,8 +965,8 @@ def save_project(project_name, *project_input_values):
   if is_new(project_name):
     return
 
-  print(f'Saving settings for {project_name}...')
-  print(f'Project input values: {project_input_values}')
+  # print(f'Saving settings for {project_name}...')
+  # print(f'Project input values: {project_input_values}')
 
   # Go through all UI attributes and add the ones that are in the project settings to a dictionary
   settings = {}
@@ -842,7 +974,7 @@ def save_project(project_name, *project_input_values):
   for i in range(len(UI.project_settings)):
     settings[UI.input_names[UI.project_settings[i]]] = project_input_values[i]
   
-  print(f'Settings: {settings}')
+  # print(f'Settings: {settings}')
 
   # If the settings are different from the loaded settings, save them to the project folder
 
@@ -850,10 +982,10 @@ def save_project(project_name, *project_input_values):
 
     with open(f'{base_path}/{project_name}/{project_name}.yaml', 'w') as f:
       yaml.dump(settings, f)
-      print(f'Saved settings to {base_path}/{project_name}/{project_name}.yaml')
+      print(f'Saved settings to {base_path}/{project_name}/{project_name}.yaml: {settings}')
   
-  else:
-    print('Settings are the same as loaded settings, not saving.')
+  # else:
+  #   print('Settings are the same as loaded settings, not saving.')
 
 def seconds_to_tokens(sec):
 
@@ -888,6 +1020,13 @@ with gr.Blocks(
       /* add a considerable margin to the left of the column */
       margin-left: 20px;
     }
+
+    #generation-progress {
+      /* gray, smaller font */
+      color: #888;
+      font-size: 0.8rem;
+    }
+
   """,
   title = 'Jukebox Web UI',
 ) as app:
@@ -896,7 +1035,7 @@ with gr.Blocks(
 
     UI.separate_tab_link.render()
 
-    gr.Button('Open in new tab', variant = 'primary' ).click( inputs = UI.separate_tab_link, outputs = None, fn = None,
+    gr.Button('Click here to open the UI', variant = 'primary' ).click( inputs = UI.separate_tab_link, outputs = None, fn = None,
       _js = "link => window.open(link, '_blank')"
     )
   
@@ -904,22 +1043,19 @@ with gr.Blocks(
 
     with gr.Column( scale = 1 ):
 
-      UI.project_name.render()
- 
-      UI.project_name.change(
-        inputs = UI.project_name,
-        outputs = [ UI.create_project_box, UI.settings_box, *UI.project_settings, UI.workspace_column, UI.getting_started_column ],
+      UI.project_name.render().change(
+        inputs = [ UI.project_name, UI.routed_sample_id ],
+        outputs = [ 
+          UI.create_project_box, UI.settings_box, *UI.project_settings, UI.getting_started_column, UI.workspace_column, UI.first_generation_row, 
+          UI.sample_tree_row, UI.sample_box 
+        ],
         fn = get_project,
         api_name = 'get-project'
       )
 
-      UI.create_project_box.render()
+      with UI.create_project_box.render():
 
-      with UI.create_project_box:
-
-        UI.new_project_name.render()
-
-        UI.new_project_name.blur(
+        UI.new_project_name.render().blur(
           inputs = UI.new_project_name,
           outputs = UI.new_project_name,
           fn = convert_name,
@@ -935,12 +1071,53 @@ with gr.Blocks(
         UI.new_project_name.submit( **create_args )
         gr.Button('Create project').click( **create_args )
 
-      UI.settings_box.render()
-
-      with UI.settings_box:
+      with UI.settings_box.render():
 
         for component in UI.generation_params:
-          component.render()
+          
+          # For artist, also add a search button and a randomize button
+          if component == UI.artist:
+
+            with gr.Row():
+
+              component.render()
+             
+              def filter_artists(filter):
+                
+                artists = get_list('artist')
+
+                if filter:
+                  artists = [ artist for artist in artists if filter.lower() in artist.lower() ]
+
+                return gr.update(
+                  choices = artists,
+                  value = artists[0] if artists else None,
+                )
+
+              artist_filter = gr.Textbox(
+                label = '🔍 (↩ to apply)',
+              )
+
+              artist_filter.submit(
+                inputs = artist_filter,
+                outputs = UI.artist,
+                fn = filter_artists,
+                api_name = 'filter-artists'
+              )
+
+              gr.Button('🎲').click(
+                inputs = None,
+                outputs = [ UI.artist, artist_filter ],
+                fn = lambda: [
+                  random.choice(get_list('artist')),
+                  '',
+                ],
+                api_name = 'random-artist'
+              )
+          
+          else:
+
+            component.render()
         
         for component in UI.project_settings:
 
@@ -967,155 +1144,259 @@ with gr.Blocks(
 
     with UI.workspace_column.render():
 
-      UI.generate_first_button.render().click(
-        inputs = [ UI.project_name, UI.sample_tree, UI.show_leafs_only, *UI.generation_params ],
-        outputs = UI.sample_tree,
-        fn = generate,
-        api_name = 'generate',
-      )
+      with gr.Tab('Compose'):
 
-      with gr.Row():
-        
-        UI.sample_tree.render()
-        UI.show_leafs_only.render()
-        
-        UI.show_leafs_only.change(
-          inputs = [ UI.project_name, UI.show_leafs_only ],
-          outputs = UI.sample_tree,
-          fn = lambda *args: gr.update( choices = get_samples(*args) ),
-        )
+        with gr.Column():
 
-      UI.picked_sample.render()
+          with UI.first_generation_row.render():
 
-      UI.sample_tree.change(
-        inputs = [ UI.project_name, UI.sample_tree ],
-        outputs = UI.picked_sample,
-        fn = refresh_siblings,
-        api_name = 'get-siblings'        
-      )
+            with gr.Column():
+            
+              gr.Markdown("""
+                To start composing, you need to generate the first batch of samples. You can:
+                
+                - Start from scratch by clicking the **Generate initial samples** button below, or
+                - Go to the **Priming** tab and convert your own audio to a sample.
+              """)
 
-      preview_args = dict(
-        inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec ],
-        outputs = [ UI.generated_audio, UI.total_audio_length, UI.go_to_children_button, UI.go_to_parent_button, UI.sample_box, UI.generate_first_button ],
-        fn = get_sample,
-      )
+              gr.Button('Generate initial samples', variant = "primary" ).click(
+                inputs = [ UI.project_name, UI.sample_tree, UI.show_leafs_only, *UI.generation_params ],
+                outputs = [ UI.sample_tree, UI.first_generation_row, UI.sample_tree_row, UI.generation_progress ],
+                fn = lambda *args: {
+                  **generate(*args),
+                  UI.first_generation_row: gr.update( visible = False ),
+                  UI.sample_tree_row: gr.update( visible = True ),
+                }
+              )
 
-      UI.picked_sample.change(**preview_args, api_name = 'get-sample')
-
-      UI.sample_box.render()
-
-      with UI.sample_box:
-
-        for this in [ 
-          UI.generated_audio, 
-          UI.audio_waveform,
-          UI.audio_timeline
-        ]:
-          this.render()
-
-        gr.HTML("""
-          <!-- Button to play/pause the audio -->
-          <button class="gr-button gr-button-lg gr-button-secondary"
-            onclick = "
-              wavesurfer.playPause()
-              this.innerText = wavesurfer.isPlaying() ? '⏸️' : '▶️'
-            "
-          >▶️</button>
-
-          <!-- Textbox showing current time -->
-          <input type="number" class="gr-box gr-input gr-text-input" id="audio-time" value="0" readonly>
-        """)
-
-
-        gr.Button(
-          value = 'Generate further',
-          variant = 'primary',
-        ).click(
-          inputs =  [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
-          outputs = UI.sample_tree,
-          fn = generate,
-        )
-
-        gr.Button(
-          value = 'Generate more variations',          
-        ).click(
-          inputs = [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
-          outputs = UI.sample_tree,
-          fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(project_name, sample_id), *args),
-        )
-
-        UI.go_to_parent_button.render()
-        UI.go_to_parent_button.click(
-          inputs = [ UI.project_name, UI.picked_sample ],
-          outputs = UI.sample_tree,
-          fn = get_parent
-        )
-
-        UI.go_to_children_button.render()
-        UI.go_to_children_button.click(
-          inputs = [ UI.project_name, UI.picked_sample ], 
-          outputs = UI.sample_tree,
-          fn = lambda project_name, sample_id: get_children(project_name, sample_id)[0]
-        )
-
-        gr.Button('Delete').click(
-          inputs = [ UI.project_name, UI.picked_sample, gr.Checkbox(visible=False) ],
-          outputs = [ UI.picked_sample, UI.sample_box ],
-          fn = delete_sample,
-          _js = """
-            ( project_name, child_sample_id ) => {
-              if ( confirm('Are you sure? There is no undo!') ) {
-                return [ project_name, child_sample_id, true ]
-              } else {
-                throw new Error('Cancelled; not deleting')
-              }
-            }
-          """,
-          api_name = 'delete-sample'
-        )
-
-        with gr.Accordion( 'Advanced', open = False ):
-
-          with gr.Tab('Manipulate audio'):
-
-            UI.total_audio_length.render()
-            UI.preview_just_the_last_n_sec.render().blur(**preview_args)
-            UI.trim_to_n_sec.render().blur(**preview_args)
-
-            # Also make the cut button visible or not depending on whether the cut value is 0
-            UI.trim_to_n_sec.change(
-              inputs = UI.trim_to_n_sec,
-              outputs = UI.trim_button,
-              fn = lambda trim_to_n_sec: gr.update( visible = trim_to_n_sec )
-            )
-
-            UI.trim_button.render()
-
-            UI.trim_button.click(
-              inputs = [ UI.project_name, UI.picked_sample, UI.trim_to_n_sec ],
-              outputs = UI.trim_to_n_sec,
-              fn = trim,
-              api_name = 'trim'
-            )
-          
-          with gr.Tab('Rename sample'):
-
-            new_sample_id = gr.Textbox(
-              label = 'New sample id',
-              placeholder = 'Alphanumeric and dashes only'
-            )
-
-            gr.Button('Rename').click(
-              inputs = [ UI.project_name, UI.picked_sample, new_sample_id ],
+          with UI.sample_tree_row.render():
+            
+            UI.routed_sample_id.render()
+            UI.sample_tree.render()
+            UI.show_leafs_only.render()
+            
+            UI.show_leafs_only.change(
+              inputs = [ UI.project_name, UI.show_leafs_only ],
               outputs = UI.sample_tree,
-              fn = rename_sample,
-              api_name = 'rename-sample'
+              fn = lambda *args: gr.update( choices = get_samples(*args) ),
             )
 
+          UI.picked_sample.render()
+
+          UI.sample_tree.change(
+            inputs = [ UI.project_name, UI.sample_tree ],
+            outputs = UI.picked_sample,
+            fn = refresh_siblings,
+            api_name = 'get-siblings'        
+          )
+
+          preview_args = dict(
+            inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec ],
+            outputs = [ 
+              UI.sample_box, UI.generated_audio, UI.total_audio_length, 
+              UI.go_to_children_button, UI.go_to_parent_button
+            ],
+            fn = get_sample,
+          )
+
+          UI.picked_sample.change(
+            **preview_args,
+            api_name = 'get-sample',
+            _js =
+            # Set the search string to ?[sample_id] for easier navigation
+            '''
+              ( ...args ) => (
+                args[1] && window.history.pushState( {}, '', `?${args[1]}` ),
+                args
+              ) 
+            '''
+          )
+
+          with UI.sample_box.render():
+
+            for this in [ 
+              UI.generated_audio, 
+              UI.audio_waveform,
+              UI.audio_timeline
+            ]:
+              this.render()
+
+            gr.HTML("""
+              <!-- Button to play/pause the audio -->
+              <button class="gr-button gr-button-lg gr-button-secondary"
+                onclick = "
+                  wavesurfer.playPause()
+                  this.innerText = wavesurfer.isPlaying() ? '⏸️' : '▶️'
+                "
+              >▶️</button>
+
+              <!-- Textbox showing current time -->
+              <input type="number" class="gr-box gr-input gr-text-input" id="audio-time" value="0" readonly>
+            """)
+
+
+            gr.Button(
+              value = 'Generate further',
+              variant = 'primary',
+            ).click(
+              inputs =  [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
+              outputs = [ UI.sample_tree, UI.generation_progress ],
+              fn = generate,
+            )
+
+            gr.Button(
+              value = 'Generate more variations',          
+            ).click(
+              inputs = [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
+              outputs = [ UI.sample_tree, UI.generation_progress ],
+              fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(project_name, sample_id), *args),
+            )
+
+            UI.go_to_parent_button.render()
+            UI.go_to_parent_button.click(
+              inputs = [ UI.project_name, UI.picked_sample ],
+              outputs = UI.sample_tree,
+              fn = get_parent
+            )
+
+            UI.go_to_children_button.render()
+            UI.go_to_children_button.click(
+              inputs = [ UI.project_name, UI.picked_sample ], 
+              outputs = UI.sample_tree,
+              fn = lambda project_name, sample_id: get_children(project_name, sample_id)[0]
+            )
+
+            gr.Button('Delete').click(
+              inputs = [ UI.project_name, UI.picked_sample, gr.Checkbox(visible=False) ],
+              outputs = [ UI.picked_sample, UI.sample_box ],
+              fn = delete_sample,
+              _js = """
+                ( project_name, child_sample_id ) => {
+                  if ( confirm('Are you sure? There is no undo!') ) {
+                    return [ project_name, child_sample_id, true ]
+                  } else {
+                    throw new Error('Cancelled; not deleting')
+                  }
+                }
+              """,
+              api_name = 'delete-sample'
+            )
+
+            with gr.Accordion( 'Advanced', open = False ):
+
+              with gr.Tab('Manipulate audio'):
+
+                UI.total_audio_length.render()
+                UI.preview_just_the_last_n_sec.render().blur(**preview_args)
+                UI.trim_to_n_sec.render().blur(**preview_args)
+
+                # Also make the cut button visible or not depending on whether the cut value is 0
+                UI.trim_to_n_sec.change(
+                  inputs = UI.trim_to_n_sec,
+                  outputs = UI.trim_button,
+                  fn = lambda trim_to_n_sec: gr.update( visible = trim_to_n_sec )
+                )
+
+                UI.trim_button.render()
+
+                UI.trim_button.click(
+                  inputs = [ UI.project_name, UI.picked_sample, UI.trim_to_n_sec ],
+                  outputs = UI.trim_to_n_sec,
+                  fn = trim,
+                  api_name = 'trim'
+                )
+              
+              with gr.Tab('Rename sample'):
+
+                new_sample_id = gr.Textbox(
+                  label = 'New sample id',
+                  placeholder = 'Alphanumeric and dashes only'
+                )
+
+                gr.Button('Rename').click(
+                  inputs = [ UI.project_name, UI.picked_sample, new_sample_id ],
+                  outputs = UI.sample_tree,
+                  fn = rename_sample,
+                  api_name = 'rename-sample'
+                )
+
+        UI.generation_progress.render()
+
+      with gr.Tab('Priming'):
+
+        primed_audio_source = gr.Radio(
+          label = 'Audio source',
+          choices = [ 'microphone', 'upload' ],
+          value = 'microphone'
+        )
+
+        UI.primed_audio.render()
+        
+        primed_audio_source.change(
+          inputs = primed_audio_source,
+          outputs = UI.primed_audio,
+          fn = lambda source: gr.update( source = source ),
+        )
+
+        sec_to_trim_primed_audio = gr.Number(
+          label = 'Trim starting audio to ... seconds from the beginning',
+        )
+
+        def trim_primed_audio(audio, sec):
+          print(f'Trimming {audio} to {sec} seconds')
+          # # Plot the audio to console for debugging
+          # plt.plot(audio)
+          # plt.show()              
+          # Audio is of the form (sr, audio)
+          trimmed_audio = audio[1][:int(sec * audio[0])]
+          print(f'Trimmed audio shape is {trimmed_audio.shape}')
+          return ( audio[0], trimmed_audio )
+
+        sec_to_trim_primed_audio.submit(
+          inputs = [ UI.primed_audio, sec_to_trim_primed_audio ],
+          outputs = UI.primed_audio,
+          fn = trim_primed_audio
+        )
+
+        prime_button = gr.Button(
+          'Convert to sample',
+          variant = 'primary'
+        )
+                
+        prime_button.click(
+          inputs = [ UI.project_name, UI.primed_audio, sec_to_trim_primed_audio, UI.show_leafs_only ],
+          outputs = [ UI.sample_tree, prime_button, UI.prime_timestamp ], # UI.prime_timestamp is updated to the current time to force tab change
+          fn = convert_audio_to_sample,
+          api_name = 'convert-wav-to-sample'
+        )
+
+        UI.prime_timestamp.render().change(
+          inputs = UI.prime_timestamp, outputs = None, fn = None,
+          _js = 
+            # Find a button inside a div inside another div with class 'tabs', the button having 'Compose' as text, and click it -- all this in the shadow DOM.
+            # Gosh, this is ugly.
+            """
+              timestamp => {
+                console.log(`Timestamp changed to ${timestamp}; clicking the 'Compose' tab`)
+                for ( let button of document.querySelector('gradio-app').shadowRoot.querySelectorAll('div.tabs > div > button') ) {
+                  if ( button.innerText == 'Compose' ) {
+                    button.click()
+                    break
+                  }
+                }
+                return timestamp
+              }
+            """
+        )
+
+
+  def dummy_string_input():
+    return gr.Textbox( visible = False )
+    
   app.load(
     on_load,
-    inputs = [ gr.Checkbox(visible = False), gr.Textbox(visible = False) ],
-    outputs = [ UI.project_name, UI.artist, UI.genre, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window ],
+    inputs = [ gr.Textbox(visible=False), gr.Textbox(visible=False), gr.Textbox(visible=False) ],
+    outputs = [ UI.project_name, UI.routed_sample_id, UI.artist, UI.genre, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window ],
     api_name = 'initialize',
     _js = """async (...args) => {
       
@@ -1219,16 +1500,15 @@ with gr.Blocks(
 
         parentObserver.observe(parentElement, { childList: true, subtree: true })
 
-        // Return the current URL to pass it to the Python code
-        return [ true, window.location.href ]
+        // href, query_string, error_message
+        return [ window.location.href, window.location.search.slice(1), null ]
 
       } catch (e) {
 
         console.error(e)
 
-        // If anything went wrong, perhaps we're running the UI from inside the notebook, so let's return false
-
-        return [ false, window.location.href ]
+        // If anything went wrong, return the error message
+        return [ window.location.href, window.location.search.slice(1), e.message ]
 
       }
     }"""
