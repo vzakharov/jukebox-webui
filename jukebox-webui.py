@@ -58,6 +58,7 @@ except:
 
 # import glob
 from datetime import datetime
+import random
 import gradio as gr
 import librosa
 import os
@@ -697,10 +698,10 @@ def on_load( href, query_string, error_message ):
     ),
     UI.routed_sample_id: sample_id,
     UI.artist: gr.update(
-      choices = get_meta('artist'),
+      choices = get_list('artist'),
     ),
     UI.genre: gr.update(
-      choices = get_meta('genre'),
+      choices = get_list('genre'),
     ),
     UI.getting_started_column: gr.update(
       visible = len(projects) == 1
@@ -713,16 +714,23 @@ def on_load( href, query_string, error_message ):
     )
   }
 
-def get_meta(what):
+lists = {}
+def get_list(what):
   items = []
   # print(f'Getting {what} list...')
-  with urllib.request.urlopen(f'https://raw.githubusercontent.com/openai/jukebox/master/jukebox/data/ids/v2_{what}_ids.txt') as f:
-    for line in f:
-      item = line.decode('utf-8').split(';')[0]
-      item = item.replace('_', ' ').title()
-      items.append(item)
-  items.sort()
-  print(f'Loaded {len(items)} {what}s.')
+  # If list already exists, return it
+  if what in lists:
+    # print(f'{what} list already exists.')
+    return lists[what]
+  else:
+    with urllib.request.urlopen(f'https://raw.githubusercontent.com/openai/jukebox/master/jukebox/data/ids/v2_{what}_ids.txt') as f:
+      for line in f:
+        item = line.decode('utf-8').split(';')[0]
+        item = item.replace('_', ' ').title()
+        items.append(item)
+    items.sort()
+    print(f'Loaded {len(items)} {what}s.')
+    lists[what] = items
   return items
 
 def get_parent(project_name, sample_id):
@@ -1027,7 +1035,7 @@ with gr.Blocks(
 
     UI.separate_tab_link.render()
 
-    gr.Button('Open the UI', variant = 'primary' ).click( inputs = UI.separate_tab_link, outputs = None, fn = None,
+    gr.Button('Click here to open the UI', variant = 'primary' ).click( inputs = UI.separate_tab_link, outputs = None, fn = None,
       _js = "link => window.open(link, '_blank')"
     )
   
@@ -1066,7 +1074,50 @@ with gr.Blocks(
       with UI.settings_box.render():
 
         for component in UI.generation_params:
-          component.render()
+          
+          # For artist, also add a search button and a randomize button
+          if component == UI.artist:
+
+            with gr.Row():
+
+              component.render()
+             
+              def filter_artists(filter):
+                
+                artists = get_list('artist')
+
+                if filter:
+                  artists = [ artist for artist in artists if filter.lower() in artist.lower() ]
+
+                return gr.update(
+                  choices = artists,
+                  value = artists[0] if artists else None,
+                )
+
+              artist_filter = gr.Textbox(
+                label = '🔍 (↩ to apply)',
+              )
+
+              artist_filter.submit(
+                inputs = artist_filter,
+                outputs = UI.artist,
+                fn = filter_artists,
+                api_name = 'filter-artists'
+              )
+
+              gr.Button('🎲').click(
+                inputs = None,
+                outputs = [ UI.artist, artist_filter ],
+                fn = lambda: [
+                  random.choice(get_list('artist')),
+                  '',
+                ],
+                api_name = 'random-artist'
+              )
+          
+          else:
+
+            component.render()
         
         for component in UI.project_settings:
 
