@@ -312,6 +312,8 @@ class UI:
     visible = False
   )
 
+  routed_sample_id = gr.State()
+
   sample_tree = gr.Dropdown(
     label = 'Sample tree',
   )
@@ -630,12 +632,11 @@ def get_custom_parents(project_name):
 
   return custom_parents
 
-def on_load(rendered_in_notebook, href, error_message):
+def on_load( href, query_string, error_message ):
 
-  if not rendered_in_notebook:
-    if error_message:
-      print(f'Please open this app in a separate browser tab: {href}')
-      print(f'Error message from the client (for debugging only; you can ignore this): {error_message}')
+  if error_message:
+    print(f'Please open this app in a separate browser tab: {href}')
+    print(f'Error message from the client (for debugging only; you can ignore this): {error_message}')
 
     return {
       UI.separate_tab_warning: gr.update(
@@ -665,11 +666,27 @@ def on_load(rendered_in_notebook, href, error_message):
           print('No last project found.')
           return projects[0]
   
+  # If there is a query string, it will be of the form project_name-sample_id or project_name
+  if query_string:
+    print(f'Query string: {query_string}')
+    if '-' in query_string:
+      project_name, sample_id = re.match('^(.*?)-(.*)$', query_string).groups()
+      sample_id = f'{project_name}-{sample_id}'
+      print(f'Routed to project {project_name} and sample {sample_id}')
+    else:
+      project_name = query_string
+      sample_id = None
+      print(f'Routed to project {project_name}')
+  else:
+    project_name = get_last_project()
+    sample_id = None
+
   return {
     UI.project_name: gr.update(
       choices = projects,
-      value = get_last_project()
+      value = project_name,
     ),
+    UI.routed_sample_id: sample_id,
     UI.artist: gr.update(
       choices = get_meta('artist'),
     ),
@@ -757,7 +774,7 @@ def get_siblings(project_name, sample_id):
 def is_new(project_name):
   return project_name == 'CREATE NEW' or not project_name
   
-def get_project(project_name):
+def get_project(project_name, routed_sample_id):
 
   global base_path, loaded_settings
 
@@ -816,7 +833,13 @@ def get_project(project_name):
     )
 
     samples = get_samples(project_name, settings_out_dict[ UI.show_leafs_only ] if UI.show_leafs_only in settings_out_dict else False)
-    sample = settings_out_dict[ UI.sample_tree ] or samples[0] if len(samples) > 0 else None
+
+    sample = routed_sample_id or (
+      (
+        settings_out_dict[ UI.sample_tree ] or samples[0] 
+      ) if len(samples) > 0 else None
+    )
+
     settings_out_dict[ UI.sample_tree ] = gr.update(
       choices = samples,
       value = sample 
@@ -996,7 +1019,7 @@ with gr.Blocks(
     with gr.Column( scale = 1 ):
 
       UI.project_name.render().change(
-        inputs = UI.project_name,
+        inputs = [ UI.project_name, UI.routed_sample_id ],
         outputs = [ UI.create_project_box, UI.settings_box, *UI.project_settings, UI.getting_started_column, UI.workspace_column, UI.stage_selector, UI.sample_box ],
         fn = get_project,
         api_name = 'get-project'
@@ -1116,6 +1139,7 @@ with gr.Blocks(
 
           with gr.Row():
             
+            UI.routed_sample_id.render()
             UI.sample_tree.render()
             UI.show_leafs_only.render()
             
@@ -1143,7 +1167,18 @@ with gr.Blocks(
             fn = get_sample,
           )
 
-          UI.picked_sample.change(**preview_args, api_name = 'get-sample')
+          UI.picked_sample.change(
+            **preview_args,
+            api_name = 'get-sample',
+            _js =
+            # Set the search string to ?[sample_id] for easier navigation
+            '''
+              ( ...args ) => (
+                window.history.pushState( {}, '', `?${args[1]}` ),
+                args
+              ) 
+            '''
+          )
 
           with UI.sample_box.render():
 
@@ -1253,10 +1288,13 @@ with gr.Blocks(
                   api_name = 'rename-sample'
                 )
 
+  def dummy_string_input():
+    return gr.Textbox( visible = False )
+    
   app.load(
     on_load,
-    inputs = [ gr.Checkbox(visible = False), gr.Textbox(visible = False), gr.Textbox(visible = False) ],
-    outputs = [ UI.project_name, UI.artist, UI.genre, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window ],
+    inputs = [ gr.Textbox(visible=False), gr.Textbox(visible=False), gr.Textbox(visible=False) ],
+    outputs = [ UI.project_name, UI.routed_sample_id, UI.artist, UI.genre, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window ],
     api_name = 'initialize',
     _js = """async (...args) => {
       
@@ -1360,16 +1398,15 @@ with gr.Blocks(
 
         parentObserver.observe(parentElement, { childList: true, subtree: true })
 
-        // Return the current URL to pass it to the Python code
-        return [ true, window.location.href, '' ]
+        // href, query_string, error_message
+        return [ window.location.href, window.location.search.slice(1), null ]
 
       } catch (e) {
 
         console.error(e)
 
-        // If anything went wrong, perhaps we're running the UI from inside the notebook, so let's return false
-
-        return [ false, window.location.href, e.toString() ]
+        // If anything went wrong, return the error message
+        return [ window.location.href, window.location.search.slice(1), e.message ]
 
       }
     }"""
