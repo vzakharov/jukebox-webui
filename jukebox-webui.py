@@ -57,6 +57,7 @@ except:
  
 
 # import glob
+from datetime import datetime
 import gradio as gr
 import librosa
 import os
@@ -293,26 +294,28 @@ class UI:
   
   workspace_column = gr.Column( scale = 3, visible = False )
 
-  STAGE_SELECTOR_CHOICES = [ 'Start from scratch', 'Continue from a generated sample' ]
-
-  stage_selector = gr.Dropdown(
-    label = 'Stage',
-    choices = STAGE_SELECTOR_CHOICES,
-    type = 'index',
-  )
-
-  first_generation_row = gr.Row()
-
   primed_audio = gr.Audio(
     label = 'Audio to start from (optional)',
     source = 'microphone'
   )
 
-  continue_generation_row = gr.Row(
+  # Virtual timestamp textbox to do certain things once the audio is primed (and this textbox is updated), accurate to the millisecond
+  prime_timestamp = gr.Textbox(
+    value = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'),
     visible = False
   )
 
+  first_generation_row = gr.Row(
+    visible = False
+  )
+
+  generation_progress = gr.Markdown('', elem_id = 'generation-progress')
+
   routed_sample_id = gr.State()
+
+  sample_tree_row = gr.Row(
+    visible = False
+  )
 
   sample_tree = gr.Dropdown(
     label = 'Sample tree',
@@ -367,7 +370,7 @@ class UI:
 
   trim_button = gr.Button( 'Trim', visible = False )
 
-  project_settings = [ *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec, stage_selector ]
+  project_settings = [ *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec ]
 
   input_names = { input: name for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
 
@@ -392,6 +395,73 @@ def create_project(name):
     choices = get_projects(),
     value = name
   )
+
+def convert_audio_to_sample(project_name, audio, sec_to_trim_primed_audio, show_leafs_only):
+
+  global hps, base_path
+
+  # audio is of the following form:
+  # (48000, array([        0,         0,         0, ..., -26209718, -25768554,       -25400996], dtype=int32))
+  # dtype=int16 is also possible
+  # Or, if it is a stereo file, audio[1] is [[left, right], [left, right], ...]
+  
+  print(f'Audio: {audio}')
+  # breakpoint()
+  print(f'Audio length: {len(audio[1])} samples, sample rate: {audio[0]} Hz')
+
+  # If it is a stereo file, we need to convert it to mono by averaging the left and right channels
+  if len(audio[1].shape) > 1:
+    audio = (audio[0], audio[1].mean(axis=1))
+    print(f'Converted stereo to mono (shape: {audio[1].shape})')
+
+  if sec_to_trim_primed_audio:
+    audio = (audio[0], audio[1][:int(audio[0] * sec_to_trim_primed_audio)])
+    print(f'Trimmed audio to {sec_to_trim_primed_audio} seconds')
+
+  # Convert the audio to float depending on the dtype
+
+  x = audio[1] / 2**31 if audio[1].dtype == np.int32 else audio[1] / 2**15
+  print(f'Converted to [-1, 1]; min = {x.min()}, max = {x.max()}')
+
+  # Resample the audio to hps.sr (if needed)
+
+  if audio[0] != hps.sr:
+    x = librosa.resample(x, audio[0], hps.sr)
+    print(f'Resampled audio to {hps.sr}')
+
+  # Convert the audio to a tensor (e.g. from array([[-1.407e-03, -4.461e-04, ..., -3.042e-05,  1.277e-05]], dtype=float32) to tensor([[-1.407e-03], [-4.461e-04], ..., [-3.042e-05], [ 1.277e-05]], dtype=float32))
+
+  if len(x.shape) == 1:
+    x = x.reshape((1, -1))
+    print(f'Reshaped audio to {x.shape}')
+
+  x = x.T
+  print(f'Transposed audio to {x.shape}')
+  
+  xs = [ x ]
+
+  print(f'Created {len(xs)} samples of {x.shape} shape each')
+
+  x = t.stack([t.from_numpy(x) for x in xs])
+  print(f'Stacked samples to {x.shape}')
+
+  x = x.to(device, non_blocking=True)
+  print(f'Moved samples to {device}')
+
+  zs = top_prior.encode( x, start_level=0, end_level=len(priors), bs_chunks=x.shape[0] )
+  print(f'Encoded audio to zs of shape {[ z.shape for z in zs ]}')
+
+  primed_sample_id = f'{project_name}-{get_first_free_index(project_name)}'
+  filename = f'{base_path}/{project_name}/{primed_sample_id}.z'
+  t.save(zs, filename)
+
+  return {
+    UI.sample_tree: gr.update(
+      choices = get_samples(project_name, show_leafs_only),
+      value = primed_sample_id
+    ),
+    UI.prime_timestamp: datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'),
+  }
 
 def delete_sample(project_name, sample_id, confirm):
 
@@ -424,7 +494,7 @@ def delete_sample(project_name, sample_id, confirm):
     ),            
   }
 
-def generate(project_name, stage, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length):
+def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length):
 
   print(f'Generating {n_samples} sample(s) of {generation_length} sec each for project {project_name}...')
 
@@ -461,73 +531,12 @@ def generate(project_name, stage, parent_sample_id, show_leafs_only, artist, gen
 
   print(f'Generating {generation_length} seconds for {project_name}...')
 
-
   if parent_sample_id:
 
-    if stage == 0:
-
-      # stage == 0 means start from scratch
-      # In this case, parent_sample_id contains an array of the following form (example):
-      # (48000, array([        0,         0,         0, ..., -26209718, -25768554,       -25400996], dtype=int32))
-      # dtype=int16 is also possible
-      # Or, if it is a stereo file, audio[1] is [[left, right], [left, right], ...]
-      
-      audio = parent_sample_id
-      print(f'Audio: {audio}')
-      # breakpoint()
-      print(f'Audio length: {len(audio[1])} samples, sample rate: {audio[0]} Hz')
-
-      parent_sample_id = f'{project_name}-primed'
-      
-      # If it is a stereo file, we need to convert it to mono by averaging the left and right channels
-      if len(audio[1].shape) > 1:
-        audio = (audio[0], audio[1].mean(axis=1))
-        print(f'Converted stereo to mono (shape: {audio[1].shape})')
-
-      # Convert the audio to float depending on the dtype
-
-      x = audio[1] / 2**31 if audio[1].dtype == np.int32 else audio[1] / 2**15
-      print(f'Converted to [-1, 1]; min = {x.min()}, max = {x.max()}')
-
-      # Resample the audio to hps.sr (if needed)
-
-      if audio[0] != hps.sr:
-        x = librosa.resample(x, audio[0], hps.sr)
-        print(f'Resampled audio to {hps.sr}')
-
-      # Convert the audio to a tensor (e.g. from array([[-1.407e-03, -4.461e-04, ..., -3.042e-05,  1.277e-05]], dtype=float32) to tensor([[-1.407e-03], [-4.461e-04], ..., [-3.042e-05], [ 1.277e-05]], dtype=float32))
-
-      if len(x.shape) == 1:
-        x = x.reshape((1, -1))
-        print(f'Reshaped audio to {x.shape}')
-
-      x = x.T
-      print(f'Transposed audio to {x.shape}')
-      
-      xs = []
-      for i in range(n_samples):
-        xs.append(x)
-
-      print(f'Created {len(xs)} samples of {x.shape} shape each')
-
-      x = t.stack([t.from_numpy(x) for x in xs])
-      print(f'Stacked samples to {x.shape}')
-
-      x = x.to(device, non_blocking=True)
-      print(f'Moved samples to {device}')
-
-      zs = top_prior.encode( x, start_level=0, end_level=len(priors), bs_chunks=x.shape[0] )
-      print(f'Encoded audio to zs of shape {[ z.shape for z in zs ]}')
-
-    else:
-
-      zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
-      print(f'Loaded parent sample {parent_sample_id} of shape {[ z.shape for z in zs ]}')
-      # zs is a list of tensors of torch.Size([loaded_n_samples, n_tokens])
-      # We need to turn it into a list of tensors of torch.Size([n_samples, n_tokens])
-      # We do this by repeating the first sample of each tensor n_samples times
-      zs = [ z[0].repeat(n_samples, 1) for z in zs ]
-      print(f'Converted to shape {[ z.shape for z in zs ]}')
+    zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
+    print(f'Loaded parent sample {parent_sample_id} of shape {[ z.shape for z in zs ]}')
+    zs = [ z[0].repeat(n_samples, 1) for z in zs ]
+    print(f'Converted to shape {[ z.shape for z in zs ]}')
 
   else:
     zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
@@ -546,14 +555,7 @@ def generate(project_name, stage, parent_sample_id, show_leafs_only, artist, gen
   wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
   print(f'Generated wavs of shape {wavs.shape}')
 
-  # filenames = write_files(base_path, project_name, zs, wav)
-  # print(f'- Files written: {filenames}')
-  
-  child_ids = get_children(project_name, parent_sample_id)
-  child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
-  first_new_child_index = max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
-  print(f'Existing children for parent {parent_sample_id}: {child_ids}')
-  print(f'First new child index: {first_new_child_index}')
+  first_new_child_index = get_first_free_index(project_name, parent_sample_id)
 
   # For each sample, write the z (a subarray of zs)
   prefix = get_prefix(project_name, parent_sample_id)
@@ -567,12 +569,14 @@ def generate(project_name, stage, parent_sample_id, show_leafs_only, artist, gen
 
     t.save(z, f'{filename}.z')
     print(f'Wrote {filename}.z')
-    child_ids += [ id ]
 
-  return gr.update(
-    choices = get_samples(project_name, show_leafs_only),
-    value = child_ids[-1]
-  )
+  return {
+    UI.sample_tree: gr.update(
+      choices = get_samples(project_name, show_leafs_only),
+      value = id
+    ),
+    UI.generation_progress: f'Generation completed at {datetime.now().strftime("%H:%M:%S")}'
+  }
 
 def get_audio(project_name, sample_id):
 
@@ -631,6 +635,11 @@ def get_custom_parents(project_name):
     print(f'Custom parents: {custom_parents}')
 
   return custom_parents
+
+def get_first_free_index(project_name, parent_sample_id = None):
+  child_ids = get_children(project_name, parent_sample_id)
+  child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
+  return max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
 
 def on_load( href, query_string, error_message ):
 
@@ -788,7 +797,6 @@ def get_project(project_name, routed_sample_id):
     UI.generation_length: 1,
     UI.temperature: 0.98,
     UI.n_samples: 2,
-    UI.stage_selector: UI.STAGE_SELECTOR_CHOICES[0],
     UI.sample_tree: None
   }
 
@@ -851,6 +859,8 @@ def get_project(project_name, routed_sample_id):
     UI.settings_box: gr.update( visible = not is_this_new ),
     UI.workspace_column: gr.update( visible = not is_this_new  ),
     UI.sample_box: gr.update( visible = sample is not None ),
+    UI.first_generation_row: gr.update( visible = len(samples) == 0 ),
+    UI.sample_tree_row: gr.update( visible = len(samples) > 0 ),
     **settings_out_dict
   }
 
@@ -1002,6 +1012,13 @@ with gr.Blocks(
       /* add a considerable margin to the left of the column */
       margin-left: 20px;
     }
+
+    #generation-progress {
+      /* gray, smaller font */
+      color: #888;
+      font-size: 0.8rem;
+    }
+
   """,
   title = 'Jukebox Web UI',
 ) as app:
@@ -1020,7 +1037,10 @@ with gr.Blocks(
 
       UI.project_name.render().change(
         inputs = [ UI.project_name, UI.routed_sample_id ],
-        outputs = [ UI.create_project_box, UI.settings_box, *UI.project_settings, UI.getting_started_column, UI.workspace_column, UI.stage_selector, UI.sample_box ],
+        outputs = [ 
+          UI.create_project_box, UI.settings_box, *UI.project_settings, UI.getting_started_column, UI.workspace_column, UI.first_generation_row, 
+          UI.sample_tree_row, UI.sample_box 
+        ],
         fn = get_project,
         api_name = 'get-project'
       )
@@ -1073,21 +1093,32 @@ with gr.Blocks(
 
     with UI.workspace_column.render():
 
-      with gr.Row():
-
-        UI.stage_selector.render().change(
-          inputs = UI.stage_selector,
-          outputs = [ UI.first_generation_row, UI.continue_generation_row ],
-          fn = lambda stage:
-            # 0 = start, 1 = continue
-            [ gr.update( visible = stage == i ) for i in range(2) ]
-        )
-
-      with UI.continue_generation_row.render():
+      with gr.Tab('Compose'):
 
         with gr.Column():
 
-          with gr.Row():
+          with UI.first_generation_row.render():
+
+            with gr.Column():
+            
+              gr.Markdown("""
+                To start composing, you need to generate the first batch of samples. You can:
+                
+                - Start from scratch by clicking the **Generate initial samples** button below, or
+                - Go to the **Priming** tab and convert your own audio to a sample.
+              """)
+
+              gr.Button('Generate initial samples', variant = "primary" ).click(
+                inputs = [ UI.project_name, UI.sample_tree, UI.show_leafs_only, *UI.generation_params ],
+                outputs = [ UI.sample_tree, UI.first_generation_row, UI.sample_tree_row, UI.generation_progress ],
+                fn = lambda *args: {
+                  **generate(*args),
+                  UI.first_generation_row: gr.update( visible = False ),
+                  UI.sample_tree_row: gr.update( visible = True ),
+                }
+              )
+
+          with UI.sample_tree_row.render():
             
             UI.routed_sample_id.render()
             UI.sample_tree.render()
@@ -1111,7 +1142,7 @@ with gr.Blocks(
           preview_args = dict(
             inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec ],
             outputs = [ 
-              UI.stage_selector, UI.sample_box, UI.generated_audio, UI.total_audio_length, 
+              UI.sample_box, UI.generated_audio, UI.total_audio_length, 
               UI.go_to_children_button, UI.go_to_parent_button
             ],
             fn = get_sample,
@@ -1124,7 +1155,7 @@ with gr.Blocks(
             # Set the search string to ?[sample_id] for easier navigation
             '''
               ( ...args ) => (
-                window.history.pushState( {}, '', `?${args[1]}` ),
+                args[1] && window.history.pushState( {}, '', `?${args[1]}` ),
                 args
               ) 
             '''
@@ -1157,17 +1188,17 @@ with gr.Blocks(
               value = 'Generate further',
               variant = 'primary',
             ).click(
-              inputs =  [ UI.project_name, UI.stage_selector, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
-              outputs = UI.sample_tree,
+              inputs =  [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
+              outputs = [ UI.sample_tree, UI.generation_progress ],
               fn = generate,
             )
 
             gr.Button(
               value = 'Generate more variations',          
             ).click(
-              inputs = [ UI.project_name, UI.stage_selector, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
-              outputs = UI.sample_tree,
-              fn = lambda project_name, stage, sample_id, *args: generate(project_name, stage, get_parent(project_name, sample_id), *args),
+              inputs = [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
+              outputs = [ UI.sample_tree, UI.generation_progress ],
+              fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(project_name, sample_id), *args),
             )
 
             UI.go_to_parent_button.render()
@@ -1238,55 +1269,75 @@ with gr.Blocks(
                   api_name = 'rename-sample'
                 )
 
-      with UI.first_generation_row.render():
+        UI.generation_progress.render()
 
-        with gr.Column():
+      with gr.Tab('Priming'):
 
-          with gr.Accordion( "Start with your own audio", open = False ):
+        primed_audio_source = gr.Radio(
+          label = 'Audio source',
+          choices = [ 'microphone', 'upload' ],
+          value = 'microphone'
+        )
 
-            primed_audio_source = gr.Radio(
-              label = 'Audio source',
-              choices = [ 'microphone', 'upload' ],
-              value = 'microphone'
-            )
+        UI.primed_audio.render()
+        
+        primed_audio_source.change(
+          inputs = primed_audio_source,
+          outputs = UI.primed_audio,
+          fn = lambda source: gr.update( source = source ),
+        )
 
-            UI.primed_audio.render()
-            
-            primed_audio_source.change(
-              inputs = primed_audio_source,
-              outputs = UI.primed_audio,
-              fn = lambda source: gr.update( source = source ),
-            )
+        sec_to_trim_primed_audio = gr.Number(
+          label = 'Trim starting audio to ... seconds from the beginning',
+        )
 
-            sec_to_trim_primed_audio = gr.Number(
-              label = 'Trim starting audio to ... seconds from the beginning',
-            )
+        def trim_primed_audio(audio, sec):
+          print(f'Trimming {audio} to {sec} seconds')
+          # # Plot the audio to console for debugging
+          # plt.plot(audio)
+          # plt.show()              
+          # Audio is of the form (sr, audio)
+          trimmed_audio = audio[1][:int(sec * audio[0])]
+          print(f'Trimmed audio shape is {trimmed_audio.shape}')
+          return ( audio[0], trimmed_audio )
 
-            def trim_primed_audio(audio, sec):
-              print(f'Trimming {audio} to {sec} seconds')
-              # # Plot the audio to console for debugging
-              # plt.plot(audio)
-              # plt.show()              
-              # Audio is of the form (sr, audio)
-              trimmed_audio = audio[1][:int(sec * audio[0])]
-              print(f'Trimmed audio shape is {trimmed_audio.shape}')
-              return ( audio[0], trimmed_audio )
+        sec_to_trim_primed_audio.submit(
+          inputs = [ UI.primed_audio, sec_to_trim_primed_audio ],
+          outputs = UI.primed_audio,
+          fn = trim_primed_audio
+        )
 
-            sec_to_trim_primed_audio.submit(
-              inputs = [ UI.primed_audio, sec_to_trim_primed_audio ],
-              outputs = UI.primed_audio,
-              fn = trim_primed_audio
-            )
+        prime_button = gr.Button(
+          'Convert to sample',
+          variant = 'primary'
+        )
+                
+        prime_button.click(
+          inputs = [ UI.project_name, UI.primed_audio, sec_to_trim_primed_audio, UI.show_leafs_only ],
+          outputs = [ UI.sample_tree, prime_button, UI.prime_timestamp ], # UI.prime_timestamp is updated to the current time to force tab change
+          fn = convert_audio_to_sample,
+          api_name = 'convert-wav-to-sample'
+        )
 
-          gr.Button(
-            'Generate',
-            variant = 'primary'
-          ).click(
-            inputs = [ UI.project_name, UI.stage_selector, UI.primed_audio, UI.show_leafs_only, *UI.generation_params ],
-            outputs = [ UI.sample_tree, UI.stage_selector ],
-            fn = lambda *args: [ generate(*args), UI.STAGE_SELECTOR_CHOICES[1] ],
-            api_name = 'generate',
-          )
+        UI.prime_timestamp.render().change(
+          inputs = UI.prime_timestamp, outputs = None, fn = None,
+          _js = 
+            # Find a button inside a div inside another div with class 'tabs', the button having 'Compose' as text, and click it -- all this in the shadow DOM.
+            # Gosh, this is ugly.
+            """
+              timestamp => {
+                console.log(`Timestamp changed to ${timestamp}; clicking the 'Compose' tab`)
+                for ( let button of document.querySelector('gradio-app').shadowRoot.querySelectorAll('div.tabs > div > button') ) {
+                  if ( button.innerText == 'Compose' ) {
+                    button.click()
+                    break
+                  }
+                }
+                return timestamp
+              }
+            """
+        )
+
 
   def dummy_string_input():
     return gr.Textbox( visible = False )
