@@ -1088,14 +1088,19 @@ with gr.Blocks(
 
                 if filter:
                   artists = [ artist for artist in artists if filter.lower() in artist.lower() ]
+                  artist = artists[0]
+                else:
+                  # random artist
+                  artist = random.choice(artists)
 
                 return gr.update(
                   choices = artists,
-                  value = artists[0] if artists else None,
+                  value = artist
                 )
 
               artist_filter = gr.Textbox(
-                label = '🔍 (↩ to apply)',
+                label = '🔍',
+                placeholder = 'Empty for 🎲',
               )
 
               artist_filter.submit(
@@ -1103,16 +1108,6 @@ with gr.Blocks(
                 outputs = UI.artist,
                 fn = filter_artists,
                 api_name = 'filter-artists'
-              )
-
-              gr.Button('🎲').click(
-                inputs = None,
-                outputs = [ UI.artist, artist_filter ],
-                fn = lambda: [
-                  random.choice(get_list('artist')),
-                  '',
-                ],
-                api_name = 'random-artist'
               )
           
           else:
