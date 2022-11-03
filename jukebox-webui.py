@@ -1083,56 +1083,6 @@ with gr.Blocks(
             [ gr.update( visible = stage == i ) for i in range(2) ]
         )
 
-      with UI.first_generation_row.render():
-
-        with gr.Column():
-
-          with gr.Accordion( "Start with your own audio", open = False ):
-
-            primed_audio_source = gr.Radio(
-              label = 'Audio source',
-              choices = [ 'microphone', 'upload' ],
-              value = 'microphone'
-            )
-
-            UI.primed_audio.render()
-            
-            primed_audio_source.change(
-              inputs = primed_audio_source,
-              outputs = UI.primed_audio,
-              fn = lambda source: gr.update( source = source ),
-            )
-
-            sec_to_trim_primed_audio = gr.Number(
-              label = 'Trim starting audio to ... seconds from the beginning',
-            )
-
-            def trim_primed_audio(audio, sec):
-              print(f'Trimming {audio} to {sec} seconds')
-              # # Plot the audio to console for debugging
-              # plt.plot(audio)
-              # plt.show()              
-              # Audio is of the form (sr, audio)
-              trimmed_audio = audio[1][:int(sec * audio[0])]
-              print(f'Trimmed audio shape is {trimmed_audio.shape}')
-              return ( audio[0], trimmed_audio )
-
-            sec_to_trim_primed_audio.submit(
-              inputs = [ UI.primed_audio, sec_to_trim_primed_audio ],
-              outputs = UI.primed_audio,
-              fn = trim_primed_audio
-            )
-
-          gr.Button(
-            'Generate',
-            variant = 'primary'
-          ).click(
-            inputs = [ UI.project_name, UI.stage_selector, UI.primed_audio, UI.show_leafs_only, *UI.generation_params ],
-            outputs = [ UI.sample_tree, UI.stage_selector ],
-            fn = lambda *args: [ generate(*args), UI.STAGE_SELECTOR_CHOICES[1] ],
-            api_name = 'generate',
-          )
-
       with UI.continue_generation_row.render():
 
         with gr.Column():
@@ -1287,6 +1237,56 @@ with gr.Blocks(
                   fn = rename_sample,
                   api_name = 'rename-sample'
                 )
+
+      with UI.first_generation_row.render():
+
+        with gr.Column():
+
+          with gr.Accordion( "Start with your own audio", open = False ):
+
+            primed_audio_source = gr.Radio(
+              label = 'Audio source',
+              choices = [ 'microphone', 'upload' ],
+              value = 'microphone'
+            )
+
+            UI.primed_audio.render()
+            
+            primed_audio_source.change(
+              inputs = primed_audio_source,
+              outputs = UI.primed_audio,
+              fn = lambda source: gr.update( source = source ),
+            )
+
+            sec_to_trim_primed_audio = gr.Number(
+              label = 'Trim starting audio to ... seconds from the beginning',
+            )
+
+            def trim_primed_audio(audio, sec):
+              print(f'Trimming {audio} to {sec} seconds')
+              # # Plot the audio to console for debugging
+              # plt.plot(audio)
+              # plt.show()              
+              # Audio is of the form (sr, audio)
+              trimmed_audio = audio[1][:int(sec * audio[0])]
+              print(f'Trimmed audio shape is {trimmed_audio.shape}')
+              return ( audio[0], trimmed_audio )
+
+            sec_to_trim_primed_audio.submit(
+              inputs = [ UI.primed_audio, sec_to_trim_primed_audio ],
+              outputs = UI.primed_audio,
+              fn = trim_primed_audio
+            )
+
+          gr.Button(
+            'Generate',
+            variant = 'primary'
+          ).click(
+            inputs = [ UI.project_name, UI.stage_selector, UI.primed_audio, UI.show_leafs_only, *UI.generation_params ],
+            outputs = [ UI.sample_tree, UI.stage_selector ],
+            fn = lambda *args: [ generate(*args), UI.STAGE_SELECTOR_CHOICES[1] ],
+            api_name = 'generate',
+          )
 
   def dummy_string_input():
     return gr.Textbox( visible = False )
