@@ -4,7 +4,7 @@ This is a web UI for [Jukebox](https://openai.com/blog/jukebox/), a music genera
 
 ## Installation
 
-1. Procure a Colab with at least a Tesla T4 GPU
+1. Procure a Colab with at least a Tesla T4 GPU and a high amount of RAM*
 
 2. Create a new notebook
 
@@ -17,3 +17,7 @@ I strongly suggest that you read the [Getting Started](https://github.com/vzakha
 Good luck!
 
 ~ [Vova](https://twitter.com/vovahimself)
+
+---
+
+\* might require a Colab Pro subscription; costs are around $0.20/hour in the lowest supported configuration.
