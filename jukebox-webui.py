@@ -918,7 +918,7 @@ def refresh_siblings(project_name, sample_id):
     visible = len(siblings) > 1
   )
 
-def rename_sample(project_name, old_sample_id, new_sample_id):
+def rename_sample(project_name, old_sample_id, new_sample_id, show_leafs_only):
 
   if not re.match(r'^[a-zA-Z0-9-]+$', new_sample_id):
     raise ValueError('Sample ID must be alphanumeric and dashes only')
@@ -959,6 +959,11 @@ def rename_sample(project_name, old_sample_id, new_sample_id):
       new_filename = filename.replace(old_sample_id, new_sample_id)
       print(f'Renaming {filename} to {new_filename}')
       os.rename(f'{base_path}/{project_name}/{filename}', f'{base_path}/{project_name}/{new_filename}')
+    
+  return gr.update(
+    choices = get_samples(project_name, show_leafs_only),
+    value = new_sample_id
+  )
 
 def save_project(project_name, *project_input_values):
 
@@ -1309,7 +1314,7 @@ with gr.Blocks(
                 )
 
                 gr.Button('Rename').click(
-                  inputs = [ UI.project_name, UI.picked_sample, new_sample_id ],
+                  inputs = [ UI.project_name, UI.picked_sample, new_sample_id, UI.show_leafs_only ],
                   outputs = UI.sample_tree,
                   fn = rename_sample,
                   api_name = 'rename-sample'
