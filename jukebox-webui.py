@@ -1157,7 +1157,7 @@ with gr.Blocks(
                 To start composing, you need to generate the first batch of samples. You can:
                 
                 - Start from scratch by clicking the **Generate initial samples** button below, or
-                - Go to the **Priming** tab and convert your own audio to a sample.
+                - Go to the **Prime** tab and convert your own audio to a sample.
               """)
 
               gr.Button('Generate initial samples', variant = "primary" ).click(
@@ -1323,7 +1323,7 @@ with gr.Blocks(
 
         UI.generation_progress.render()
 
-      with gr.Tab('Priming'):
+      with gr.Tab('Prime'):
 
         primed_audio_source = gr.Radio(
           label = 'Audio source',
