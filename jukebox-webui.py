@@ -471,7 +471,8 @@ def delete_sample(project_name, sample_id, confirm):
   
   # New child sample is the one that goes after the deleted sample
   siblings = get_siblings(project_name, sample_id)
-  new_sibling_to_use = siblings[ siblings.index(sample_id) + 1 ] if sample_id != siblings[-1] else None
+  current_index = siblings.index(sample_id)
+  new_sibling_to_use = siblings[ current_index + 1 ] if current_index < len(siblings) - 1 else siblings[ current_index - 1 ]
 
   # Remove the to-be-deleted sample from the list of child samples
   siblings.remove(sample_id)
