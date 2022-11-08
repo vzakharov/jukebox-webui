@@ -109,7 +109,7 @@ except:
 reload_monkey_patch = False #param{type:'boolean'}
 try:
   assert not reload_monkey_patch and not reload_all
-  monkey_patched_load_checkpoint, monkey_patched_load_audio
+  monkey_patched_load_checkpoint, monkey_patched_load_audio, monkey_patched_sample_level
   print('Jukebox methods already monkey patched.')
 except:
 
@@ -220,6 +220,10 @@ except:
         t.save(zs, path)
         print('Done.')
         start_index += 1
+    
+      return zs
+
+    jukebox.sample.sample_level = monkey_patched_sample_level
 
   print('Monkey patching done.')
 
@@ -548,7 +552,8 @@ def delete_sample(project_name, sample_id, confirm):
   
   # New child sample is the one that goes after the deleted sample
   siblings = get_siblings(project_name, sample_id)
-  new_sibling_to_use = siblings[ siblings.index(sample_id) + 1 ] if sample_id != siblings[-1] else None
+  current_index = siblings.index(sample_id)
+  new_sibling_to_use = siblings[ current_index + 1 ] if current_index < len(siblings) - 1 else siblings[ current_index - 1 ]
 
   # Remove the to-be-deleted sample from the list of child samples
   siblings.remove(sample_id)
@@ -633,10 +638,16 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
   print(f'Generated wavs of shape {wavs.shape}')
 
-  first_new_child_index = get_first_free_index(project_name, parent_sample_id)
-
-  # For each sample, write the z (a subarray of zs)
   prefix = get_prefix(project_name, parent_sample_id)
+  # For each sample, write the z (a subarray of zs)
+
+  try:
+    first_new_child_index = get_first_free_index(project_name, parent_sample_id)
+  except Exception as e:
+    print(f'Something went wrong: {e}')
+    first_new_child_index = random.randrange(1e6, 1e7)
+    print(f'Using random index {first_new_child_index} as a fallback')
+
   for i in range(n_samples):
     id = f'{prefix}{first_new_child_index + i}'
     filename = f'{base_path}/{project_name}/{id}'
@@ -656,7 +667,7 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
     UI.generation_progress: f'Generation completed at {datetime.now().strftime("%H:%M:%S")}'
   }
 
-def get_audio(project_name, sample_id):
+def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level=2):
 
   global base_path, hps
 
@@ -664,14 +675,33 @@ def get_audio(project_name, sample_id):
 
   print(f'Loading {filename}.z')
   z = t.load(f'{filename}.z')
-  wav = vqvae.decode(z[2:], start_level=2).cpu().numpy()
+  z = z[level]
+  # z is of shape torch.Size([1, n_tokens])
+  # print(f'Loaded {filename}.z at level {level}, shape: {z.shape}')
+
+  total_audio_length = int( tokens_to_seconds(z.shape[1]) * 100 ) / 100
+
+  if trim_to_n_sec:
+    trim_to_tokens = seconds_to_tokens(trim_to_n_sec)
+    # print(f'Trimming to {trim_to_n_sec} seconds ({trim_to_tokens} tokens)')
+    z = z[ :, :trim_to_tokens ]
+    # print(f'Trimmed to shape: {z.shape}')
+  
+  if preview_just_the_last_n_sec:
+    preview_tokens = seconds_to_tokens(preview_just_the_last_n_sec)
+    # print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds ({preview_tokens} tokens)')
+    preview_tokens += ( len(z) / seconds_to_tokens(1) ) % 1
+    z = z[ :, int( -1 * preview_tokens ): ]
+    # print(f'Trimmed to shape: {z.shape}')
+
+  wav = vqvae.decode([ z ], start_level=level).cpu().numpy()
   # wav is now of shape (1, sample_length, 1), we want (sample_length,)
   wav = wav[0, :, 0].cpu().numpy()
   print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {total_audio_length} seconds.')
 
-  return ( hps.sr, wav )
+  return wav, total_audio_length
 
-def get_children(project_name, parent_sample_id):
+def get_children(project_name, parent_sample_id, include_custom=True):
 
   global base_path
 
@@ -682,11 +712,13 @@ def get_children(project_name, parent_sample_id):
     if match:
       child_ids += [ filename.split('.')[0] ]
     
-  custom_parents = get_custom_parents(project_name)
+  if include_custom:
 
-  for sample_id in custom_parents:
-    if custom_parents[sample_id] == parent_sample_id:
-      child_ids += [ sample_id ]        
+    custom_parents = get_custom_parents(project_name)
+
+    for sample_id in custom_parents:
+      if custom_parents[sample_id] == parent_sample_id:
+        child_ids += [ sample_id ]        
 
   # print(f'Children of {parent_sample_id}: {child_ids}')
 
@@ -715,9 +747,21 @@ def get_custom_parents(project_name):
   return custom_parents
 
 def get_first_free_index(project_name, parent_sample_id = None):
-  child_ids = get_children(project_name, parent_sample_id)
-  child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
-  return max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
+  print(f'Getting first free index for {project_name}, parent {parent_sample_id}')
+  child_ids = get_children(project_name, parent_sample_id, include_custom=False)
+  print(f'Child ids: {child_ids}')
+  # child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
+  child_indices = []
+  for child_id in child_ids:
+    suffix = child_id.split('-')[-1]
+    # If not an integer, ignore
+    if suffix.isdigit():
+      child_indices += [ int(suffix) ]
+  
+  first_free_index = max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
+  print(f'First free index: {first_free_index}')
+
+  return first_free_index
 
 def on_load( href, query_string, error_message ):
 
@@ -963,20 +1007,9 @@ def get_project(project_name, routed_sample_id):
 
 def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec):
 
-  audio = get_audio(project_name, sample_id)
-  wav = audio[1]
+  global hps
 
-  # If trim_to_n_sec is set, trim the audio to that length
-  if trim_to_n_sec:
-    print(f'Trimming to {trim_to_n_sec} seconds')
-    wav = wav[ :int( trim_to_n_sec * hps.sr ) ]
-  
-  # If the preview_just_the_last_n_sec is set, only show the last n seconds
-  if preview_just_the_last_n_sec:
-    print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
-    # As the audio length can be non-integer, add its fractional part to the preview length
-    preview_just_the_last_n_sec += ( len(wav) / hps.sr ) % 1
-    wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
+  wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec)
 
   return {
     UI.generated_audio: gr.update(
@@ -1010,7 +1043,7 @@ def refresh_siblings(project_name, sample_id):
     visible = len(siblings) > 1
   )
 
-def rename_sample(project_name, old_sample_id, new_sample_id):
+def rename_sample(project_name, old_sample_id, new_sample_id, show_leafs_only):
 
   if not re.match(r'^[a-zA-Z0-9-]+$', new_sample_id):
     raise ValueError('Sample ID must be alphanumeric and dashes only')
@@ -1051,6 +1084,11 @@ def rename_sample(project_name, old_sample_id, new_sample_id):
       new_filename = filename.replace(old_sample_id, new_sample_id)
       print(f'Renaming {filename} to {new_filename}')
       os.rename(f'{base_path}/{project_name}/{filename}', f'{base_path}/{project_name}/{new_filename}')
+    
+  return gr.update(
+    choices = get_samples(project_name, show_leafs_only),
+    value = new_sample_id
+  )
 
 def save_project(project_name, *project_input_values):
 
@@ -1086,6 +1124,12 @@ def seconds_to_tokens(sec):
   tokens = sec * hps.sr // raw_to_tokens
   tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
   return int(tokens)
+
+def tokens_to_seconds(tokens):
+
+  global hps, raw_to_tokens
+
+  return tokens * raw_to_tokens / hps.sr
 
 def trim(project_name, sample_id, n_sec):
 
@@ -1180,14 +1224,19 @@ with gr.Blocks(
 
                 if filter:
                   artists = [ artist for artist in artists if filter.lower() in artist.lower() ]
+                  artist = artists[0]
+                else:
+                  # random artist
+                  artist = random.choice(artists)
 
                 return gr.update(
                   choices = artists,
-                  value = artists[0] if artists else None,
+                  value = artist
                 )
 
               artist_filter = gr.Textbox(
-                label = '🔍 (↩ to apply)',
+                label = '🔍',
+                placeholder = 'Empty for 🎲',
               )
 
               artist_filter.submit(
@@ -1195,16 +1244,6 @@ with gr.Blocks(
                 outputs = UI.artist,
                 fn = filter_artists,
                 api_name = 'filter-artists'
-              )
-
-              gr.Button('🎲').click(
-                inputs = None,
-                outputs = [ UI.artist, artist_filter ],
-                fn = lambda: [
-                  random.choice(get_list('artist')),
-                  '',
-                ],
-                api_name = 'random-artist'
               )
           
           else:
@@ -1248,7 +1287,7 @@ with gr.Blocks(
                 To start composing, you need to generate the first batch of samples. You can:
                 
                 - Start from scratch by clicking the **Generate initial samples** button below, or
-                - Go to the **Priming** tab and convert your own audio to a sample.
+                - Go to the **Prime** tab and convert your own audio to a sample.
               """)
 
               gr.Button('Generate initial samples', variant = "primary" ).click(
@@ -1406,7 +1445,7 @@ with gr.Blocks(
                 )
 
                 gr.Button('Rename').click(
-                  inputs = [ UI.project_name, UI.picked_sample, new_sample_id ],
+                  inputs = [ UI.project_name, UI.picked_sample, new_sample_id, UI.show_leafs_only ],
                   outputs = UI.sample_tree,
                   fn = rename_sample,
                   api_name = 'rename-sample'
@@ -1414,7 +1453,7 @@ with gr.Blocks(
 
         UI.generation_progress.render()
 
-      with gr.Tab('Priming'):
+      with gr.Tab('Prime'):
 
         primed_audio_source = gr.Radio(
           label = 'Audio source',
