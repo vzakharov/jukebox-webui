@@ -586,7 +586,7 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
     UI.generation_progress: f'Generation completed at {datetime.now().strftime("%H:%M:%S")}'
   }
 
-def get_audio(project_name, sample_id):
+def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level=2):
 
   global base_path, hps
 
@@ -594,7 +594,24 @@ def get_audio(project_name, sample_id):
 
   print(f'Loading {filename}.z')
   z = t.load(f'{filename}.z')
-  wav = vqvae.decode(z[2:], start_level=2).cpu().numpy()
+  z = z[level]
+  # z is of shape torch.Size([1, n_tokens])
+  # print(f'Loaded {filename}.z at level {level}, shape: {z.shape}')
+
+  if trim_to_n_sec:
+    trim_to_tokens = seconds_to_tokens(trim_to_n_sec)
+    # print(f'Trimming to {trim_to_n_sec} seconds ({trim_to_tokens} tokens)')
+    z = z[ :, :trim_to_tokens ]
+    # print(f'Trimmed to shape: {z.shape}')
+  
+  if preview_just_the_last_n_sec:
+    preview_tokens = seconds_to_tokens(preview_just_the_last_n_sec)
+    # print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds ({preview_tokens} tokens)')
+    preview_tokens += ( len(z) / seconds_to_tokens(1) ) % 1
+    z = z[ :, int( -1 * preview_tokens ): ]
+    # print(f'Trimmed to shape: {z.shape}')
+
+  wav = vqvae.decode([ z ], start_level=level).cpu().numpy()
   # wav is now of shape (1, sample_length, 1), we want (sample_length,)
   wav = wav[0, :, 0]
   print(f'Generated audio: {wav.shape}')
@@ -895,20 +912,8 @@ def get_project(project_name, routed_sample_id):
 
 def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec):
 
-  audio = get_audio(project_name, sample_id)
+  audio = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec)
   wav = audio[1]
-
-  # If trim_to_n_sec is set, trim the audio to that length
-  if trim_to_n_sec:
-    print(f'Trimming to {trim_to_n_sec} seconds')
-    wav = wav[ :int( trim_to_n_sec * hps.sr ) ]
-  
-  # If the preview_just_the_last_n_sec is set, only show the last n seconds
-  if preview_just_the_last_n_sec:
-    print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds')
-    # As the audio length can be non-integer, add its fractional part to the preview length
-    preview_just_the_last_n_sec += ( len(wav) / hps.sr ) % 1
-    wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
 
   return {
     UI.generated_audio: ( audio[0], wav ),
@@ -1020,6 +1025,12 @@ def seconds_to_tokens(sec):
   tokens = sec * hps.sr // raw_to_tokens
   tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
   return int(tokens)
+
+def tokens_to_seconds(tokens):
+
+  global hps, raw_to_tokens
+
+  return tokens * raw_to_tokens / hps.sr
 
 def trim(project_name, sample_id, n_sec):
 
