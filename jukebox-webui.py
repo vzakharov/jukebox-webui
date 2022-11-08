@@ -557,10 +557,16 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
   print(f'Generated wavs of shape {wavs.shape}')
 
-  first_new_child_index = get_first_free_index(project_name, parent_sample_id)
-
-  # For each sample, write the z (a subarray of zs)
   prefix = get_prefix(project_name, parent_sample_id)
+  # For each sample, write the z (a subarray of zs)
+
+  try:
+    first_new_child_index = get_first_free_index(project_name, parent_sample_id)
+  except Exception as e:
+    print(f'Something went wrong: {e}')
+    first_new_child_index = random.randrange(1e6, 1e7)
+    print(f'Using random index {first_new_child_index} as a fallback')
+
   for i in range(n_samples):
     id = f'{prefix}{first_new_child_index + i}'
     filename = f'{base_path}/{project_name}/{id}'
@@ -595,7 +601,7 @@ def get_audio(project_name, sample_id):
 
   return ( hps.sr, wav )
 
-def get_children(project_name, parent_sample_id):
+def get_children(project_name, parent_sample_id, include_custom=False):
 
   global base_path
 
@@ -606,11 +612,13 @@ def get_children(project_name, parent_sample_id):
     if match:
       child_ids += [ filename.split('.')[0] ]
     
-  custom_parents = get_custom_parents(project_name)
+  if include_custom:
 
-  for sample_id in custom_parents:
-    if custom_parents[sample_id] == parent_sample_id:
-      child_ids += [ sample_id ]        
+    custom_parents = get_custom_parents(project_name)
+
+    for sample_id in custom_parents:
+      if custom_parents[sample_id] == parent_sample_id:
+        child_ids += [ sample_id ]        
 
   # print(f'Children of {parent_sample_id}: {child_ids}')
 
@@ -639,9 +647,21 @@ def get_custom_parents(project_name):
   return custom_parents
 
 def get_first_free_index(project_name, parent_sample_id = None):
-  child_ids = get_children(project_name, parent_sample_id)
-  child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
-  return max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
+  print(f'Getting first free index for {project_name}, parent {parent_sample_id}')
+  child_ids = get_children(project_name, parent_sample_id, include_custom=False)
+  print(f'Child ids: {child_ids}')
+  # child_indices = [ int(child_id.split('-')[-1]) for child_id in child_ids ]
+  child_indices = []
+  for child_id in child_ids:
+    suffix = child_id.split('-')[-1]
+    # If not an integer, ignore
+    if suffix.isdigit():
+      child_indices += [ int(suffix) ]
+  
+  first_free_index = max(child_indices) + 1 if child_indices and max(child_indices) >= 0 else 1
+  print(f'First free index: {first_free_index}')
+
+  return first_free_index
 
 def on_load( href, query_string, error_message ):
 
