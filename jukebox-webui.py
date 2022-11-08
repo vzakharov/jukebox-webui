@@ -171,10 +171,11 @@ except:
 
   try:
     monkey_patched_sample_level
+    zs_being_upsampled, sample_being_upsampled, current_upsampling_level, project_being_upsampled, priors_used_for_upsampling
     print('sample_level already monkey patched.')
   except:
 
-    zs_being_upsampled, sample_being_upsampled, current_upsampling_level, project_being_upsampled = None, None, None, None
+    zs_being_upsampled, sample_being_upsampled, current_upsampling_level, project_being_upsampled, priors_used_for_upsampling = None, None, None, None, None
     # Monkey patch sample_level, saving the current upsampled z to respective file
     # The original code is as follows:
     # def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
@@ -197,17 +198,18 @@ except:
       print(f"Sampling level {level}")
       # Remember current time
       start_time = datetime.now()
-      starts = get_starts(total_length, prior.n_ctx, hop_length)
-      start_index = 0
-      for start in starts:
+      windows = get_starts(total_length, prior.n_ctx, hop_length)
+      window_index = 0
+      for start in windows:
 
         print(f'Sampling window starting at {start}')
         zs = sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps)
 
         # Estimate time remaining
         elapsed_time = datetime.now() - start_time
-        starts_remaining = len(starts) - start_index
-        time_remaining = elapsed_time * starts_remaining
+        time_per_window = elapsed_time / ( window_index + 1 )
+        windows_remaining = len(windows) - window_index
+        time_remaining = time_per_window * windows_remaining
         print(f'Elapsed time: {elapsed_time}, time remaining for level {level}: {time_remaining}')
 
         zs_being_upsampled = zs
@@ -219,7 +221,7 @@ except:
         print(f'Saving upsampled z to {path}')
         t.save(zs, path)
         print('Done.')
-        start_index += 1
+        window_index += 1
     
       return zs
 
@@ -1572,7 +1574,7 @@ with gr.Blocks(
         
         def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genres):
 
-          global hps, top_prior, priors, zs_being_upsampled, labels_used_for_upsampling, project_being_upsampled, sample_being_upsampled
+          global hps, top_prior, priors, zs_being_upsampled, labels_used_for_upsampling, project_being_upsampled, sample_being_upsampled, priors_used_for_upsampling
 
           print(f'Toggling upsampling for {sample_id} to {toggle_on}')
 
@@ -1635,11 +1637,12 @@ with gr.Blocks(
           # Set hps.n_samples to 3, because we need 3 samples for each level
           hps.n_samples = 3
 
-          zs_being_upsampled = upsample(zs_being_upsampled, labels, sampling_kwargs, [*upsamplers, top_prior], hps)
+          priors_used_for_upsampling = [*upsamplers, top_prior]
+          zs_being_upsampled = upsample(zs_being_upsampled, labels, sampling_kwargs, priors_used_for_upsampling, hps)
         
-        def get_audio_with_priors():
+        def get_audio_being_upsampled():
 
-          global priors, current_upsampling_level, zs_being_upsampled
+          global current_upsampling_level, zs_being_upsampled, priors_used_for_upsampling
 
           zs = zs_being_upsampled
           level = current_upsampling_level
@@ -1650,7 +1653,7 @@ with gr.Blocks(
 
           print(f'Generating audio for level {level}')
           
-          x = priors[level].decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
+          x = priors_used_for_upsampling[level].decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
 
           # x is of shape (1, sample_length, 1), we want (sample_length,)
           wav = x[0, :, 0].cpu().numpy()
@@ -1709,7 +1712,7 @@ with gr.Blocks(
           inputs = None,
           outputs = [ upsampled_audio, UI.upsampling_tracker ],
           fn = lambda: {
-            upsampled_audio: get_audio_with_priors(),
+            upsampled_audio: get_audio_being_upsampled(),
             UI.upsampling_tracker: datetime.now().strftime(f'Last updated at %H:%M:%S')
           },
           api_name = 'get-upsampled-audio',
