@@ -174,7 +174,7 @@ except:
     print('sample_level already monkey patched.')
   except:
 
-    zs_being_upsampled, sample_id_being_upsampled, current_upsampling_level, project_being_upsampled = None, None, None, None
+    zs_being_upsampled, sample_being_upsampled, current_upsampling_level, project_being_upsampled = None, None, None, None
     # Monkey patch sample_level, saving the current upsampled z to respective file
     # The original code is as follows:
     # def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
@@ -190,7 +190,7 @@ except:
 
     def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
 
-      global base_path, project_being_upsampled, zs_being_upsampled, sample_id_being_upsampled, current_upsampling_level
+      global base_path, project_being_upsampled, zs_being_upsampled, sample_being_upsampled, current_upsampling_level
 
       # The original code provides for shorter samples by sampling only a partial window, but we'll just throw an error for simplicity
       assert total_length >= prior.n_ctx, f'Total length {total_length} is shorter than prior.n_ctx {prior.n_ctx}'
@@ -208,14 +208,14 @@ except:
         elapsed_time = datetime.now() - start_time
         starts_remaining = len(starts) - start_index
         time_remaining = elapsed_time * starts_remaining
-        print(f'Elapsed time: {int(elapsed_time)}, time remaining for level {level}: {int(time_remaining)}')
+        print(f'Elapsed time: {elapsed_time}, time remaining for level {level}: {time_remaining}')
 
         zs_being_upsampled = zs
         current_upsampling_level = level
         path = f'{base_path}/{project_being_upsampled}/upsampled/'
         if not os.path.exists(path):
           os.makedirs(path)
-        path += f'{sample_id_being_upsampled}.z'
+        path += f'{sample_being_upsampled}.z'
         print(f'Saving upsampled z to {path}')
         t.save(zs, path)
         print('Done.')
@@ -457,6 +457,9 @@ class UI:
   )
 
   upsampling_tracker = gr.Markdown('')
+
+  upsampling_in_progress = gr.Number(0, visible = False)
+  # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
 
   project_settings = [ 
     *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec,
@@ -1173,7 +1176,7 @@ with gr.Blocks(
     }
 
   """,
-  title = 'Jukebox Web UI',
+  title = 'Jukebox Web UI v0.3',
 ) as app:
 
   with UI.separate_tab_warning.render():
@@ -1376,7 +1379,7 @@ with gr.Blocks(
 
 
             gr.Button(
-              value = 'Generate further',
+              value = 'Go on',
               variant = 'primary',
             ).click(
               inputs =  [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
@@ -1532,7 +1535,7 @@ with gr.Blocks(
       with gr.Tab('Upsample'):
 
         # Warning that this process is slow and can take up to 10 minutes for 1 second of audio
-        with gr.Accordion('Warning', open = True):
+        with gr.Accordion('Warning', open = False):
 
           gr.Markdown('''
             Upsampling is a slow process. It can take up to 10 minutes to upsample 1 second of audio in the highest possible quality (2.5 minutes in the medium quality). Currently the Web UI does not show any progress, so consult with your Colab's output to see the progress.
@@ -1553,7 +1556,7 @@ with gr.Blocks(
           fn = lambda x: x,
         )
 
-        with gr.Accordion('Genres for upsampling'):
+        with gr.Accordion('Genres for upsampling (optional)', open = False):
 
           gr.Markdown('''
             The tool will generate three upsamplings of the selected sample, which will then be panned to the left, center, and right, respectively. Choosing different genres for each of the three upsamplings will result in a more diverse sound between them, thus enhancing the (pseudo-)stereo effect. 
@@ -1567,9 +1570,18 @@ with gr.Blocks(
 
             input.render()
         
-        def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
+        def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genres):
 
-          global hps, top_prior, priors, zs_being_upsampled, labels_used_for_upsampling
+          global hps, top_prior, priors, zs_being_upsampled, labels_used_for_upsampling, project_being_upsampled, sample_being_upsampled
+
+          print(f'Toggling upsampling for {sample_id} to {toggle_on}')
+
+          project_being_upsampled = project_name
+          sample_being_upsampled = sample_id
+
+          if not toggle_on:
+            return
+            # TODO: Stop the process
 
           print(f'Upsampling {sample_id} with genres {genres}')
           filename = f'{base_path}/{project_name}/{sample_id}.z'
@@ -1624,8 +1636,6 @@ with gr.Blocks(
           hps.n_samples = 3
 
           zs_being_upsampled = upsample(zs_being_upsampled, labels, sampling_kwargs, [*upsamplers, top_prior], hps)
-
-          return f'Upsampling started at {datetime.now()}'
         
         def get_audio_with_priors():
 
@@ -1633,43 +1643,66 @@ with gr.Blocks(
 
           zs = zs_being_upsampled
           level = current_upsampling_level
+
+          # If there's no upsampling in progress, current_upsampling_level will be None
+          if level is None:
+            return None
+
+          print(f'Generating audio for level {level}')
           
           x = priors[level].decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
 
           # x is of shape (1, sample_length, 1), we want (sample_length,)
           wav = x[0, :, 0].cpu().numpy()
-          return wav
+          return gr.update(
+            visible = True,
+            value = ( hps.sr, wav ),
+          )
 
-        gr.Button('Upsample', elem_id='upsample-button').click(
-          inputs = [ 
-            UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
-            UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel 
-          ],
-          outputs = UI.upsampling_tracker,
-          fn = start_upsampling,
-          api_name = 'upsample',
+        upsample_button = gr.Button('Upsample', variant="primary", elem_id='upsample-button')
+        
+        upsample_button.click(
+          inputs = UI.upsampling_in_progress,
+          outputs = [ UI.upsampling_in_progress, UI.upsampling_tracker, upsample_button ],
+          fn = lambda is_running: {
+            UI.upsampling_in_progress: 0 if is_running else 1,
+            UI.upsampling_tracker: 'Stopping upsampling...' if is_running else 'Upsampling...',
+            upsample_button: gr.update(
+              value = 'Upsample' if is_running else 'Stop upsampling',
+              variant = 'primary' if is_running else 'secondary',
+            )
+          },
           _js = """
             // Confirm before starting the upsample process
-            args => {
+            (...args) => {
+              console.log('Upsample button clicked with args: ', args)
               if ( !confirm('Are you sure you want to start the upsample process? THIS WILL TAKE A LONG TIME (see the warning above).') )
-                throw new Error('Upsample process cancelled by user')
+                throw new Error('Upsample process canceled by user')
               else {
-                // Make the upsample button gray and disabled
-                let = button document.querySelector('gradio-app').shadowRoot.querySelector('#upsample-button')
-                button.style.backgroundColor = '#ccc'
-                button.disabled = true
                 return args
               }
             }
           """
         )
 
-        UI.upsampling_tracker.render()
+        UI.upsampling_in_progress.render()
+        
+        UI.upsampling_in_progress.change(
+          inputs = [
+            UI.upsampling_in_progress, UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
+            UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
+          ],
+          outputs = None,
+          fn = toggle_upsampling,
+          api_name = 'toggle-upsampling',
+        )
 
         upsampled_audio = gr.Audio(
           label = 'Upsampled sample (updated every few minutes)',
           visible = False,
         )
+
+        UI.upsampling_tracker.render()
 
         # Whenever the upsampling tracker changes (which is in turn triggered by an iteration of the upsample function), update the upsampled audio
         UI.upsampling_tracker.change(
@@ -1682,11 +1715,12 @@ with gr.Blocks(
           api_name = 'get-upsampled-audio',
           _js = """
             // Wait for 10 seconds before updating the tracker/upsampled audio
-            async args => {
+            async (...args) => {
               console.log('Waiting for 10 seconds before updating the tracker/upsampled audio')
+              console.log('Args: ', args)
               await new Promise(resolve => setTimeout(resolve, 10000))
               console.log('Done waiting; updating.')
-              return args
+              return [ null ]
             }
           """
         )
