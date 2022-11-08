@@ -231,6 +231,15 @@ reload_prior = False #param{type:'boolean'}
 
 try:
   vqvae, priors, top_prior
+
+  assert top_prior is not None or labels_used_for_upsampling is not None
+  # If we were upsampling, we don't need the top prior anymore as long as we have the labels
+
+  if not top_prior:
+    print('top_prior is None, the app can only be used for upsampling.')
+    print('To use the app for sampling, create a new cell and run the following code:')
+    print('del labels_used_for_upsampling')
+
   assert total_duration == calculated_duration and not reload_prior and not reload_all
   print('Model already loaded.')
 except:
@@ -696,7 +705,7 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
 
   wav = vqvae.decode([ z ], start_level=level).cpu().numpy()
   # wav is now of shape (1, sample_length, 1), we want (sample_length,)
-  wav = wav[0, :, 0].cpu().numpy()
+  wav = wav[0, :, 0]
   print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {total_audio_length} seconds.')
 
   return wav, total_audio_length
@@ -936,9 +945,9 @@ def get_project(project_name, routed_sample_id):
     UI.temperature: 0.98,
     UI.n_samples: 2,
     UI.sample_tree: None,
-    UI.genre_for_upsampling_left_channel: 'Rock',
-    UI.genre_for_upsampling_center_channel: 'Pop',
-    UI.genre_for_upsampling_right_channel: 'Metal',
+    UI.genre_for_upsampling_left_channel: 'Unknown',
+    UI.genre_for_upsampling_center_channel: 'Unknown',
+    UI.genre_for_upsampling_right_channel: 'Unknown',
   }
 
   samples = []
@@ -1376,7 +1385,7 @@ with gr.Blocks(
             )
 
             gr.Button(
-              value = 'Generate more variations',          
+              value = '🔃',          
             ).click(
               inputs = [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
               outputs = [ UI.sample_tree, UI.generation_progress ],
@@ -1397,7 +1406,7 @@ with gr.Blocks(
               fn = lambda project_name, sample_id: get_children(project_name, sample_id)[0]
             )
 
-            gr.Button('Delete').click(
+            gr.Button('🗑️').click(
               inputs = [ UI.project_name, UI.picked_sample, gr.Checkbox(visible=False) ],
               outputs = [ UI.picked_sample, UI.sample_box ],
               fn = delete_sample,
@@ -1544,7 +1553,7 @@ with gr.Blocks(
           fn = lambda x: x,
         )
 
-        with gr.Box('Genres for upsampling'):
+        with gr.Accordion('Genres for upsampling'):
 
           gr.Markdown('''
             The tool will generate three upsamplings of the selected sample, which will then be panned to the left, center, and right, respectively. Choosing different genres for each of the three upsamplings will result in a more diverse sound between them, thus enhancing the (pseudo-)stereo effect. 
@@ -1558,9 +1567,9 @@ with gr.Blocks(
 
             input.render()
         
-        def upsample(project_name, sample_id, artist, lyrics, *genres):
+        def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
 
-          global hps, top_prior, priors, zs_being_upsampled
+          global hps, top_prior, priors, zs_being_upsampled, labels_used_for_upsampling
 
           print(f'Upsampling {sample_id} with genres {genres}')
           filename = f'{base_path}/{project_name}/{sample_id}.z'
@@ -1578,8 +1587,13 @@ with gr.Blocks(
             offset = 0,
             lyrics = lyrics,
           ) for genre in genres ]
-
-          labels = top_prior.labeller.get_batch_labels(metas, 'cuda')
+          
+          if top_prior:
+            labels = top_prior.labeller.get_batch_labels(metas, 'cuda')
+            print('Calculated new labels from top prior')
+          else:
+            labels = labels_used_for_upsampling
+            print('Reusing labels from previous upsampling')
 
           # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
           del top_prior
@@ -1593,6 +1607,8 @@ with gr.Blocks(
             print('Converted labels to list')
             # Not sure why we need to do this -- I copied this from another notebook.
           
+          labels_used_for_upsampling = labels
+          
           # Create a backup of the original file, in case something goes wrong
           shutil.copy(filename, f'{filename}.bak')
           print(f'Created backup of {filename} as {filename}.bak')
@@ -1604,9 +1620,12 @@ with gr.Blocks(
           ]
           # We don't need to specify sampling_kwargs for the top (least-quality) level, because it's already "upsampled".
 
+          # Set hps.n_samples to 3, because we need 3 samples for each level
+          hps.n_samples = 3
+
           zs_being_upsampled = upsample(zs_being_upsampled, labels, sampling_kwargs, [*upsamplers, top_prior], hps)
 
-          return sample_id
+          return f'Upsampling started at {datetime.now()}'
         
         def get_audio_with_priors():
 
@@ -1621,14 +1640,13 @@ with gr.Blocks(
           wav = x[0, :, 0].cpu().numpy()
           return wav
 
-
         gr.Button('Upsample', elem_id='upsample-button').click(
           inputs = [ 
             UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
             UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel 
           ],
           outputs = UI.upsampling_tracker,
-          fn = upsample,
+          fn = start_upsampling,
           api_name = 'upsample',
           _js = """
             // Confirm before starting the upsample process
@@ -1679,7 +1697,10 @@ with gr.Blocks(
   app.load(
     on_load,
     inputs = [ gr.Textbox(visible=False), gr.Textbox(visible=False), gr.Textbox(visible=False) ],
-    outputs = [ UI.project_name, UI.routed_sample_id, UI.artist, UI.genre, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window ],
+    outputs = [ 
+      UI.project_name, UI.routed_sample_id, UI.artist, UI.genre, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window,
+      UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
+    ],
     api_name = 'initialize',
     _js = """async (...args) => {
       
