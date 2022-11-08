@@ -598,6 +598,8 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
   # z is of shape torch.Size([1, n_tokens])
   # print(f'Loaded {filename}.z at level {level}, shape: {z.shape}')
 
+  total_audio_length = int( tokens_to_seconds(z.shape[1]) * 100 ) / 100
+
   if trim_to_n_sec:
     trim_to_tokens = seconds_to_tokens(trim_to_n_sec)
     # print(f'Trimming to {trim_to_n_sec} seconds ({trim_to_tokens} tokens)')
@@ -614,11 +616,11 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
   wav = vqvae.decode([ z ], start_level=level).cpu().numpy()
   # wav is now of shape (1, sample_length, 1), we want (sample_length,)
   wav = wav[0, :, 0]
-  print(f'Generated audio: {wav.shape}')
+  print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {total_audio_length} seconds.')
 
-  return ( hps.sr, wav )
+  return wav, total_audio_length
 
-def get_children(project_name, parent_sample_id, include_custom=False):
+def get_children(project_name, parent_sample_id, include_custom=True):
 
   global base_path
 
@@ -912,12 +914,13 @@ def get_project(project_name, routed_sample_id):
 
 def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec):
 
-  audio = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec)
-  wav = audio[1]
+  global hps
+
+  wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec)
 
   return {
-    UI.generated_audio: ( audio[0], wav ),
-    UI.total_audio_length: int( len(audio[1]) / hps.sr * 100 ) / 100,
+    UI.generated_audio: ( hps.sr, wav ),
+    UI.total_audio_length: total_audio_length,
     UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
     ),
