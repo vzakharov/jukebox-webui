@@ -59,6 +59,7 @@ except:
 # import glob
 from datetime import datetime
 import random
+import shutil
 import gradio as gr
 import librosa
 import os
@@ -77,8 +78,9 @@ from jukebox.make_models import make_vqvae, make_prior, MODELS
 from jukebox.hparams import Hyperparams, setup_hparams, REMOTE_PREFIX
 from jukebox.utils.dist_utils import setup_dist_from_mpi
 from jukebox.utils.remote_utils import download
+from jukebox.utils.sample_utils import get_starts
 from jukebox.utils.torch_utils import empty_cache
-from jukebox.sample import sample_partial_window, load_prompts
+from jukebox.sample import sample_partial_window, load_prompts, upsample, sample_single_window
 
 ### Model
 
@@ -166,6 +168,58 @@ except:
 
     jukebox.utils.audio_utils.load_audio = monkey_patched_load_audio
     print('load_audio monkey patched.')
+
+  try:
+    monkey_patched_sample_level
+    print('sample_level already monkey patched.')
+  except:
+
+    zs_being_upsampled, sample_id_being_upsampled, current_upsampling_level, project_being_upsampled = None, None, None, None
+    # Monkey patch sample_level, saving the current upsampled z to respective file
+    # The original code is as follows:
+    # def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
+    #   print_once(f"Sampling level {level}")
+    #   if total_length >= prior.n_ctx:
+    #       for start in get_starts(total_length, prior.n_ctx, hop_length):
+    #           zs = sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps)
+    #   else:
+    #       zs = sample_partial_window(zs, labels, sampling_kwargs, level, prior, total_length, hps)
+    #   return zs
+    #
+    # Rewritten:
+
+    def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
+
+      global base_path, project_being_upsampled, zs_being_upsampled, sample_id_being_upsampled, current_upsampling_level
+
+      # The original code provides for shorter samples by sampling only a partial window, but we'll just throw an error for simplicity
+      assert total_length >= prior.n_ctx, f'Total length {total_length} is shorter than prior.n_ctx {prior.n_ctx}'
+      print(f"Sampling level {level}")
+      # Remember current time
+      start_time = datetime.now()
+      starts = get_starts(total_length, prior.n_ctx, hop_length)
+      start_index = 0
+      for start in starts:
+
+        print(f'Sampling window starting at {start}')
+        zs = sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps)
+
+        # Estimate time remaining
+        elapsed_time = datetime.now() - start_time
+        starts_remaining = len(starts) - start_index
+        time_remaining = elapsed_time * starts_remaining
+        print(f'Elapsed time: {int(elapsed_time)}, time remaining for level {level}: {int(time_remaining)}')
+
+        zs_being_upsampled = zs
+        current_upsampling_level = level
+        path = f'{base_path}/{project_being_upsampled}/upsampled/'
+        if not os.path.exists(path):
+          os.makedirs(path)
+        path += f'{sample_id_being_upsampled}.z'
+        print(f'Saving upsampled z to {path}')
+        t.save(zs, path)
+        print('Done.')
+        start_index += 1
 
   print('Monkey patching done.')
 
@@ -328,7 +382,7 @@ class UI:
 
 
   picked_sample = gr.Radio(
-    label = 'Sibling samples',
+    label = 'Variations',
   )
 
   sample_box = gr.Box(
@@ -349,11 +403,11 @@ class UI:
   )
 
   go_to_parent_button = gr.Button(
-    value = 'To parent generation',
+    value = '<',
   )
 
   go_to_children_button = gr.Button(
-    value = 'To child generations',
+    value = '>',
   )
 
   total_audio_length = gr.Number(
@@ -371,7 +425,30 @@ class UI:
 
   trim_button = gr.Button( 'Trim', visible = False )
 
-  project_settings = [ *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec ]
+  sample_to_upsample = gr.Textbox(
+    label = 'Sample to upsample',
+    placeholder = 'Choose a sample in the Compose tab first',
+    interactive = False,
+  )
+
+  genre_for_upsampling_left_channel = gr.Dropdown(
+    label = 'Genre for upsampling (left channel)'
+  )
+
+  genre_for_upsampling_center_channel = gr.Dropdown(
+    label = 'Genre for upsampling (center channel)'
+  )
+
+  genre_for_upsampling_right_channel = gr.Dropdown(
+    label = 'Genre for upsampling (right channel)'
+  )
+
+  upsampling_tracker = gr.Markdown('')
+
+  project_settings = [ 
+    *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec,
+    genre_for_upsampling_left_channel, genre_for_upsampling_center_channel, genre_for_upsampling_right_channel 
+  ]
 
   input_names = { input: name for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
 
@@ -589,8 +666,8 @@ def get_audio(project_name, sample_id):
   z = t.load(f'{filename}.z')
   wav = vqvae.decode(z[2:], start_level=2).cpu().numpy()
   # wav is now of shape (1, sample_length, 1), we want (sample_length,)
-  wav = wav[0, :, 0]
-  print(f'Generated audio: {wav.shape}')
+  wav = wav[0, :, 0].cpu().numpy()
+  print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {total_audio_length} seconds.')
 
   return ( hps.sr, wav )
 
@@ -711,7 +788,16 @@ def on_load( href, query_string, error_message ):
     ),
     UI.main_window: gr.update(
       visible = True
-    )
+    ),
+    UI.genre_for_upsampling_left_channel: gr.update(
+      choices = get_list('genre')
+    ),
+    UI.genre_for_upsampling_center_channel: gr.update(
+      choices = get_list('genre'),
+    ),
+    UI.genre_for_upsampling_right_channel: gr.update(
+      choices = get_list('genre'),
+    ),
   }
 
 lists = {}
@@ -805,7 +891,10 @@ def get_project(project_name, routed_sample_id):
     UI.generation_length: 1,
     UI.temperature: 0.98,
     UI.n_samples: 2,
-    UI.sample_tree: None
+    UI.sample_tree: None,
+    UI.genre_for_upsampling_left_channel: 'Rock',
+    UI.genre_for_upsampling_center_channel: 'Pop',
+    UI.genre_for_upsampling_right_channel: 'Metal',
   }
 
   samples = []
@@ -890,8 +979,11 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
     wav = wav[ int( -1 * preview_just_the_last_n_sec * hps.sr ): ]
 
   return {
-    UI.generated_audio: ( audio[0], wav ),
-    UI.total_audio_length: int( len(audio[1]) / hps.sr * 100 ) / 100,
+    UI.generated_audio: gr.update(
+      value = ( hps.sr, wav ),
+      label = sample_id
+    ),
+    UI.total_audio_length: total_audio_length,
     UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
     ),
@@ -1389,6 +1481,158 @@ with gr.Blocks(
             """
         )
 
+      with gr.Tab('Upsample'):
+
+        # Warning that this process is slow and can take up to 10 minutes for 1 second of audio
+        with gr.Accordion('Warning', open = True):
+
+          gr.Markdown('''
+            Upsampling is a slow process. It can take up to 10 minutes to upsample 1 second of audio in the highest possible quality (2.5 minutes in the medium quality). Currently the Web UI does not show any progress, so consult with your Colab's output to see the progress.
+
+            YOU WILL NOT BE ABLE TO CONTINUE COMPOSING WHILE THE PROCESS IS RUNNING. If you want to continue composing, you can either wait for the process to finish, or you can create a copy of the notebook and start a second Colab session (provided your Colab subscription allows it).
+
+            Once the process is done, you will find the high- and medium-quality samples in the `level_0` and `level_1` folders inside your project folder, respectively.
+            
+            Note: The tool will be creating intermediate files in the `tmp` folder inside your project folder, so that the work done is not lost. At the same time, there is yet no way to continue an interrupted upsample process, so you’ll need some Python knowledge to do that.
+          ''')
+
+        UI.sample_to_upsample.render()
+
+        # Change the sample to upsample when a sample is picked
+        UI.picked_sample.change(
+          inputs = UI.picked_sample,
+          outputs = UI.sample_to_upsample,
+          fn = lambda x: x,
+        )
+
+        with gr.Box('Genres for upsampling'):
+
+          gr.Markdown('''
+            The tool will generate three upsamplings of the selected sample, which will then be panned to the left, center, and right, respectively. Choosing different genres for each of the three upsamplings will result in a more diverse sound between them, thus enhancing the (pseudo-)stereo effect. 
+
+            A good starting point is to have a genre that emphasizes vocals (e.g. `Pop`) for the center channel, and two similar but different genres for the left and right channels (e.g. `Rock` and `Metal`).
+
+            If you don’t want to use this feature, simply select the same genre for all three upsamplings.
+          ''')
+
+          for input in [ UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel ]:
+
+            input.render()
+        
+        def upsample(project_name, sample_id, artist, lyrics, *genres):
+
+          global hps, top_prior, priors, zs_being_upsampled
+
+          print(f'Upsampling {sample_id} with genres {genres}')
+          filename = f'{base_path}/{project_name}/{sample_id}.z'
+
+          zs_being_upsampled = t.load(filename)
+          # zs is a list of 3 tensors, one per level, each of shape (n_samples, n_tokens).
+          # n_samples for the loaded file is by definition 1, but we need 3 samples for each level for upsampling.
+          zs_being_upsampled = [ z.repeat(3, 1) for z in zs_being_upsampled ]
+
+          # We also need to create new labels from the metas with the genres replaced accordingly
+          metas = [ dict(
+            artist = artist,
+            genre = genre,
+            total_length = hps.sample_length,
+            offset = 0,
+            lyrics = lyrics,
+          ) for genre in genres ]
+
+          labels = top_prior.labeller.get_batch_labels(metas, 'cuda')
+
+          # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
+          del top_prior
+          empty_cache()
+          top_prior = None
+
+          upsamplers = [ make_prior(setup_hparams(prior, dict()), vqvae, 'cpu') for prior in priors[:-1] ]
+
+          if type(labels)==dict:
+            labels = [ prior.labeller.get_batch_labels(metas, 'cuda') for prior in upsamplers ] + [ labels ]
+            print('Converted labels to list')
+            # Not sure why we need to do this -- I copied this from another notebook.
+          
+          # Create a backup of the original file, in case something goes wrong
+          shutil.copy(filename, f'{filename}.bak')
+          print(f'Created backup of {filename} as {filename}.bak')
+
+          sampling_kwargs = [
+            dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
+            dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
+            None
+          ]
+          # We don't need to specify sampling_kwargs for the top (least-quality) level, because it's already "upsampled".
+
+          zs_being_upsampled = upsample(zs_being_upsampled, labels, sampling_kwargs, [*upsamplers, top_prior], hps)
+
+          return sample_id
+        
+        def get_audio_with_priors():
+
+          global priors, current_upsampling_level, zs_being_upsampled
+
+          zs = zs_being_upsampled
+          level = current_upsampling_level
+          
+          x = priors[level].decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
+
+          # x is of shape (1, sample_length, 1), we want (sample_length,)
+          wav = x[0, :, 0].cpu().numpy()
+          return wav
+
+
+        gr.Button('Upsample', elem_id='upsample-button').click(
+          inputs = [ 
+            UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
+            UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel 
+          ],
+          outputs = UI.upsampling_tracker,
+          fn = upsample,
+          api_name = 'upsample',
+          _js = """
+            // Confirm before starting the upsample process
+            args => {
+              if ( !confirm('Are you sure you want to start the upsample process? THIS WILL TAKE A LONG TIME (see the warning above).') )
+                throw new Error('Upsample process cancelled by user')
+              else {
+                // Make the upsample button gray and disabled
+                let = button document.querySelector('gradio-app').shadowRoot.querySelector('#upsample-button')
+                button.style.backgroundColor = '#ccc'
+                button.disabled = true
+                return args
+              }
+            }
+          """
+        )
+
+        UI.upsampling_tracker.render()
+
+        upsampled_audio = gr.Audio(
+          label = 'Upsampled sample (updated every few minutes)',
+          visible = False,
+        )
+
+        # Whenever the upsampling tracker changes (which is in turn triggered by an iteration of the upsample function), update the upsampled audio
+        UI.upsampling_tracker.change(
+          inputs = None,
+          outputs = [ upsampled_audio, UI.upsampling_tracker ],
+          fn = lambda: {
+            upsampled_audio: get_audio_with_priors(),
+            UI.upsampling_tracker: datetime.now().strftime(f'Last updated at %H:%M:%S')
+          },
+          api_name = 'get-upsampled-audio',
+          _js = """
+            // Wait for 10 seconds before updating the tracker/upsampled audio
+            async args => {
+              console.log('Waiting for 10 seconds before updating the tracker/upsampled audio')
+              await new Promise(resolve => setTimeout(resolve, 10000))
+              console.log('Done waiting; updating.')
+              return args
+            }
+          """
+        )
 
   def dummy_string_input():
     return gr.Textbox( visible = False )
