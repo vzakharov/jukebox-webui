@@ -1150,12 +1150,6 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
 
   wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level, upsample_rendering)
 
-  levels = get_levels(project_name, sample_id)
-  print(f'Levels: {levels}')
-
-  available_level_names = level_names[:len(levels)]
-  print(f'Available level names: {available_level_names}')
-
   return {
     UI.generated_audio: gr.update(
       value = ( hps.sr, wav ),
@@ -1171,14 +1165,6 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
     UI.sample_box: gr.update(
       visible = True
     ),
-    UI.upsampling_box: gr.update(
-      visible = len(levels) > 1
-    ),
-    UI.upsampling_level: gr.update(
-      choices = available_level_names,
-      # # Choose the highest available level by default.
-      # value = available_level_names[-1]
-    )
   }
 
 def refresh_siblings(project_name, sample_id):
@@ -1573,7 +1559,6 @@ with gr.Blocks(
             outputs = [ 
               UI.sample_box, UI.generated_audio, UI.total_audio_length, 
               UI.go_to_children_button, UI.go_to_parent_button,
-              UI.upsampling_box, UI.upsampling_level
             ],
             fn = get_sample,
           )
@@ -1597,6 +1582,32 @@ with gr.Blocks(
 
               UI.upsampling_level.render().change(
                 **preview_args,
+              )
+
+              # Only show the upsampling elements if there are upsampled versions of the picked sample
+              def show_or_hide_upsampling_elements(project_name, sample_id):
+
+                levels = get_levels(project_name, sample_id)
+                # print(f'Levels: {levels}')
+
+                available_level_names = UI.UPSAMPLING_LEVEL_NAMES[:len(levels)]
+                # print(f'Available level names: {available_level_names}')
+
+                return {
+                  UI.upsampling_box: gr.update(
+                    visible = len(levels) > 1
+                  ),
+                  UI.upsampling_level: gr.update(
+                    choices = available_level_names,
+                    # Choose the highest available level by default.
+                    value = available_level_names[-1]
+                  )
+                }
+              
+              UI.picked_sample.change(
+                inputs = [ UI.project_name, UI.picked_sample ],
+                outputs = [ UI.upsampling_box, UI.upsampling_level ],
+                fn = show_or_hide_upsampling_elements,
               )
 
               with gr.Row(visible = False) as upsampling_manipulation_row:
