@@ -223,12 +223,14 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
     Upsampling.window_index = 0
     for start in Upsampling.windows:
 
+      window_start_time = datetime.now()
+
       print(f'Sampling window starting at {start}')
       Upsampling.zs = sample_single_window(Upsampling.zs, labels, sampling_kwargs, level, prior, start, hps)
 
       # Estimate time remaining
       Upsampling.elapsed_time = datetime.now() - start_time
-      Upsampling.time_per_window = Upsampling.elapsed_time / ( Upsampling.window_index + 1 )
+      Upsampling.time_per_window = datetime.now() - window_start_time
       Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
       Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
       print(f'Elapsed time: {Upsampling.elapsed_time}, time remaining for level {level}: {Upsampling.time_remaining}')
