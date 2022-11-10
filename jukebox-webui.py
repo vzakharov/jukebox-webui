@@ -200,6 +200,14 @@ except:
       # Remember current time
       start_time = datetime.now()
       windows = get_starts(total_length, prior.n_ctx, hop_length)
+
+      print(f'Totally {len(windows)} windows to sample at level {level}')
+
+      # Remove all windows whose start + n_ctx is less than however many samples we've already upsampled (at this level)
+      windows = [ start for start in windows if start + prior.n_ctx > sample_being_upsampled[level].shape[1] ]
+
+      print(f'{len(windows)} windows to sample after removing already upsampled, starting respectively at {windows}')
+
       window_index = 0
       for start in windows:
 
@@ -408,6 +416,8 @@ class UI:
   upsampling_box = gr.Box(
     visible = False
   )
+
+  UPSAMPLING_LEVEL_NAMES = [ 'Original', 'Midsampled', 'Upsampled' ]
 
   upsampling_level = gr.Radio(
     label = 'Upsampling level',
@@ -793,6 +803,28 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
 
   return wav, total_audio_length
 
+def get_audio_being_upsampled():
+
+  global current_upsampling_level, zs_being_upsampled, priors_used_for_upsampling
+
+  zs = zs_being_upsampled
+  level = current_upsampling_level
+
+  # If there's no upsampling in progress, current_upsampling_level will be None
+  if level is None:
+    return None
+
+  print(f'Generating audio for level {level}')
+  
+  x = priors_used_for_upsampling[level].decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
+
+  # x is of shape (1, sample_length, 1), we want (sample_length,)
+  wav = x[0, :, 0].cpu().numpy()
+  return gr.update(
+    visible = True,
+    value = ( hps.sr, wav ),
+  )
+
 def get_children(project_name, parent_sample_id, include_custom=True):
 
   global base_path
@@ -1101,7 +1133,7 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
 
   global hps
 
-  level_names = [ 'Original', 'Midsampled', 'Upsampled' ]
+  level_names = UI.UPSAMPLING_LEVEL_NAMES
   level = 2 - level_names.index(level_name)
 
   print(f'Loading sample {sample_id} for level {level} ({level_name})')
@@ -1240,6 +1272,74 @@ def seconds_to_tokens(sec, level = 2):
   tokens *= 4 ** (2 - level)
 
   return int(tokens)
+
+def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genres):
+
+  global hps, top_prior, priors, zs_being_upsampled, labels_used_for_upsampling, project_being_upsampled, sample_being_upsampled, priors_used_for_upsampling
+
+  print(f'Toggling upsampling for {sample_id} to {toggle_on}')
+
+  project_being_upsampled = project_name
+  sample_being_upsampled = sample_id
+
+  if not toggle_on:
+    return
+    # TODO: Stop the process
+
+  print(f'Upsampling {sample_id} with genres {genres}')
+  filename = f'{base_path}/{project_name}/{sample_id}.z'
+
+  zs_being_upsampled = t.load(filename)
+  # zs is a list of 3 tensors, one per level, each of shape (n_samples, n_tokens).
+  # n_samples for the loaded file is by definition 1, but we need 3 samples for each level for upsampling.
+  zs_being_upsampled = [ z.repeat(3, 1) for z in zs_being_upsampled ]
+
+  # We also need to create new labels from the metas with the genres replaced accordingly
+  metas = [ dict(
+    artist = artist,
+    genre = genre,
+    total_length = hps.sample_length,
+    offset = 0,
+    lyrics = lyrics,
+  ) for genre in genres ]
+  
+  if top_prior:
+    labels = top_prior.labeller.get_batch_labels(metas, 'cuda')
+    print('Calculated new labels from top prior')
+  else:
+    labels = labels_used_for_upsampling
+    print('Reusing labels from previous upsampling')
+
+  # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
+  del top_prior
+  empty_cache()
+  top_prior = None
+
+  upsamplers = [ make_prior(setup_hparams(prior, dict()), vqvae, 'cpu') for prior in priors[:-1] ]
+
+  if type(labels)==dict:
+    labels = [ prior.labeller.get_batch_labels(metas, 'cuda') for prior in upsamplers ] + [ labels ]
+    print('Converted labels to list')
+    # Not sure why we need to do this -- I copied this from another notebook.
+  
+  labels_used_for_upsampling = labels
+  
+  # Create a backup of the original file, in case something goes wrong
+  shutil.copy(filename, f'{filename}.bak')
+  print(f'Created backup of {filename} as {filename}.bak')
+
+  sampling_kwargs = [
+    dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
+    dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
+    None
+  ]
+  # We don't need to specify sampling_kwargs for the top (least-quality) level, because it's already "upsampled".
+
+  # Set hps.n_samples to 3, because we need 3 samples for each level
+  hps.n_samples = 3
+
+  priors_used_for_upsampling = [*upsamplers, top_prior]
+  zs_being_upsampled = upsample(zs_being_upsampled, labels, sampling_kwargs, priors_used_for_upsampling, hps)
 
 def tokens_to_seconds(tokens, level = 2):
 
@@ -1480,19 +1580,39 @@ with gr.Blocks(
 
               with gr.Row(visible = False) as upsampling_manipulation_row:
 
-                # Show the row only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
-                UI.upsampling_level.change(
-                  inputs = UI.upsampling_level,
-                  outputs = [ upsampling_manipulation_row, UI.compose_row ],
-                  fn = lambda upsampling_level: [
-                    gr.update( visible = upsampling_level != 'Original' ),
-                    gr.update( visible = upsampling_level == 'Original' ),
-                  ]
-                )
+                with gr.Column():
 
-                UI.upsample_rendering.render().change(
-                  **preview_args,
-                )
+                  # Show the row only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
+                  UI.upsampling_level.change(
+                    inputs = UI.upsampling_level,
+                    outputs = [ upsampling_manipulation_row, UI.compose_row ],
+                    fn = lambda upsampling_level: [
+                      gr.update( visible = upsampling_level != 'Original' ),
+                      gr.update( visible = upsampling_level == 'Original' ),
+                    ]
+                  )
+
+                  UI.upsample_rendering.render().change(
+                    **preview_args,
+                  )
+
+                  continue_upsampling_button = gr.Button( 'Continue upsampling', variant = "primary", visible = False )
+
+                  # Show the continue upsampling button only if the current level's length in tokens is less than the total audio length
+                  def show_or_hide_continue_upsampling_button(project_name, sample_id, upsampling_level_name, total_audio_length):
+
+                    level = UI.UPSAMPLING_LEVEL_NAMES.index(upsampling_level_name)
+                    z = get_z(project_name, sample_id)[level]
+
+                    return gr.update(
+                      visible = z.shape[1] < seconds_to_tokens(total_audio_length, level)
+                    )
+                  
+                  UI.upsampling_level.change(
+                    inputs = [ UI.project_name, UI.picked_sample, UI.upsampling_level, UI.total_audio_length ],
+                    outputs = continue_upsampling_button,
+                    fn = show_or_hide_continue_upsampling_button,
+                  )
 
             for element in [ 
               UI.generated_audio, 
@@ -1714,96 +1834,6 @@ with gr.Blocks(
 
             input.render()
         
-        def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genres):
-
-          global hps, top_prior, priors, zs_being_upsampled, labels_used_for_upsampling, project_being_upsampled, sample_being_upsampled, priors_used_for_upsampling
-
-          print(f'Toggling upsampling for {sample_id} to {toggle_on}')
-
-          project_being_upsampled = project_name
-          sample_being_upsampled = sample_id
-
-          if not toggle_on:
-            return
-            # TODO: Stop the process
-
-          print(f'Upsampling {sample_id} with genres {genres}')
-          filename = f'{base_path}/{project_name}/{sample_id}.z'
-
-          zs_being_upsampled = t.load(filename)
-          # zs is a list of 3 tensors, one per level, each of shape (n_samples, n_tokens).
-          # n_samples for the loaded file is by definition 1, but we need 3 samples for each level for upsampling.
-          zs_being_upsampled = [ z.repeat(3, 1) for z in zs_being_upsampled ]
-
-          # We also need to create new labels from the metas with the genres replaced accordingly
-          metas = [ dict(
-            artist = artist,
-            genre = genre,
-            total_length = hps.sample_length,
-            offset = 0,
-            lyrics = lyrics,
-          ) for genre in genres ]
-          
-          if top_prior:
-            labels = top_prior.labeller.get_batch_labels(metas, 'cuda')
-            print('Calculated new labels from top prior')
-          else:
-            labels = labels_used_for_upsampling
-            print('Reusing labels from previous upsampling')
-
-          # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
-          del top_prior
-          empty_cache()
-          top_prior = None
-
-          upsamplers = [ make_prior(setup_hparams(prior, dict()), vqvae, 'cpu') for prior in priors[:-1] ]
-
-          if type(labels)==dict:
-            labels = [ prior.labeller.get_batch_labels(metas, 'cuda') for prior in upsamplers ] + [ labels ]
-            print('Converted labels to list')
-            # Not sure why we need to do this -- I copied this from another notebook.
-          
-          labels_used_for_upsampling = labels
-          
-          # Create a backup of the original file, in case something goes wrong
-          shutil.copy(filename, f'{filename}.bak')
-          print(f'Created backup of {filename} as {filename}.bak')
-
-          sampling_kwargs = [
-            dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
-            dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
-            None
-          ]
-          # We don't need to specify sampling_kwargs for the top (least-quality) level, because it's already "upsampled".
-
-          # Set hps.n_samples to 3, because we need 3 samples for each level
-          hps.n_samples = 3
-
-          priors_used_for_upsampling = [*upsamplers, top_prior]
-          zs_being_upsampled = upsample(zs_being_upsampled, labels, sampling_kwargs, priors_used_for_upsampling, hps)
-        
-        def get_audio_being_upsampled():
-
-          global current_upsampling_level, zs_being_upsampled, priors_used_for_upsampling
-
-          zs = zs_being_upsampled
-          level = current_upsampling_level
-
-          # If there's no upsampling in progress, current_upsampling_level will be None
-          if level is None:
-            return None
-
-          print(f'Generating audio for level {level}')
-          
-          x = priors_used_for_upsampling[level].decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
-
-          # x is of shape (1, sample_length, 1), we want (sample_length,)
-          wav = x[0, :, 0].cpu().numpy()
-          return gr.update(
-            visible = True,
-            value = ( hps.sr, wav ),
-          )
-
         upsample_button = gr.Button('Upsample', variant="primary", elem_id='upsample-button')
         
         upsample_button.click(
@@ -1951,16 +1981,16 @@ with gr.Blocks(
         
         let getAudioTime = time => {
           let previewDuration = wavesurfer.getDuration()
-          console.log('Preview duration: ', previewDuration)
+          // console.log('Preview duration: ', previewDuration)
           // Take total duration from #total-audio-length's input, unless #trim-to-n-sec is set, in which case use that
           let trimToNSec = parseFloat(shadowSelector('#trim-to-n-sec input')?.value || 0)
-          console.log('Trim to n sec: ', trimToNSec)
+          // console.log('Trim to n sec: ', trimToNSec)
           let totalDuration = trimToNSec || parseFloat(shadowSelector('#total-audio-length input').value)
-          console.log('Total duration: ', totalDuration)
+          // console.log('Total duration: ', totalDuration)
           let additionalDuration = totalDuration - previewDuration
-          console.log('Additional duration: ', additionalDuration)
+          // console.log('Additional duration: ', additionalDuration)
           let result = Math.round( ( time + additionalDuration ) * 100 ) / 100          
-          console.log('Result: ', result)
+          // console.log('Result: ', result)
           return result
         }
 
@@ -2046,4 +2076,4 @@ with gr.Blocks(
     }"""
   )
 
-  app.launch( share = share_gradio, debug = debug_gradio )
+  app.queue().launch( share = share_gradio, debug = debug_gradio )
