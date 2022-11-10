@@ -106,6 +106,24 @@ except:
   rank, local_rank, device = setup_dist_from_mpi()
   print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
+
+try:
+  Upsampling
+  print('Upsampling already defined.')
+except:
+
+  class Upsampling:
+
+    in_progress = False
+    zs = None
+    project = None
+    sample_id = None
+    level = None
+    labels = None
+    priors = None
+  
+  print('Upsampling class defined.')
+
 # Monkey patch jukebox.make_models.load_checkpoint to load cached checkpoints from local_data_path instead of '~/.cache'
 reload_monkey_patch = False #param{type:'boolean'}
 try:
@@ -170,13 +188,12 @@ except:
     jukebox.utils.audio_utils.load_audio = monkey_patched_load_audio
     print('load_audio monkey patched.')
 
+
   try:
     monkey_patched_sample_level
-    zs_being_upsampled, sample_being_upsampled, current_upsampling_level, project_being_upsampled, priors_used_for_upsampling
     print('sample_level already monkey patched.')
   except:
 
-    zs_being_upsampled, sample_being_upsampled, current_upsampling_level, project_being_upsampled, priors_used_for_upsampling = None, None, None, None, None
     # Monkey patch sample_level, saving the current upsampled z to respective file
     # The original code is as follows:
     # def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
@@ -192,7 +209,7 @@ except:
 
     def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
 
-      global base_path, project_being_upsampled, zs_being_upsampled, sample_being_upsampled, current_upsampling_level
+      global base_path
 
       # The original code provides for shorter samples by sampling only a partial window, but we'll just throw an error for simplicity
       assert total_length >= prior.n_ctx, f'Total length {total_length} is shorter than prior.n_ctx {prior.n_ctx}'
@@ -204,7 +221,7 @@ except:
       print(f'Totally {len(windows)} windows to sample at level {level}')
 
       # Remove all windows whose start + n_ctx is less than however many samples we've already upsampled (at this level)
-      windows = [ start for start in windows if start + prior.n_ctx > sample_being_upsampled[level].shape[1] ]
+      windows = [ start for start in windows if start + prior.n_ctx > Upsampling.sample_id[level].shape[1] ]
 
       print(f'{len(windows)} windows to sample after removing already upsampled, starting respectively at {windows}')
 
@@ -221,12 +238,9 @@ except:
         time_remaining = time_per_window * windows_remaining
         print(f'Elapsed time: {elapsed_time}, time remaining for level {level}: {time_remaining}')
 
-        zs_being_upsampled = zs
-        current_upsampling_level = level
-        path = f'{base_path}/{project_being_upsampled}/upsampled/'
-        if not os.path.exists(path):
-          os.makedirs(path)
-        path += f'{sample_being_upsampled}.z'
+        Upsampling.zs = zs
+        Upsampling.level = level
+        path = f'{base_path}/{Upsampling.project}/{Upsampling.sample_id}.z'
         print(f'Saving upsampled z to {path}')
         t.save(zs, path)
         print('Done.')
@@ -243,13 +257,13 @@ reload_prior = False #param{type:'boolean'}
 try:
   vqvae, priors, top_prior
 
-  assert top_prior is not None or labels_used_for_upsampling is not None
-  # If we were upsampling, we don't need the top prior anymore as long as we have the labels
+  assert top_prior is not None or Upsampling.in_progress
+  # If we are upsampling, we don't need the top prior
 
   if not top_prior:
     print('top_prior is None, the app can only be used for upsampling.')
     print('To use the app for sampling, create a new cell and run the following code:')
-    print('del labels_used_for_upsampling')
+    print('del Upsampling.labels')
 
   assert total_duration == calculated_duration and not reload_prior and not reload_all
   print('Model already loaded.')
@@ -282,9 +296,10 @@ if not os.path.isdir(base_path):
 
 try:
   calculated_metas
-  print('Using calculated metas')
+  print('Calculated metas already loaded.')
 except:
   calculated_metas = {}
+  print('Calculated metas created.')
 
 loaded_settings = {}
 custom_parents = None
@@ -805,18 +820,15 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
 
 def get_audio_being_upsampled():
 
-  global current_upsampling_level, zs_being_upsampled, priors_used_for_upsampling
-
-  zs = zs_being_upsampled
-  level = current_upsampling_level
-
-  # If there's no upsampling in progress, current_upsampling_level will be None
-  if level is None:
+  if not Upsampling.in_progress:
     return None
+
+  zs = Upsampling.zs
+  level = Upsampling.level
 
   print(f'Generating audio for level {level}')
   
-  x = priors_used_for_upsampling[level].decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
+  x = Upsampling.priors[level].decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
 
   # x is of shape (1, sample_length, 1), we want (sample_length,)
   wav = x[0, :, 0].cpu().numpy()
@@ -1275,12 +1287,12 @@ def seconds_to_tokens(sec, level = 2):
 
 def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genres):
 
-  global hps, top_prior, priors, zs_being_upsampled, labels_used_for_upsampling, project_being_upsampled, sample_being_upsampled, priors_used_for_upsampling
+  global hps, top_prior, priors
 
   print(f'Toggling upsampling for {sample_id} to {toggle_on}')
 
-  project_being_upsampled = project_name
-  sample_being_upsampled = sample_id
+  Upsampling.project = project_name
+  Upsampling.sample_id = sample_id
 
   if not toggle_on:
     return
@@ -1289,10 +1301,10 @@ def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genre
   print(f'Upsampling {sample_id} with genres {genres}')
   filename = f'{base_path}/{project_name}/{sample_id}.z'
 
-  zs_being_upsampled = t.load(filename)
+  Upsampling.zs = t.load(filename)
   # zs is a list of 3 tensors, one per level, each of shape (n_samples, n_tokens).
   # n_samples for the loaded file is by definition 1, but we need 3 samples for each level for upsampling.
-  zs_being_upsampled = [ z.repeat(3, 1) for z in zs_being_upsampled ]
+  Upsampling.zs = [ z.repeat(3, 1) for z in Upsampling.zs ]
 
   # We also need to create new labels from the metas with the genres replaced accordingly
   metas = [ dict(
@@ -1307,7 +1319,7 @@ def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genre
     labels = top_prior.labeller.get_batch_labels(metas, 'cuda')
     print('Calculated new labels from top prior')
   else:
-    labels = labels_used_for_upsampling
+    labels = Upsampling.labels
     print('Reusing labels from previous upsampling')
 
   # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
@@ -1322,7 +1334,7 @@ def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genre
     print('Converted labels to list')
     # Not sure why we need to do this -- I copied this from another notebook.
   
-  labels_used_for_upsampling = labels
+  Upsampling.labels = labels
   
   # Create a backup of the original file, in case something goes wrong
   shutil.copy(filename, f'{filename}.bak')
@@ -1338,8 +1350,9 @@ def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genre
   # Set hps.n_samples to 3, because we need 3 samples for each level
   hps.n_samples = 3
 
-  priors_used_for_upsampling = [*upsamplers, top_prior]
-  zs_being_upsampled = upsample(zs_being_upsampled, labels, sampling_kwargs, priors_used_for_upsampling, hps)
+  Upsampling.priors = [*upsamplers, top_prior]
+  Upsampling.in_progress = True
+  Upsampling.zs = upsample(Upsampling.zs, labels, sampling_kwargs, Upsampling.priors, hps)
 
 def tokens_to_seconds(tokens, level = 2):
 
@@ -1596,10 +1609,12 @@ with gr.Blocks(
                     **preview_args,
                   )
 
-                  continue_upsampling_button = gr.Button( 'Continue upsampling', variant = "primary", visible = False )
+                  continue_upsampling_markdown = gr.Markdown('''
+                    Upsampling for this level hasn’t been completed yet. Go to the **Upsample** tab to continue from where it stopped.
+                  ''', visible = False )
 
-                  # Show the continue upsampling button only if the current level's length in tokens is less than the total audio length
-                  def show_or_hide_continue_upsampling_button(project_name, sample_id, upsampling_level_name, total_audio_length):
+                  # Show the continue upsampling markdown only if the current level's length in tokens is less than the total audio length
+                  def show_or_hide_continue_upsampling_markdown(project_name, sample_id, upsampling_level_name, total_audio_length):
 
                     level = UI.UPSAMPLING_LEVEL_NAMES.index(upsampling_level_name)
                     z = get_z(project_name, sample_id)[level]
@@ -1610,8 +1625,8 @@ with gr.Blocks(
                   
                   UI.upsampling_level.change(
                     inputs = [ UI.project_name, UI.picked_sample, UI.upsampling_level, UI.total_audio_length ],
-                    outputs = continue_upsampling_button,
-                    fn = show_or_hide_continue_upsampling_button,
+                    outputs = continue_upsampling_markdown,
+                    fn = show_or_hide_continue_upsampling_markdown,
                   )
 
             for element in [ 
