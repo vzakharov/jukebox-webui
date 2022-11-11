@@ -34,9 +34,15 @@ debug_gradio = True #param{type:'boolean'}
 
 reload_all = False #param{type:'boolean'}
 
+import subprocess
+
 # If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
+
 try:
 
+  !nvidia-smi
+  empty_cache()
+  print('Cache cleared.')
   !nvidia-smi
   assert not reload_all
   repeated_run
@@ -49,7 +55,6 @@ except:
     from google.colab import drive
     drive.mount('/content/drive')
 
-  !nvidia-smi
   !pip install git+https://github.com/openai/jukebox.git
   !pip install gradio
 
@@ -57,11 +62,11 @@ except:
  
 
 # import glob
+import base64
 from datetime import datetime
 import hashlib
 import random
 import shutil
-import subprocess
 import gradio as gr
 import librosa
 import os
@@ -446,7 +451,7 @@ class UI:
 
   generated_audio = gr.Audio(
     label = 'Generated audio',
-    elem_id = "generated-audio"
+    elem_id = 'generated-audio',
   )
 
   mp3_file = gr.File(
@@ -454,7 +459,7 @@ class UI:
     elem_id = 'audio-file',
     type = 'binary'
   )
-
+  
   audio_waveform = gr.HTML(
     elem_id = 'audio-waveform'
   )
@@ -1252,7 +1257,7 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
 
   return {
     UI.generated_audio: gr.update(
-      value = f'{filename}.wav',
+      value = ( hps.sr, wav ),
       label = f'{sample_id} (lossless)',
     ),
     UI.mp3_file: f'{filename}.mp3',
@@ -1658,8 +1663,8 @@ with gr.Blocks(
               UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec, UI.upsampling_level, UI.upsample_rendering
             ],
             outputs = [ 
-              UI.sample_box, UI.generated_audio, UI.mp3_file, UI.total_audio_length, 
-              UI.go_to_children_button, UI.go_to_parent_button,
+              UI.sample_box, UI.generated_audio, UI.mp3_file,
+              UI.total_audio_length, UI.go_to_children_button, UI.go_to_parent_button,
             ],
             fn = get_sample,
           )
