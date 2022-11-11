@@ -58,6 +58,7 @@ except:
 
 # import glob
 from datetime import datetime
+import hashlib
 import random
 import shutil
 import subprocess
@@ -448,6 +449,12 @@ class UI:
     elem_id = "generated-audio"
   )
 
+  mp3_file = gr.File(
+    label = 'MP3',
+    elem_id = 'audio-file',
+    type = 'binary'
+  )
+
   audio_waveform = gr.HTML(
     elem_id = 'audio-waveform'
   )
@@ -741,6 +748,16 @@ def get_levels(project_name, sample_id):
   return [ i for i in range(3) if z[i].shape[1] > 0 ]
 
 def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level=2, upsample_rendering=3):
+
+  print(f'Generating audio for {project_name}/{sample_id} (level {level}, upsample_rendering {upsample_rendering}, trim_to_n_sec {trim_to_n_sec}, preview_just_the_last_n_sec {preview_just_the_last_n_sec})')
+
+  # Get current GPU memory usage. If it's above 12GB, empty the cache
+  memory = t.cuda.memory_allocated()
+  print(f'GPU memory usage is {memory / 1e9:.1f} GB')
+  if t.cuda.memory_allocated() > 12e9:
+    print('GPU memory usage is above 12GB, clearing the cache')
+    empty_cache()
+    print(f'GPU memory usage is now {t.cuda.memory_allocated() / 1e9:1f} GB')
 
   global base_path, hps
 
@@ -1197,13 +1214,48 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
 
   print(f'Loading sample {sample_id} for level {level} ({level_name})')
 
-  wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level, upsample_rendering)
+  filename = f'{base_path}/{project_name}/rendered/{sample_id} L{level}'
+
+  # Add trimmed/preview suffixes
+  if trim_to_n_sec:
+    filename += f' trim {trim_to_n_sec}'
+  if preview_just_the_last_n_sec:
+    filename += f' preview {preview_just_the_last_n_sec}'
+  
+  # Add lowercase of upsample rendering option
+  if upsample_rendering and level_name != 'Original':
+    suffixes = [ 'left', 'center', 'right', 'stereo', 'stereo-delay' ]
+    filename += f' {suffixes[upsample_rendering]}'
+  
+  # Add a hash of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
+  filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()}'
+
+  print(f'Checking if {filename}.wav/.mp3 exist...')
+
+  # If the filenames do not exist, render it
+  if not os.path.isfile(f'{filename}.wav') or not os.path.isfile(f'{filename}.mp3'):
+
+    wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level, upsample_rendering)
+
+    if not os.path.exists(os.path.dirname(filename)):
+      os.makedirs(os.path.dirname(filename))
+
+    librosa.output.write_wav(f'{filename}.wav', np.asfortranarray(wav), hps.sr)
+
+    # Convert to mp3
+    subprocess.run(['ffmpeg', '-y', '-i', f'{filename}.wav', '-acodec', 'libmp3lame', '-ab', '320k', f'{filename}.mp3'])
+
+  else:
+    wav, _ = librosa.load(filename + '.wav', sr=hps.sr)
+    total_audio_length = wav.shape[0] / hps.sr
+    print(f'Loaded {filename}.wav of shape {wav.shape} ({total_audio_length} sec)')
 
   return {
     UI.generated_audio: gr.update(
-      value = ( hps.sr, wav ),
-      label = sample_id
+      value = f'{filename}.wav',
+      label = f'{sample_id} (lossless)',
     ),
+    UI.mp3_file: f'{filename}.mp3',
     UI.total_audio_length: total_audio_length,
     UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
@@ -1606,7 +1658,7 @@ with gr.Blocks(
               UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec, UI.upsampling_level, UI.upsample_rendering
             ],
             outputs = [ 
-              UI.sample_box, UI.generated_audio, UI.total_audio_length, 
+              UI.sample_box, UI.generated_audio, UI.mp3_file, UI.total_audio_length, 
               UI.go_to_children_button, UI.go_to_parent_button,
             ],
             fn = get_sample,
@@ -1700,8 +1752,12 @@ with gr.Blocks(
                 fn = show_or_hide_continue_upsampling,
               )
 
+            with gr.Row():
+
+              UI.generated_audio.render()
+              UI.mp3_file.render()
+
             for element in [ 
-              UI.generated_audio, 
               UI.audio_waveform,
               UI.audio_timeline
             ]:
@@ -2136,16 +2192,16 @@ with gr.Blocks(
           shadowSelector('#audio-time').value = getAudioTime(time)
         })
 
-        // Put an observer on #generated-audio (also in the shadow DOM) to reload the audio from its inner <audio> element
-        let parentElement = document.querySelector('gradio-app').shadowRoot.querySelector('#generated-audio')
+        // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
+        let parentElement = document.querySelector('gradio-app').shadowRoot.querySelector('#audio-file')
         let parentObserver
 
         parentObserver = new MutationObserver( mutations => {
-          // Check if there is an inner <audio> element
-          let audioElement = parentElement.querySelector('audio')
-          if ( audioElement ) {
+          // Check if there is an inner <a> element
+          let anchor = parentElement.querySelector('a')
+          if ( anchor ) {
             
-            console.log('Found audio element:', audioElement)
+            console.log('Found audio element:', anchor)
 
             // If so, create an observer on it while removing the observer on the parent
             parentObserver.disconnect()
@@ -2153,10 +2209,10 @@ with gr.Blocks(
             let audioSrc
 
             let reloadAudio = () => {
-              // Check if the audio element has a src attribute and if it has changed
-              if ( audioElement.src && audioElement.src !== audioSrc ) {
+              // Check if the audio source has changed
+              if ( anchor.href && anchor.href !== audioSrc ) {
                 // If so, reload the audio
-                audioSrc = audioElement.src
+                audioSrc = anchor.href
                 console.log('Reloading audio from', audioSrc)
                 wavesurfer.load(audioSrc)
               }
@@ -2166,7 +2222,7 @@ with gr.Blocks(
 
             let audioObserver = new MutationObserver( reloadAudio )
 
-            audioObserver.observe(audioElement, { attributes: true })
+            audioObserver.observe(anchor, { attributes: true })
 
           }
 
