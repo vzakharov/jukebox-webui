@@ -1424,9 +1424,9 @@ def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genre
     Upsampling.labels = top_prior.labeller.get_batch_labels(Upsampling.metas, 'cuda')
     print('Calculated new labels from top prior')
 
-    # # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
-    # del top_prior
-    # empty_cache()
+    # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
+    del top_prior
+    empty_cache()
 
   labels = Upsampling.labels
 
