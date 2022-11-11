@@ -2255,7 +2255,7 @@ with gr.Blocks(
 
             let audioObserver = new MutationObserver( reloadAudio )
 
-            audioObserver.observe(anchor, { attributes: true })
+            audioObserver.observe(wavesurferSrcElement, { attributes: true })
 
           }
 
