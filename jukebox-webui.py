@@ -803,11 +803,11 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
     return wav
   
   # If z is longer than 30 seconds, there will likely be not enough RAM to decode it in one go
-  # In this case, we'll split it into 30-second chunks (with a 1-second overlap), decode each chunk separately, and concatenate the results, crossfading the overlaps
+  # In this case, we'll split it into 20-second chunks (with a 1-second overlap), decode each chunk separately, and concatenate the results, crossfading the overlaps
   if z.shape[1] < seconds_to_tokens(30, level):
     wav = decode(z)
   else:
-    chunk_size = seconds_to_tokens(30, level)
+    chunk_size = seconds_to_tokens(20, level)
     overlap_size = seconds_to_tokens(1, level)
     print(f'z is too long ({z.shape[1]} tokens), splitting into chunks of {chunk_size} tokens, with a {overlap_size} token overlap')
     wav = None
@@ -2061,6 +2061,8 @@ with gr.Blocks(
               console.log('Args: ', args)
               await new Promise(resolve => setTimeout(resolve, 10000))
               console.log('Done waiting; updating.')
+              // Also click the shadow root's internal-refresh-button
+              // window.shadowRoot.getElementById('internal-refresh-button').click()
               return [ null ]
             }
           """
