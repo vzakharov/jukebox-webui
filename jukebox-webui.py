@@ -1679,46 +1679,6 @@ with gr.Blocks(
 
             component.render()
         
-        # If the GPU is Tesla T4, and total audio length is above 13 seconds, set n_samples to 2 (if currently more) and the max to 2.
-        limit_triggered = gr.Number(
-          visible = False,
-        )
-
-        def limit_n_samples(current_n_samples, total_audio_length):
-
-          # Get the GPU name via nvidia-smi
-          gpu_name = subprocess.check_output('nvidia-smi --query-gpu=gpu_name --format=csv,noheader', shell = True).decode('utf-8').strip()
-          
-          if gpu_name == 'Tesla T4' and total_audio_length > 13:
-            return {
-              UI.n_samples: gr.update(
-                maximum = 2,
-                value = min(2, current_n_samples)
-              ),
-              limit_triggered: 1
-            }
-          else:
-            return {
-              UI.n_samples: gr.update(
-                maximum = 4,
-              )
-            }
-
-        UI.total_audio_length.change(
-          inputs = [ UI.n_samples, UI.total_audio_length ],
-          outputs = [ UI.n_samples, limit_triggered ],
-          fn = limit_n_samples,
-        )
-
-        # Show an alert if the limit is triggered
-        limit_triggered.change(
-          inputs = limit_triggered,
-          outputs = None,
-          fn = None,
-          _js = "alert('The maximum number of samples has been limited to 2 to avoid memory overflow.')"
-        )
-
-
         for component in UI.project_settings:
 
           # Whenever a project setting is changed, save all the settings to settings.yaml in the project folder
