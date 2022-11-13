@@ -71,7 +71,7 @@ import gradio as gr
 import librosa
 import os
 import re
-# from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt
 import numpy as np
 import torch as t
 import urllib.request
@@ -814,13 +814,12 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
     # Keep in mind that the last chunk can be shorter if the total length is not a multiple of chunk_size)
     for i in range(0, z.shape[1], chunk_size - overlap_size):
 
-      # If this is the last chunk, move i back so that the chunk ends at the end of z
-      # Also increase the overlap size respectively (so that i + overlap_size is where the previous chunk ended)
+      # If this is the last chunk, make the chunk_size smaller if necessary
       overflow = i + chunk_size - z.shape[1]
       is_last_chunk = overflow > 0
       if is_last_chunk:
-        i -= overflow
-        overlap_size += overflow
+        chunk_size -= overflow
+        print(f'Last chunk, reduced chunk_size from {chunk_size + overflow} to {chunk_size} tokens')
 
       left_overlap_z = z[ :, i:i+overlap_size ]
       print(f'Left overlap (tokens): {left_overlap_z.shape[1]}')
@@ -830,13 +829,25 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
       # Fade in the left overlap and add it to the existing wav if it's not empty (i.e. if this is not the first chunk)
       if wav is not None:
         left_overlap *= np.linspace(0, 1, left_overlap.shape[1]).reshape(1, -1, 1)
+        print(f'Faded in left overlap')
+        # Show as plot
+        plt.plot(left_overlap[0, :, 0])
+        plt.show()
+
         wav[ :, -left_overlap.shape[1]: ] += left_overlap
+        print(f'Added left overlap to existing wav:')
+        # Plot the resulting (faded-in + previous fade-out) overlap
+        plt.plot(wav[0, -left_overlap.shape[1]:, 0])
+        plt.show()
+
         print(f'Added left overlap to wav, overall shape now: {wav.shape}')
+
       else:
         wav = left_overlap
         print(f'Created wav with left overlap')
 
-      main_chunk_z = z[ :, i+overlap_size:i+chunk_size-overlap_size ]
+      # We'll also won't need right overlap for the last chunk
+      main_chunk_z = z[ :, i+overlap_size: i+chunk_size-overlap_size if not is_last_chunk else i+chunk_size ]
       print(f'Main chunk (tokens): {main_chunk_z.shape[1]}')
 
       if main_chunk_z.shape[1] > 0:
@@ -857,10 +868,15 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
 
         right_overlap_z = z[ :, i+chunk_size-overlap_size:i+chunk_size ]
         print(f'Right overlap (tokens): {right_overlap_z.shape[1]}')
+
         right_overlap = decode(right_overlap_z)
         print(f'Right overlap (samples): {right_overlap.shape[1]}')
 
         right_overlap *= np.linspace(1, 0, right_overlap.shape[1]).reshape(1, -1, 1)
+        print(f'Faded out right overlap')
+        # Show as plot
+        plt.plot(right_overlap[0, :, 0])
+        plt.show()
 
         # Add the right overlap to the existing wav
         wav = np.concatenate([ wav, right_overlap ], axis=1)
