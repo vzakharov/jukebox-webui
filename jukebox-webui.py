@@ -1470,8 +1470,15 @@ def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genre
 
   Upsampling.zs = t.load(filename)
   # zs is a list of 3 tensors, one per level, each of shape (n_samples, n_tokens).
-  # If the number of samples for any level is other than 3, we need to repeat the first sample to make it 3.
-  Upsampling.zs = [ z[0].repeat(3, 1) if z.shape[0] != 3 else z for z in Upsampling.zs ]
+  # For level 2, we need to repeat the first sample to make it 3.
+  # For other levels, we need to check if the number of samples is 3, and if not, replace them with an empty tensor.
+  # This is needed to avoid upsampling on top of a previously primed sample (see comments in get_levels for more info).
+  # Previous code to be rewritten where everything was repeated: Upsampling.zs = [ z[0].repeat(3, 1) if z.shape[0] != 3 else z for z in Upsampling.zs ]
+  for i in range( len(Upsampling.zs) ):
+    if i == 2:
+      Upsampling.zs[i] = Upsampling.zs[i][0].repeat(3, 1)
+    elif Upsampling.zs[i].shape[0] != 3:
+      Upsampling.zs[i] = t.empty( (3, 0), dtype=t.int64 ).cuda()
 
   # We also need to create new labels from the metas with the genres replaced accordingly
   Upsampling.metas = [ dict(
