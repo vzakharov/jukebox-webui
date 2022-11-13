@@ -458,6 +458,7 @@ class UI:
   generated_audio = gr.Audio(
     label = 'Generated audio',
     elem_id = 'generated-audio',
+    visible = False
   )
 
   mp3_file = gr.File(
