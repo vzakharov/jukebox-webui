@@ -846,7 +846,10 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
         overlap_quants = overlap.shape[1]
         silence_quants = int( overlap_quants / 4 )
         ramp_quants = int( overlap_quants / 2 )
-        overlap[:, :silence_quants, :] = 0
+        if is_fade_in:
+          overlap[:, :silence_quants, :] = 0
+        else:
+          overlap[:, -silence_quants:, :] = 0
         start = 0 if is_fade_in else 1
         overlap[:, silence_quants:-silence_quants, :] *= np.linspace(start, 1 - start, ramp_quants).reshape(1, -1, 1)
         return overlap
@@ -1307,8 +1310,8 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
     suffixes = [ 'left', 'center', 'right', 'stereo', 'stereo-delay' ]
     filename += f' {suffixes[upsample_rendering]}'
   
-  # Add a hash of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
-  filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()}'
+  # Add a hash (6 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
+  filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:6]}'
 
   print(f'Checking if {filename}.wav/.mp3 exist...')
 
