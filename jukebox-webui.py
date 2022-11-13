@@ -759,7 +759,19 @@ def get_levels(project_name, sample_id):
   z = get_z(project_name, sample_id)
   
   # z is a list of 3 tensors, each of shape (n_samples, n_tokens). We need to return the levels that have at least one token
-  return [ i for i in range(3) if z[i].shape[1] > 0 ]
+  # return [ i for i in range(3) if z[i].shape[1] > 0 ]
+  levels = []
+  for i in range(3):
+    if z[i].shape[1] > 0:
+      # We also need to make sure that, if it's not level 2, there are exactly 3 samples in the tensor
+      # Otherwise it's a primed sample, not the one we created during upsampling
+      # I agree this is a bit hacky; in the future we need to make sure that the primed samples are not saved for levels other than 2
+      # But for backwards compatibility, we need to keep this check
+      if i == 2 or z[i].shape[0] == 3:
+        levels.append(i)
+
+  return levels
+
 
 def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level=2, upsample_rendering=3):
 
