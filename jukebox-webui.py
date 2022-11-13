@@ -379,7 +379,7 @@ class UI:
   temperature = gr.Slider(
     label = 'Temperature',
     minimum = 0.96,
-    maximum = 1.1,
+    maximum = 1.01,
     step = 0.005
   )
 
