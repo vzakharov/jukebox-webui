@@ -372,7 +372,7 @@ class UI:
   n_samples = gr.Slider(
     label = 'Number of samples',
     minimum = 1,
-    maximum = 10,
+    maximum = 4,
     step = 1
   )
 
