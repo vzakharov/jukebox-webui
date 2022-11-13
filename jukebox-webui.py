@@ -803,47 +803,72 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
     return wav
   
   # If z is longer than 30 seconds, there will likely be not enough RAM to decode it in one go
-  # In this case, we'll split it into 20-second chunks (with a 1-second overlap), decode each chunk separately, and concatenate the results, crossfading the overlaps
+  # In this case, we'll split it into 30-second chunks (with a 1-second overlap), decode each chunk separately, and concatenate the results, crossfading the overlaps
   if z.shape[1] < seconds_to_tokens(30, level):
     wav = decode(z)
   else:
-    chunk_size = seconds_to_tokens(20, level)
+    chunk_size = seconds_to_tokens(30, level)
     overlap_size = seconds_to_tokens(1, level)
     print(f'z is too long ({z.shape[1]} tokens), splitting into chunks of {chunk_size} tokens, with a {overlap_size} token overlap')
     wav = None
     # Keep in mind that the last chunk can be shorter if the total length is not a multiple of chunk_size)
     for i in range(0, z.shape[1], chunk_size - overlap_size):
 
-      # If this is the last chunk, make chunk_size smaller if necessary
-      if i + chunk_size > z.shape[1]:
-        chunk_size = z.shape[1] - i
+      # If this is the last chunk, move i back so that the chunk ends at the end of z
+      # Also increase the overlap size respectively (so that i + overlap_size is where the previous chunk ended)
+      overflow = i + chunk_size - z.shape[1]
+      is_last_chunk = overflow > 0
+      if is_last_chunk:
+        i -= overflow
+        overlap_size += overflow
 
-      left_overlap = decode(z[ :, i:i+overlap_size ])
-      main_chunk = decode(z[ :, i+overlap_size:i+chunk_size-overlap_size ])
-      right_overlap = decode(z[ :, i+chunk_size-overlap_size:i+chunk_size ])
-      print(f'left_overlap: {left_overlap.shape}, main_chunk: {main_chunk.shape}, right_overlap: {right_overlap.shape}')
+      left_overlap_z = z[ :, i:i+overlap_size ]
+      print(f'Left overlap (tokens): {left_overlap_z.shape[1]}')
+      left_overlap = decode(left_overlap_z)
+      print(f'Left overlap (samples): {left_overlap.shape[1]}')
 
       # Fade in the left overlap and add it to the existing wav if it's not empty (i.e. if this is not the first chunk)
       if wav is not None:
         left_overlap *= np.linspace(0, 1, left_overlap.shape[1]).reshape(1, -1, 1)
         wav[ :, -left_overlap.shape[1]: ] += left_overlap
-        print(f'Added left overlap to wav, shape: {wav.shape}')
+        print(f'Added left overlap to wav, overall shape now: {wav.shape}')
       else:
         wav = left_overlap
-        print(f'Created wav with left overlap, shape: {wav.shape}')
+        print(f'Created wav with left overlap')
 
-      # Add the main chunk to the existing wav (even if it's empty)
-      wav = np.concatenate([ wav, main_chunk ], axis=1)
-      print(f'Added main chunk to wav, shape: {wav.shape}')
+      main_chunk_z = z[ :, i+overlap_size:i+chunk_size-overlap_size ]
+      print(f'Main chunk (tokens): {main_chunk_z.shape[1]}')
+
+      if main_chunk_z.shape[1] > 0:
+
+        main_chunk = decode(main_chunk_z)
+        print(f'Main chunk (samples): {main_chunk.shape[1]}')
+
+        # Add the main chunk to the existing wav
+        wav = np.concatenate([ wav, main_chunk ], axis=1)
+        print(f'Added main chunk to wav, overall shape now: {wav.shape}')
+
+      else:
+        print('Main chunk is empty, skipping')
+        continue
 
       # Fade out the right overlap, unless this is the last chunk
-      if i + chunk_size < z.shape[1]:
-        right_overlap *= np.linspace(1, 0, right_overlap.shape[1]).reshape(1, -1, 1)
-        print(f'Faded out right overlap, shape: {right_overlap.shape}')
+      if not is_last_chunk:
 
-      # Add the right overlap to the existing wav
-      wav = np.concatenate([ wav, right_overlap ], axis=1)
-      print(f'Added right overlap to wav, shape: {wav.shape}')
+        right_overlap_z = z[ :, i+chunk_size-overlap_size:i+chunk_size ]
+        print(f'Right overlap (tokens): {right_overlap_z.shape[1]}')
+        right_overlap = decode(right_overlap_z)
+        print(f'Right overlap (samples): {right_overlap.shape[1]}')
+
+        right_overlap *= np.linspace(1, 0, right_overlap.shape[1]).reshape(1, -1, 1)
+
+        # Add the right overlap to the existing wav
+        wav = np.concatenate([ wav, right_overlap ], axis=1)
+        print(f'Added right overlap to wav, overall shape now: {wav.shape}')
+      
+      else:
+
+        print(f'Last chunk, not adding right overlap')
       
       print(f'Decoded {i+chunk_size} tokens out of {z.shape[1]}, wav shape: {wav.shape}')
 
@@ -1717,8 +1742,8 @@ with gr.Blocks(
                     ),
                     UI.upsampling_level: gr.update(
                       choices = available_level_names,
-                      # Choose the highest available level by default.
-                      value = available_level_names[-1]
+                      # # Choose the highest available level by default.
+                      # value = available_level_names[-1]
                     )
                   }
                 
