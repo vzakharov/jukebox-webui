@@ -837,20 +837,19 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
       left_overlap_z = z[ :, i:i+overlap_size ]
       print(f'Left overlap (tokens): {left_overlap_z.shape[1]}')
       left_overlap = decode(left_overlap_z)
-      print(f'Left overlap (samples): {left_overlap.shape[1]}')
+      print(f'Left overlap (quants): {left_overlap.shape[1]}')
 
 
       def fade(overlap, direction):
         # To fade in, we need to add 1/4 of the overlap as silence, 2/4 of the overlap as a linear ramp, and 1/4 of the overlap as full volume
         is_fade_in = direction == 'in'
-        overlap_size_in_samples = overlap.shape[1]
-        silence_size_in_samples = int( overlap_size_in_samples / 4 )
-        ramp_size_in_samples = int( overlap_size_in_samples / 2 )        
-        silence = np.zeros( ( 1, silence_size_in_samples, 1) )
+        overlap_quants = overlap.shape[1]
+        silence_quants = int( overlap_quants / 4 )
+        ramp_quants = int( overlap_quants / 2 )
+        overlap[:, :silence_quants, :] = 0
         start = 0 if is_fade_in else 1
-        ramp = np.linspace(start, 1 - start, ramp_size_in_samples).reshape( 1, -1, 1 ) * overlap[ :, silence_size_in_samples:-silence_size_in_samples, : ]
-        full_volume = overlap[ :, -silence_size_in_samples:, : ] if is_fade_in else overlap[ :, :silence_size_in_samples, : ]
-        return np.concatenate( (silence, ramp, full_volume) if is_fade_in else (full_volume, ramp, silence), axis=1 )
+        overlap[:, silence_quants:-silence_quants, :] *= np.linspace(start, 1 - start, ramp_quants).reshape(1, -1, 1)
+        return overlap
 
       if wav is not None:
 
@@ -880,7 +879,7 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
       if main_chunk_z.shape[1] > 0:
 
         main_chunk = decode(main_chunk_z)
-        print(f'Main chunk (samples): {main_chunk.shape[1]}')
+        print(f'Main chunk (quants): {main_chunk.shape[1]}')
 
         # Add the main chunk to the existing wav
         wav = np.concatenate([ wav, main_chunk ], axis=1)
@@ -897,7 +896,7 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
         print(f'Right overlap (tokens): {right_overlap_z.shape[1]}')
 
         right_overlap = decode(right_overlap_z)
-        print(f'Right overlap (samples): {right_overlap.shape[1]}')
+        print(f'Right overlap (quants): {right_overlap.shape[1]}')
 
         right_overlap = fade(right_overlap, 'out')
         print(f'Faded out right overlap')
