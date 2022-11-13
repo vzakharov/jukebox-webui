@@ -1515,8 +1515,9 @@ def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genre
   Upsampling.labels = labels
   
   # Create a backup of the original file, in case something goes wrong
-  shutil.copy(filename, f'{filename}.bak')
-  print(f'Created backup of {filename} as {filename}.bak')
+  bak_filename = f'{filename}.{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.bak'
+  shutil.copy(filename, f'{bak_filename}')
+  print(f'Created backup of {filename} as {bak_filename}')
 
   Upsampling.params = [
     dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
