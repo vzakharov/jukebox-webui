@@ -63,7 +63,7 @@ except:
 
 # import glob
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import random
 import shutil
@@ -116,6 +116,7 @@ except:
 class Upsampling:
 
   started = False
+  stopping = False
   zs = None
   project = None
   sample_id = None
@@ -127,10 +128,15 @@ class Upsampling:
 
   windows = []
   window_index = 0
+  window_started_at = None
   elapsed_time = None
-  time_per_window = None
+  # Set time per window by default to 10 minutes (will be updated later) in timedelta format
+  time_per_window = timedelta(minutes=10)
   windows_remaining = None
   time_remaining = None
+  eta = None
+
+  status_markdown = None
 
 print('Monkey patching Jukebox methods...')
 
@@ -197,7 +203,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
 
   if not Upsampling.started:
     # We stopped upsampling in the UI, so now we need to reload the top prior (as we deleted it before upsampling) and exit
-    load_top_prior()
+    stop_upsampling()
     return zs
 
   global base_path
@@ -231,20 +237,59 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
 
       # If we stopped upsampling in the UI, stop here
       if not Upsampling.started:
-        load_top_prior()
+        stop_upsampling()
         return zs
 
       window_start_time = datetime.now()
-
+      
       print(f'Sampling window starting at {start}')
       Upsampling.zs = sample_single_window(Upsampling.zs, labels, sampling_kwargs, level, prior, start, hps)
 
       # Estimate time remaining
       Upsampling.elapsed_time = datetime.now() - start_time
       Upsampling.time_per_window = datetime.now() - window_start_time
+
+      # If this is the first window, divide the time per window by 2 because the first window is twice bigger
+      if Upsampling.window_index == 0:
+        Upsampling.time_per_window /= 2
+
       Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
       Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
-      print(f'Elapsed time: {Upsampling.elapsed_time}, time remaining for level {level}: {Upsampling.time_remaining}')
+      Upsampling.eta = datetime.now() + Upsampling.time_remaining
+      Upsampling.status_markdown = f'''
+        Upsampled window { Upsampling.window_index+1 } of { len(Upsampling.windows) } at level { level }.
+        Elapsed time: { Upsampling.elapsed_time }.
+      '''
+
+      # Add estimations unless we're on the last window
+      if Upsampling.window_index < len(Upsampling.windows) - 1:
+
+        Upsampling.status_markdown += f'''
+          Estimated time remaining: { Upsampling.time_remaining}.
+          Estimated completion time: { Upsampling.eta }.
+        '''
+
+        # If this is level 1, add that level 0 will take ~4x longer
+        if level == 1:
+          estimated_level_0_time = ( Upsampling.elapsed_time + Upsampling.time_remaining ) * 4
+          Upsampling.status_markdown += f'''
+            (Upsampling level 0 will take approximately { estimated_level_0_time } after level 1 is done, ETA { Upsampling.eta + estimated_level_0_time })
+          '''
+
+      else:
+        if Upsampling.level == 0:
+          Upsampling.status_markdown += f'''
+            Finished upsampling.
+          '''
+        else:
+          Upsampling.status_markdown += f'''
+            Finished upsampling level {Upsampling.level}.
+            Now upsampling level {Upsampling.level-1}.
+            (This will take approximately {Upsampling.elapsed_time * 4}, ETA { datetime.now() + Upsampling.elapsed_time * 4 })
+          '''
+
+      # Print the status with an hourglass emoji in front of it
+      print(f'\n\n⏳ {Upsampling.status_markdown}\n\n')
 
       path = f'{base_path}/{Upsampling.project}/{Upsampling.sample_id}.z'
       print(f'Saving upsampled z to {path}')
@@ -411,7 +456,7 @@ class UI:
     visible = False
   )
 
-  generation_progress = gr.Markdown('Generation status will be shown here', elem_id = 'generation-progress')
+  generation_progress = gr.Textbox('Generation status will be shown here', elem_id = 'generation-progress')
 
   routed_sample_id = gr.State()
 
@@ -525,9 +570,11 @@ class UI:
 
   upsample_button = gr.Button('Start upsampling', variant="primary", elem_id='upsample-button')
 
-  upsampling_tracker_markdown = gr.Markdown('')
+  upsampling_status_markdown = gr.Markdown('')
 
-  upsampling_in_progress = gr.Number(0, visible = False)
+  upsampling_refresher = gr.Number( value = 0, visible = False )
+
+  upsampling_started = gr.Number( 0, visible = False )
   # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
 
   project_settings = [ 
@@ -1453,6 +1500,16 @@ def seconds_to_tokens(sec, level = 2):
 
   return int(tokens)
 
+def stop_upsampling():
+  # Delete all Upsampling attributes except for status_markdown
+  for attr in UI.upsampling:
+    if attr != UI.upsampling_status_markdown:
+      gr.delete_attribute(attr)
+  empty_cache()
+  Upsampling.status_markdown = "Reloading the model for composing..."
+  load_top_prior()
+  Upsampling.status_markdown = 'Upsampling stopped. You can continue upsampling by going to the **Upsample** tab again.'
+
 def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genres):
 
   global hps, top_prior, priors
@@ -1463,9 +1520,19 @@ def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genre
   Upsampling.sample_id = sample_id
 
   if not toggle_on:
+
     Upsampling.started = False
-    print('Upsampling stopped. You’ll still have to wait for the current window to finish, which may take 5-10 minutes.')
+    if Upsampling.window_started_at:
+      Upsampling.status_markdown = f'Upsampling stopping. Please wait for ~{ Upsampling.time_per_window - ( datetime.now() - Upsampling.window_started_at ).seconds // 30 / 2 } minutes for the current window to finish.'
+    else:
+      Upsampling.status_markdown = 'Stopping upsampling, please wait...'
+
+    print(Upsampling.status_markdown)
+    Upsampling.stopping = True
     return
+
+  Upsampling.started = True
+  Upsampling.status_markdown = "Upsampling started. Loading the upsampling models..."
 
   print(f'Upsampling {sample_id} with genres {genres}')
   filename = f'{base_path}/{project_name}/{sample_id}.z'
@@ -1512,6 +1579,11 @@ def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genre
   labels = Upsampling.labels
 
   upsamplers = [ make_prior(setup_hparams(prior, dict()), vqvae, 'cpu') for prior in priors[:-1] ]
+  
+  # Check if upsampling wasn't stopped while we were loading the models
+  if Upsampling.stopping:
+    stop_upsampling()
+    return
 
   if type(labels)==dict:
     labels = [ prior.labeller.get_batch_labels(Upsampling.metas, 'cuda') for prior in upsamplers ] + [ labels ]
@@ -1543,7 +1615,7 @@ def toggle_upsampling(toggle_on, project_name, sample_id, artist, lyrics, *genre
   Upsampling.hps.name = f'{base_path}/{project_name}'
 
   Upsampling.priors = [*upsamplers, None]
-  Upsampling.started = True
+  Upsampling.status_markdown = 'Models loaded. Calculating the ETA (this will take around 10 minutes)...'
   Upsampling.zs = upsample(Upsampling.zs, labels, Upsampling.params, Upsampling.priors, Upsampling.hps)
 
 def tokens_to_seconds(tokens, level = 2):
@@ -2048,7 +2120,7 @@ with gr.Blocks(
       with gr.Tab('Upsample'):
 
         # Warning that this process is slow and can take up to 10 minutes for 1 second of audio
-        with gr.Accordion('⚠️ WARNING ⚠️', open = False):
+        with gr.Accordion('⚠️ WARNING ⚠️', open = True):
 
           gr.Markdown('''
             Upsampling is a slow process. It can take up to 10 minutes to upsample 1 second of audio in the highest possible quality (2.5 minutes in the medium quality). Currently the Web UI does not show any progress, so consult with your Colab's output to see the progress.
@@ -2087,12 +2159,44 @@ with gr.Blocks(
 
               input.render()
         
-        UI.upsample_button.render().click(
-          inputs = UI.upsampling_in_progress,
-          outputs = [ UI.upsampling_in_progress, UI.upsampling_tracker_markdown, UI.upsample_button ],
+        # # On app load, load the UI.upsampling_started state from Upsampling.started global variable
+        # app.load(
+        #   inputs = None,
+        #   outputs = UI.upsampling_started,
+        #   fn = lambda: [
+        #     print(f'Upsampling started: {Upsampling.started}'),
+        #     Upsampling.started
+        #   ][-1]
+        # )
+
+        # # If upsampling is started, turn on the upsampling_refresher -- a "virtual" input that, when changed, will update the upsampling_status_markdown
+        # # It will do so after waiting for 4 seconds (using js). After finishing, it will update itself again, causing the process to repeat.
+        # UI.upsampling_refresher.render().change(
+        #   inputs = [ UI.upsampling_started, UI.upsampling_refresher ],
+        #   outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown ],
+        #   fn = lambda started, refresher: {
+        #     UI.upsampling_status_markdown: Upsampling.status_markdown,
+        #     UI.upsampling_refresher: refresher + 1 if started else refresher,
+        #   },
+        #   _js = """
+        #     async ( ...args ) => {
+        #       debugger
+        #       if ( args[0] ) {
+        #         await new Promise( resolve => setTimeout( resolve, 4000 ) )
+        #         return args
+        #       } else {
+        #         throw new Error('Upsampling not started')
+        #       }
+        #     }
+        #   """
+        # )
+        
+        UI.upsample_button.click(
+          inputs = UI.upsampling_started,
+          outputs = [ UI.upsampling_started, UI.upsampling_status_markdown, UI.upsample_button ],
           fn = lambda is_running: {
-            UI.upsampling_in_progress: 0 if is_running else 1,
-            UI.upsampling_tracker_markdown: 'Stopping upsampling...' if is_running else 'Upsampling...',
+            UI.upsampling_started: 0 if is_running else 1,
+            UI.upsampling_status_markdown: 'Stopping upsampling...' if is_running else 'Starting upsampling...',
             UI.upsample_button: gr.update(
               value = 'Upsample' if is_running else 'Stop upsampling',
               variant = 'primary' if is_running else 'secondary',
@@ -2101,21 +2205,24 @@ with gr.Blocks(
           _js = """
             // Confirm before starting the upsample process
             (...args) => {
+              inProgress = args[0]
               console.log('Upsample button clicked with args: ', args)
-              if ( !confirm('Are you sure you want to start the upsample process? THIS WILL TAKE A LONG TIME (see the warning above).') )
-                throw new Error('Upsample process canceled by user')
-              else {
+              confirmText = 
+                !inProgress ?
+                  'Are you sure you want to start the upsample process? THIS WILL TAKE A LONG TIME (see ⚠️ WARNING ⚠️ above).'
+                : 'Are you sure you want to stop the upsample process? You will stil need to wait for the current run to finish, and then some more to reload the composing model.'
+              if ( !confirm(confirmText) ) {
+                throw new Error(`${inProgress ? 'Stopping' : 'Starting'} upsample process cancelled by user`)
+              } else {
                 return args
               }
             }
           """
         )
 
-        UI.upsampling_in_progress.render()
-        
-        UI.upsampling_in_progress.change(
+        UI.upsampling_started.render().change(
           inputs = [
-            UI.upsampling_in_progress, UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
+            UI.upsampling_started, UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
             UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
           ],
           outputs = None,
@@ -2127,28 +2234,6 @@ with gr.Blocks(
         #   label = 'Upsampled sample (updated every few minutes)',
         #   visible = False,
         # )
-
-        UI.upsampling_tracker_markdown.render()
-
-        # Whenever the upsampling tracker changes (which is in turn triggered by an iteration of the upsample function), update the upsampled audio
-        UI.upsampling_tracker_markdown.change(
-          inputs = None,
-          outputs = UI.upsampling_tracker_markdown,
-          fn = lambda: f"{datetime.now().strftime('%H:%M:%S')}: Upsampling level {Upsampling.level}, window {Upsampling.window_index + 1}/{len(Upsampling.windows)}, at ~{Upsampling.time_per_window} s/window, ~{Upsampling.time_remaining // 60} minutes remaining" if Upsampling.time_remaining is not None else f"{datetime.now().strftime('%H:%M:%S')}: Estimating time remaining...",
-          api_name = 'get-upsampled-audio',
-          _js = """
-            // Wait for 10 seconds before updating the tracker/upsampled audio
-            async (...args) => {
-              console.log('Waiting for 10 seconds before updating the tracker/upsampled audio')
-              console.log('Args: ', args)
-              await new Promise(resolve => setTimeout(resolve, 10000))
-              console.log('Done waiting; updating.')
-              // Also click the shadow root's internal-refresh-button
-              // window.shadowRoot.getElementById('internal-refresh-button').click()
-              return [ null ]
-            }
-          """
-        )
 
       with gr.Tab('Panic'):
 
