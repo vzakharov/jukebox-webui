@@ -2191,7 +2191,7 @@ with gr.Blocks(
         #   """
         # )
         
-        UI.upsample_button.click(
+        UI.upsample_button.render().click(
           inputs = UI.upsampling_started,
           outputs = [ UI.upsampling_started, UI.upsampling_status_markdown, UI.upsample_button ],
           fn = lambda is_running: {
