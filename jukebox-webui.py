@@ -63,7 +63,7 @@ except:
 
 # import glob
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import random
 import shutil
@@ -112,6 +112,7 @@ except:
   rank, local_rank, device = setup_dist_from_mpi()
   print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
+browser_timezone = None
 
 class Upsampling:
 
@@ -130,8 +131,8 @@ class Upsampling:
   window_index = 0
   window_start_time = None
   elapsed_time = None
-  # Set time per window by default to 10 minutes (will be updated later) in timedelta format
-  time_per_window = timedelta(minutes=10)
+  # Set time per window by default to 6 minutes (will be updated later) in timedelta format
+  time_per_window = timedelta(minutes=6)
   windows_remaining = None
   time_remaining = None
   eta = None
@@ -241,8 +242,23 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
         return zs
 
       Upsampling.window_start_time = datetime.now()
+      Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
+      Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
+      Upsampling.eta = datetime.now() + Upsampling.time_remaining
       
-      print(f'Sampling window starting at {start}')
+      def as_local_hh_mm(dt):
+        return dt.astimezone(browser_timezone).strftime('%H:%M')
+
+      Upsampling.status_markdown = f'Upsampling window { Upsampling.window_index+1 } of { len(Upsampling.windows) } at level { level }, estimated to complete at { as_local_hh_mm(Upsampling.eta) } your time'
+
+      # If this is level 1, add that level 0 will take ~4x longer
+      if level == 1:
+        estimated_level_0_time = ( Upsampling.elapsed_time + Upsampling.time_remaining ) * 4
+        Upsampling.status_markdown += f'\n(Final ETA: { as_local_hh_mm(Upsampling.eta + estimated_level_0_time) })'
+          
+      # Print the status with an hourglass emoji in front of it
+      print(f'\n\n⏳ {Upsampling.status_markdown}\n\n')
+      
       Upsampling.zs = sample_single_window(Upsampling.zs, labels, sampling_kwargs, level, prior, start, hps)
 
       # Estimate time remaining
@@ -250,46 +266,8 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       Upsampling.time_per_window = datetime.now() - Upsampling.window_start_time
 
       # If this is the first window, divide the time per window by 2 because the first window is twice bigger
-      if Upsampling.window_index == 0:
+      if start == 0:
         Upsampling.time_per_window /= 2
-
-      Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
-      Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
-      Upsampling.eta = datetime.now() + Upsampling.time_remaining
-      Upsampling.status_markdown = f'''
-        Upsampled window { Upsampling.window_index+1 } of { len(Upsampling.windows) } at level { level }.
-        Elapsed time: { Upsampling.elapsed_time }.
-      '''
-
-      # Add estimations unless we're on the last window
-      if Upsampling.window_index < len(Upsampling.windows) - 1:
-
-        Upsampling.status_markdown += f'''
-          Estimated time remaining: { Upsampling.time_remaining}.
-          Estimated completion time: { Upsampling.eta }.
-        '''
-
-        # If this is level 1, add that level 0 will take ~4x longer
-        if level == 1:
-          estimated_level_0_time = ( Upsampling.elapsed_time + Upsampling.time_remaining ) * 4
-          Upsampling.status_markdown += f'''
-            (Upsampling level 0 will take approximately { estimated_level_0_time } after level 1 is done, ETA { Upsampling.eta + estimated_level_0_time })
-          '''
-
-      else:
-        if Upsampling.level == 0:
-          Upsampling.status_markdown += f'''
-            Finished upsampling.
-          '''
-        else:
-          Upsampling.status_markdown += f'''
-            Finished upsampling level {Upsampling.level}.
-            Now upsampling level {Upsampling.level-1}.
-            (This will take approximately {Upsampling.elapsed_time * 4}, ETA { datetime.now() + Upsampling.elapsed_time * 4 })
-          '''
-
-      # Print the status with an hourglass emoji in front of it
-      print(f'\n\n⏳ {Upsampling.status_markdown}\n\n')
 
       path = f'{base_path}/{Upsampling.project}/{Upsampling.sample_id}.z'
       print(f'Saving upsampled z to {path}')
@@ -360,6 +338,8 @@ custom_parents = None
 class UI:
 
   ### Meta
+
+  browser_timezone = gr.State()
 
   separate_tab_warning = gr.Box(
     visible = False
@@ -481,19 +461,20 @@ class UI:
     visible = False
   )
 
-  upsampling_row = gr.Row(
+  upsampling_accordion = gr.Accordion(
+    label = 'Upsampling',
     visible = False
   )
 
-  UPSAMPLING_LEVEL_NAMES = [ 'Original', 'Midsampled', 'Upsampled' ]
+  UPSAMPLING_LEVEL_NAMES = [ 'Raw', 'Midsampled', 'Upsampled' ]
 
-  upsampling_level = gr.Radio(
+  upsampling_level = gr.Dropdown(
     label = 'Upsampling level',
-    choices = [ 'Original' ],
-    value = 'Original'
+    choices = [ 'Raw' ],
+    value = 'Raw'
   )
 
-  upsample_rendering = gr.Radio(
+  upsample_rendering = gr.Dropdown(
     label = 'Render...',
     type = 'index',
     choices = [ 'Channel 1', 'Channel 2', 'Channel 3', 'Pseudo-stereo', 'Pseudo-stereo with delay' ],
@@ -552,7 +533,7 @@ class UI:
 
   sample_to_upsample = gr.Textbox(
     label = 'Sample to upsample',
-    placeholder = 'Choose a sample in the Compose tab first',
+    placeholder = 'Choose a sample in the Workspace tab first',
     interactive = False,
   )
 
@@ -570,18 +551,16 @@ class UI:
 
   upsample_button = gr.Button('Start upsampling', variant="primary", elem_id='upsample-button')
 
-  upsampling_status_markdown = gr.Markdown('')
+  upsampling_status_markdown = gr.Markdown('Upsampling progress will be shown here')
 
   upsampling_refresher = gr.Number( value = 0, visible = False )
 
-  upsampling_running = gr.Number(
-    value = lambda: [
-      print(f"Upsampling { 'not ' if not Upsampling.running else '' }running"),
-      Upsampling.running
-    ][-1],
-    visible = False 
-  )
+  upsampling_running = gr.Number( visible = False )
   # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
+
+  upsampling_stopping = gr.State()
+
+  upsampling_toggled_during_this_session = gr.Checkbox( visible = False, value = False )
 
   project_settings = [ 
     *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec,
@@ -677,6 +656,7 @@ def convert_audio_to_sample(project_name, audio, sec_to_trim_primed_audio, show_
       value = primed_sample_id
     ),
     UI.prime_timestamp: datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'),
+    UI.first_generation_row: HIDE,
   }
 
 def delete_sample(project_name, sample_id, confirm):
@@ -885,12 +865,12 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
       is_last_chunk = overflow > 0
       if is_last_chunk:
         chunk_size -= overflow
-        print(f'Last chunk, reduced chunk_size from {chunk_size + overflow} to {chunk_size} tokens')
+        # print(f'Last chunk, reduced chunk_size from {chunk_size + overflow} to {chunk_size} tokens')
 
       left_overlap_z = z[ :, i:i+overlap_size ]
-      print(f'Left overlap (tokens): {left_overlap_z.shape[1]}')
+      # print(f'Left overlap (tokens): {left_overlap_z.shape[1]}')
       left_overlap = decode(left_overlap_z)
-      print(f'Left overlap (quants): {left_overlap.shape[1]}')
+      # print(f'Left overlap (quants): {left_overlap.shape[1]}')
 
 
       def fade(overlap, direction):
@@ -912,15 +892,15 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
         # Fade in the left overlap and add it to the existing wav if it's not empty (i.e. if this is not the first chunk)
         left_overlap = fade(left_overlap, 'in')
         print(f'Faded in left overlap')
-        # Show as plot
-        plt.plot(left_overlap[0, :, 0])
-        plt.show()
+        # # Show as plot
+        # plt.plot(left_overlap[0, :, 0])
+        # plt.show()
 
         wav[ :, -left_overlap.shape[1]: ] += left_overlap
         print(f'Added left overlap to existing wav:')
-        # Plot the resulting (faded-in + previous fade-out) overlap
-        plt.plot(wav[0, -left_overlap.shape[1]:, 0])
-        plt.show()
+        # # Plot the resulting (faded-in + previous fade-out) overlap
+        # plt.plot(wav[0, -left_overlap.shape[1]:, 0])
+        # plt.show()
 
         print(f'Added left overlap to wav, overall shape now: {wav.shape}')
 
@@ -949,24 +929,25 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
       if not is_last_chunk:
 
         right_overlap_z = z[ :, i+chunk_size-overlap_size:i+chunk_size ]
-        print(f'Right overlap (tokens): {right_overlap_z.shape[1]}')
+        # print(f'Right overlap (tokens): {right_overlap_z.shape[1]}')
 
         right_overlap = decode(right_overlap_z)
-        print(f'Right overlap (quants): {right_overlap.shape[1]}')
+        # print(f'Right overlap (quants): {right_overlap.shape[1]}')
 
         right_overlap = fade(right_overlap, 'out')
-        print(f'Faded out right overlap')
-        # Show as plot
-        plt.plot(right_overlap[0, :, 0])
-        plt.show()
+        # print(f'Faded out right overlap')
+        # # Show as plot
+        # plt.plot(right_overlap[0, :, 0])
+        # plt.show()
 
         # Add the right overlap to the existing wav
         wav = np.concatenate([ wav, right_overlap ], axis=1)
-        print(f'Added right overlap to wav, overall shape now: {wav.shape}')
+        # print(f'Added right overlap to wav, overall shape now: {wav.shape}')
       
       else:
 
-        print(f'Last chunk, not adding right overlap')
+        pass
+        # print(f'Last chunk, not adding right overlap')
       
       print(f'Decoded {i+chunk_size} tokens out of {z.shape[1]}, wav shape: {wav.shape}')
 
@@ -1359,7 +1340,7 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
     filename += f' preview {preview_just_the_last_n_sec}'
   
   # Add lowercase of upsample rendering option
-  if upsample_rendering and level_name != 'Original':
+  if upsample_rendering and level_name != 'Raw':
     suffixes = [ 'left', 'center', 'right', 'stereo', 'stereo-delay' ]
     filename += f' {suffixes[upsample_rendering]}'
   
@@ -1408,7 +1389,7 @@ def refresh_siblings(project_name, sample_id):
   
   if not sample_id:
     return {
-      UI.picked_sample: gr.update( visible = False )
+      UI.picked_sample: HIDE
     }
 
   # print(f'Getting siblings for {sample_id}...')
@@ -1507,10 +1488,7 @@ def seconds_to_tokens(sec, level = 2):
   return int(tokens)
 
 def stop_upsampling():
-  # Delete all Upsampling attributes except for status_markdown
-  for attr in UI.upsampling:
-    if attr != UI.upsampling_status_markdown:
-      gr.delete_attribute(attr)
+  del Upsampling.priors
   empty_cache()
   Upsampling.status_markdown = "Reloading the model for composing..."
   load_top_prior()
@@ -1527,13 +1505,21 @@ def toggle_upsampling(toggled_on, project_name, sample_id, artist, lyrics, *genr
 
   if not toggled_on:
 
-    Upsampling.running = False
-    if Upsampling.window_start_time:
-      Upsampling.status_markdown = f'Upsampling stopping. Please wait for ~{ Upsampling.time_per_window - ( datetime.now() - Upsampling.window_start_time ).seconds // 30 / 2 } minutes for the current window to finish.'
-    else:
+    try:
+
+      if Upsampling.window_start_time:
+        Upsampling.status_markdown = f'Upsampling stopping. Please wait for ~{ ( Upsampling.time_per_window - ( datetime.now() - Upsampling.window_start_time ) ).seconds } seconds for the current window to finish.'
+      else:
+        Upsampling.status_markdown = 'Stopping upsampling, please wait...'
+
+      print(Upsampling.status_markdown)
+    
+    except Exception as e:
+
+      print(f'Error while trying to stop upsampling: {e}')
       Upsampling.status_markdown = 'Stopping upsampling, please wait...'
 
-    print(Upsampling.status_markdown)
+    Upsampling.running = False
     Upsampling.stopping = True
     return
 
@@ -1621,7 +1607,6 @@ def toggle_upsampling(toggled_on, project_name, sample_id, artist, lyrics, *genr
   Upsampling.hps.name = f'{base_path}/{project_name}'
 
   Upsampling.priors = [*upsamplers, None]
-  Upsampling.status_markdown = 'Models loaded. Calculating the ETA (this will take around 10 minutes)...'
   Upsampling.zs = upsample(Upsampling.zs, labels, Upsampling.params, Upsampling.priors, Upsampling.hps)
 
 def tokens_to_seconds(tokens, level = 2):
@@ -1643,6 +1628,9 @@ def trim(project_name, sample_id, n_sec):
   t.save(z, filename)
   print(f'Saved z to {filename}')
   return 0
+
+SHOW = gr.update( visible = True )
+HIDE = gr.update( visible = False )
 
 with gr.Blocks(
   css = """
@@ -1671,6 +1659,8 @@ with gr.Blocks(
   """,
   title = 'Jukebox Web UI v0.3',
 ) as app:
+
+  UI.browser_timezone.render()
 
   with UI.separate_tab_warning.render():
 
@@ -1780,7 +1770,7 @@ with gr.Blocks(
 
     with UI.workspace_column.render():
 
-      with gr.Tab('Compose'):
+      with gr.Tab('Workspace'):
 
         with gr.Column():
 
@@ -1800,8 +1790,8 @@ with gr.Blocks(
                 outputs = [ UI.sample_tree, UI.first_generation_row, UI.sample_tree_row, UI.generation_progress ],
                 fn = lambda *args: {
                   **generate(*args),
-                  UI.first_generation_row: gr.update( visible = False ),
-                  UI.sample_tree_row: gr.update( visible = True ),
+                  UI.first_generation_row: HIDE,
+                  UI.sample_tree_row: SHOW,
                 }
               )
 
@@ -1852,76 +1842,81 @@ with gr.Blocks(
 
           with UI.sample_box.render():
 
-            with UI.upsampling_row.render():
+            with UI.upsampling_accordion.render():
 
-              with gr.Column():
+              with gr.Row():
 
-                UI.upsampling_level.render().change(
-                  **preview_args,
-                )
+                with gr.Column():
 
-                # Only show the upsampling elements if there are upsampled versions of the picked sample
-                def show_or_hide_upsampling_elements(project_name, sample_id):
+                  UI.upsampling_level.render().change(
+                    **preview_args,
+                  )
 
-                  levels = get_levels(project_name, sample_id)
-                  # print(f'Levels: {levels}')
+                  # Only show the upsampling elements if there are upsampled versions of the picked sample
+                  def show_or_hide_upsampling_elements(project_name, sample_id, upsampling_level, upsampling_running):
 
-                  available_level_names = UI.UPSAMPLING_LEVEL_NAMES[:len(levels)]
-                  # print(f'Available level names: {available_level_names}')
+                    levels = get_levels(project_name, sample_id)
+                    # print(f'Levels: {levels}')
 
-                  return {
-                    UI.upsampling_row: gr.update(
-                      visible = len(levels) > 1
-                    ),
-                    UI.upsampling_level: gr.update(
-                      choices = available_level_names,
-                      # # Choose the highest available level by default.
-                      # value = available_level_names[-1]
-                    )
-                  }
-                
-                UI.picked_sample.change(
-                  inputs = [ UI.project_name, UI.picked_sample ],
-                  outputs = [ UI.upsampling_row, UI.upsampling_level ],
-                  fn = show_or_hide_upsampling_elements,
-                )
+                    available_level_names = UI.UPSAMPLING_LEVEL_NAMES[:len(levels)]
+                    # print(f'Available level names: {available_level_names}')
 
-              with gr.Column(visible = False) as upsampling_manipulation_row:
+                    return {
+                      UI.upsampling_accordion: gr.update(
+                        visible = len(levels) > 1 or upsampling_running,
+                      ),
+                      UI.upsampling_level: gr.update(
+                        choices = available_level_names,
+                        # Choose the highest available level by default unless the current level is available
+                        value = available_level_names[-1] if upsampling_level not in available_level_names else upsampling_level,
+                      )
+                    }
+                  
+                  UI.picked_sample.change(
+                    inputs = [ UI.project_name, UI.picked_sample, UI.upsampling_level, UI.upsampling_running ],
+                    outputs = [ UI.upsampling_accordion, UI.upsampling_level ],
+                    fn = show_or_hide_upsampling_elements,
+                  )
 
-                # Show the row only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
-                UI.upsampling_level.change(
-                  inputs = UI.upsampling_level,
-                  outputs = [ upsampling_manipulation_row, UI.compose_row ],
-                  fn = lambda upsampling_level: [
-                    gr.update( visible = upsampling_level != 'Original' ),
-                    gr.update( visible = upsampling_level == 'Original' ),
-                  ]
-                )
+                with gr.Column(visible = False) as upsampling_manipulation_column:
 
-                UI.upsample_rendering.render().change(
-                  **preview_args,
-                )
+                  # Show the column only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
+                  UI.upsampling_level.change(
+                    inputs = UI.upsampling_level,
+                    outputs = [ upsampling_manipulation_column, UI.compose_row, UI.upsampling_accordion ],
+                    fn = lambda upsampling_level: [
+                      gr.update( visible = upsampling_level != 'Raw' ),
+                      gr.update( visible = upsampling_level == 'Raw' ),
+                      f'{upsampling_level} version',
+                    ]
+                  )
+
+                  UI.upsample_rendering.render().change(
+                    **preview_args,
+                  )
 
               continue_upsampling_markdown = gr.Markdown('''
                 Upsampling for this sample hasn’t been completed yet. Go to the **Upsample** tab to continue from where it stopped.
               ''', visible = False )
 
+              UI.upsampling_status_markdown.render()
+
               # Show the continue upsampling markdown only if the current level's length in tokens is less than the total audio length
               # Also update the upsampling button to say "Continue upsampling" instead of "Upsample"
-              def show_or_hide_continue_upsampling(project_name, sample_id, total_audio_length):
+              def show_or_hide_continue_upsampling(project_name, sample_id, total_audio_length, upsampling_running):
 
-                z = get_z(project_name, sample_id)[0]
+                if not upsampling_running:
+                  z = get_z(project_name, sample_id)[0]
+                  must_show = z.shape[1] < seconds_to_tokens(total_audio_length, 0)
+                
+                else:
+                  must_show = False
 
-                unfinished = z.shape[1] < seconds_to_tokens(total_audio_length, 0)
-
-                return {
-                  continue_upsampling_markdown: gr.update( visible = unfinished ),
-                  UI.upsample_button: 'Continue upsampling' if unfinished else 'Upsample',
-                }
+                return gr.update( visible = must_show )
               
               UI.picked_sample.change(
-                inputs = [ UI.project_name, UI.picked_sample, UI.total_audio_length ],
-                outputs = [ continue_upsampling_markdown, UI.upsample_button ],
+                inputs = [ UI.project_name, UI.picked_sample, UI.total_audio_length, UI.upsampling_running ],
+                outputs = continue_upsampling_markdown,
                 fn = show_or_hide_continue_upsampling,
               )
 
@@ -2097,7 +2092,7 @@ with gr.Blocks(
                 
         prime_button.click(
           inputs = [ UI.project_name, UI.primed_audio, sec_to_trim_primed_audio, UI.show_leafs_only ],
-          outputs = [ UI.sample_tree, prime_button, UI.prime_timestamp ], # UI.prime_timestamp is updated to the current time to force tab change
+          outputs = [ UI.sample_tree, prime_button, UI.prime_timestamp, UI.first_generation_row ], # UI.prime_timestamp is updated to the current time to force tab change
           fn = convert_audio_to_sample,
           api_name = 'convert-wav-to-sample'
         )
@@ -2105,17 +2100,12 @@ with gr.Blocks(
         UI.prime_timestamp.render().change(
           inputs = UI.prime_timestamp, outputs = None, fn = None,
           _js = 
-            # Find a button inside a div inside another div with class 'tabs', the button having 'Compose' as text, and click it -- all this in the shadow DOM.
+            # Find a button inside a div inside another div with class 'tabs', the button having 'Workspace' as text, and click it -- all this in the shadow DOM.
             # Gosh, this is ugly.
             """
               timestamp => {
-                console.log(`Timestamp changed to ${timestamp}; clicking the 'Compose' tab`)
-                for ( let button of document.querySelector('gradio-app').shadowRoot.querySelectorAll('div.tabs > div > button') ) {
-                  if ( button.innerText == 'Compose' ) {
-                    button.click()
-                    break
-                  }
-                }
+                console.log(`Timestamp changed to ${timestamp}; clicking the 'Workspace' tab`)
+                Ju.clickTabWithText('Workspace')
                 return timestamp
               }
             """
@@ -2169,76 +2159,100 @@ with gr.Blocks(
 
               input.render()
         
-        # If upsampling is running, turn on the upsampling_refresher -- a "virtual" input that, when changed, will update the upsampling_status_markdown
+        # If upsampling is running, enable the upsampling_refresher -- a "virtual" input that, when changed, will update the upsampling_status_markdown
         # It will do so after waiting for 10 seconds (using js). After finishing, it will update itself again, causing the process to repeat.
         UI.upsampling_refresher.render().change(
-          inputs = [ UI.upsampling_running, UI.upsampling_refresher ],
+          inputs = [ UI.upsampling_running, UI.upsampling_refresher, UI.upsampling_stopping ],
           outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown ],
-          fn = lambda running, refresher: {
+          fn = lambda running, refresher, stopping: {
             UI.upsampling_status_markdown: Upsampling.status_markdown,
-            UI.upsampling_refresher: refresher + 1 if running else refresher,
+            UI.upsampling_refresher: refresher + 1 if running or stopping else refresher,
           },
           _js = """
             async ( ...args ) => {
-              if ( args[0] ) {
+              if ( args[0] || args[2] ) {
                 await new Promise( resolve => setTimeout( resolve, 10000 ) )
                 console.log( 'Checking upsampling status...' )
                 return args
               } else {
-                throw new Error('Upsampling not running; stopping status checker')
+                throw new Error('Upsampling neither running nor stopping; turning off the status checker')
               }
             }
           """
         )
-        
+
         UI.upsample_button.render().click(
           inputs = UI.upsampling_running,
-          outputs = [ UI.upsampling_running, UI.upsampling_status_markdown, UI.upsample_button ],
-          fn = lambda is_running: {
-            UI.upsampling_running: 0 if is_running else 1,
-            UI.upsampling_status_markdown: 'Stopping upsampling...' if is_running else 'Starting upsampling...',
-            UI.upsample_button: gr.update(
-              value = 'Upsample' if is_running else 'Stop upsampling',
-              variant = 'primary' if is_running else 'secondary',
-            )
+          outputs = [ UI.upsampling_running, UI.upsampling_stopping, UI.upsampling_toggled_during_this_session ],
+          fn = lambda was_running: {
+            UI.upsampling_running: 0 if was_running else 1,
+            UI.upsampling_stopping: was_running,
+            UI.upsampling_toggled_during_this_session: True,
           },
           _js = """
             // Confirm before starting/stopping the upsample process
-            (...args) => {
-              let inProgress = args[0]
-              console.log('Upsample button clicked with args: ', args)
+            running => {
               confirmText = 
-                !inProgress ?
-                  'Are you sure you want to start the upsample process? THIS WILL TAKE A LONG TIME (see “What is this?” above).'
-                : 'Are you sure you want to stop the upsample process? This will take a few minutes to stop.'
+                running ?
+                  'Are you sure you want to stop the upsample process? It will take a few minutes to stop.'
+                : 'Are you sure you want to start the upsample process? THIS WILL TAKE A LONG TIME (see “What is this?” above).'
               if ( !confirm(confirmText) ) {
-                throw new Error(`${inProgress ? 'Stopping' : 'Starting'} upsample process canceled by user`)
+                throw new Error(`${running ? 'Stopping' : 'Starting'} upsample process canceled by user`)
               } else {
-                return args
+                return [ running ]
               }
             }
           """
         )
-        
-        UI.upsampling_status_markdown.render()
 
+        # During app load, set upsampling_running and upsampling_stopping according to Upsampling.running
+        app.load(
+          inputs = None,
+          outputs = [ UI.upsampling_running, UI.upsampling_stopping ],
+          fn = lambda: [ Upsampling.running, Upsampling.stopping ],
+        )
+        
+        UI.upsampling_toggled_during_this_session.render()
+        UI.upsampling_stopping.render()
+
+        # When upsampling_running changes in this session, i.e. via the button, run the upsampling process
         UI.upsampling_running.render().change(
           inputs = [
-            UI.upsampling_running, UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
+            UI.upsampling_toggled_during_this_session, UI.upsampling_running, 
+            UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
             UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
           ],
           outputs = None,
-          fn = toggle_upsampling,
+          fn = lambda toggled_during_this_session, *args: toggle_upsampling( *args ) if toggled_during_this_session else None,
           # fn = None,
           # # (Temporarily disabled to test the UI)
           api_name = 'toggle-upsampling',
+          # Also go to the "Workspace" tab (because that's where we'll display the upsampling status) via the Ju.clickTabWithText helper method in js
+          _js = """
+            async ( ...args ) => {
+              console.log( 'Upsampling toggled, args:', args )
+              if ( args[0] ) {
+                Ju.clickTabWithText( 'Workspace' )
+                return args
+              } else {
+                throw new Error('Upsampling not toggled during this session')
+              }
+            }
+          """
         )
 
-        # Also start the refresher when upsampling is toggled on (i.e. just change the refresher value)
+        # When it changes regardless of the session, e.g. also at page refresh, update the various relevant UI elements, start the refresher, etc.
         UI.upsampling_running.change(
           inputs = [ UI.upsampling_running, UI.upsampling_refresher ],
-          outputs = UI.upsampling_refresher,
-          fn = lambda toggled_on, refresher: refresher + 1 if toggled_on else refresher,
+          outputs = [ UI.upsampling_status_markdown, UI.upsample_button, UI.upsampling_refresher ],
+          fn = lambda turned_on, refresher: {
+            UI.upsampling_status_markdown: 'Starting upsampling...' if turned_on else 'Stopping upsampling...',
+            UI.upsample_button: gr.update(
+              value = 'Stop upsampling' if turned_on else 'Start upsampling',
+              variant = 'secondary' if turned_on else 'primary',
+            ),
+            UI.upsampling_refresher: refresher + 1 if turned_on else refresher,
+          }
         )
 
       with gr.Tab('Panic'):
@@ -2438,6 +2452,17 @@ with gr.Blocks(
 
         parentObserver.observe(parentElement, { childList: true, subtree: true })
 
+        window.Ju = {}
+
+        Ju.clickTabWithText = function (buttonText) {
+          for ( let button of document.querySelector('gradio-app').shadowRoot.querySelectorAll('div.tabs > div > button') ) {
+            if ( button.innerText == buttonText ) {
+              button.click()
+              break
+            }
+          }
+        }
+
         // href, query_string, error_message
         return [ window.location.href, window.location.search.slice(1), null ]
 
@@ -2451,5 +2476,21 @@ with gr.Blocks(
       }
     }"""
   )
+
+  # Also load browser's time zone offset on app load
+  def set_browser_timezone(offset):
+    global browser_timezone
+
+    print('Browser time zone offset:', offset)
+    browser_timezone = timezone(timedelta(minutes = -offset))
+    print('Browser time zone:', browser_timezone)
+
+  app.load(
+    inputs = gr.Number( visible = False ),
+    outputs = None,
+    _js = '() => [ new Date().getTimezoneOffset() ]',
+    fn = set_browser_timezone
+  )
+
 
   app.launch( share = share_gradio, debug = debug_gradio )
