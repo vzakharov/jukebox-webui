@@ -2221,13 +2221,9 @@ with gr.Blocks(
           },
           _js = """
             async ( ...args ) => {
-              if ( args[0] || args[2] ) {
-                await new Promise( resolve => setTimeout( resolve, 10000 ) )
-                console.log( 'Checking upsampling status...' )
-                return args
-              } else {
-                throw new Error('Upsampling neither running nor stopping; turning off the status checker')
-              }
+              await new Promise( resolve => setTimeout( resolve, 10000 ) )
+              console.log( 'Checking upsampling status...' )
+              return args
             }
           """
         )
