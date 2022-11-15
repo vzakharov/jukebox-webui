@@ -115,7 +115,7 @@ except:
 
 class Upsampling:
 
-  started = False
+  running = False
   stopping = False
   zs = None
   project = None
@@ -201,7 +201,7 @@ print('load_audio monkey patched.')
 
 def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
 
-  if not Upsampling.started:
+  if not Upsampling.running:
     # We stopped upsampling in the UI, so now we need to reload the top prior (as we deleted it before upsampling) and exit
     stop_upsampling()
     return zs
@@ -236,7 +236,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
     for start in Upsampling.windows:
 
       # If we stopped upsampling in the UI, stop here
-      if not Upsampling.started:
+      if not Upsampling.running:
         stop_upsampling()
         return zs
 
@@ -311,7 +311,7 @@ def load_top_prior():
   top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
 
 
-if Upsampling.started:
+if Upsampling.running:
   print('''
     !!! APP SET FOR UPSAMPLING !!!
 
@@ -574,16 +574,14 @@ class UI:
 
   upsampling_refresher = gr.Number( value = 0, visible = False )
 
-  upsampling_started = gr.Number(
+  upsampling_running = gr.Number(
     value = lambda: [
-      print(f"Upsampling { 'not ' if not Upsampling.started else '' }started"),
-      Upsampling.started
+      print(f"Upsampling { 'not ' if not Upsampling.running else '' }running"),
+      Upsampling.running
     ][-1],
     visible = False 
   )
   # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
-
-  upsampling_toggled = gr.Number( 0, visible = False )
 
   project_settings = [ 
     *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec,
@@ -1022,7 +1020,7 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
 
 # def get_audio_being_upsampled():
 
-#   if not Upsampling.started:
+#   if not Upsampling.running:
 #     return None
 
 #   zs = Upsampling.zs
@@ -1518,18 +1516,18 @@ def stop_upsampling():
   load_top_prior()
   Upsampling.status_markdown = 'Upsampling stopped. You can continue upsampling by going to the **Upsample** tab again.'
 
-def toggle_upsampling(upsampling_started, project_name, sample_id, artist, lyrics, *genres):
+def toggle_upsampling(toggled_on, project_name, sample_id, artist, lyrics, *genres):
 
   global hps, top_prior, priors
 
-  print(f'Toggling upsampling for {sample_id} to {upsampling_started}')
+  print(f'Toggling upsampling for {sample_id} to {toggled_on}')
 
   Upsampling.project = project_name
   Upsampling.sample_id = sample_id
 
-  if upsampling_started:
+  if not toggled_on:
 
-    Upsampling.started = False
+    Upsampling.running = False
     if Upsampling.window_start_time:
       Upsampling.status_markdown = f'Upsampling stopping. Please wait for ~{ Upsampling.time_per_window - ( datetime.now() - Upsampling.window_start_time ).seconds // 30 / 2 } minutes for the current window to finish.'
     else:
@@ -1539,7 +1537,7 @@ def toggle_upsampling(upsampling_started, project_name, sample_id, artist, lyric
     Upsampling.stopping = True
     return
 
-  Upsampling.started = True
+  Upsampling.running = True
   Upsampling.status_markdown = "Upsampling started. Loading the upsampling models..."
 
   print(f'Upsampling {sample_id} with genres {genres}')
@@ -2131,11 +2129,17 @@ with gr.Blocks(
           gr.Markdown('''
             Upsampling is a process that creates higher-quality audio from your composition. It is done in two steps:
 
-            - “Midsampling,” which drastically improves the quality of the audio, takes around 2.5 minutes per second of audio.
+            - “Midsampling,” which considerably improves the quality of the audio, takes around 2 minutes per one second of audio.
 
-            - “Upsampling,” which improves the quality some more, goes after midsampling and takes around 7.5 minutes per second of audio.
+            - “Upsampling,” which improves the quality some more, goes after midsampling and takes around 8 minutes per one second of audio.
+
+            Thus, say, for a one-minute song, you will need to wait around 2 hours to have the midsampled version, and around 8 hours _more_ to have the upsampled version.
 
             As the process is time- and resource-intensive, you will not be able to upsample and compose at the same time. You can, however, stop the process at any time and resume it later. Note that both stopping and starting the process will take a few minutes because the app will need to switch the models between the two processes.
+
+            You will also be able to listen to the audio as it is being generated: Each “window” of upsampling takes ~6 minutes and will give you respectively ~2.7 and ~0.7 additional seconds of mid- or upsampled audio to listen to.
+
+            The updated audio will be available in the “Compose” tab for the sample you are upsampling.
           ''')
 
         UI.sample_to_upsample.render()
@@ -2165,16 +2169,14 @@ with gr.Blocks(
 
               input.render()
         
-        # If upsampling is started, turn on the upsampling_refresher -- a "virtual" input that, when changed, will update the upsampling_status_markdown
+        # If upsampling is running, turn on the upsampling_refresher -- a "virtual" input that, when changed, will update the upsampling_status_markdown
         # It will do so after waiting for 10 seconds (using js). After finishing, it will update itself again, causing the process to repeat.
-        UI.upsampling_started.render()
-
         UI.upsampling_refresher.render().change(
-          inputs = [ UI.upsampling_started, UI.upsampling_refresher ],
+          inputs = [ UI.upsampling_running, UI.upsampling_refresher ],
           outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown ],
-          fn = lambda started, refresher: {
+          fn = lambda running, refresher: {
             UI.upsampling_status_markdown: Upsampling.status_markdown,
-            UI.upsampling_refresher: refresher + 1 if started else refresher,
+            UI.upsampling_refresher: refresher + 1 if running else refresher,
           },
           _js = """
             async ( ...args ) => {
@@ -2183,17 +2185,17 @@ with gr.Blocks(
                 console.log( 'Checking upsampling status...' )
                 return args
               } else {
-                throw new Error('Upsampling not started')
+                throw new Error('Upsampling not running; stopping status checker')
               }
             }
           """
         )
         
         UI.upsample_button.render().click(
-          inputs = UI.upsampling_started,
-          outputs = [ UI.upsampling_toggled, UI.upsampling_status_markdown, UI.upsample_button ],
+          inputs = UI.upsampling_running,
+          outputs = [ UI.upsampling_running, UI.upsampling_status_markdown, UI.upsample_button ],
           fn = lambda is_running: {
-            UI.upsampling_toggled: 0 if is_running else 1,
+            UI.upsampling_running: 0 if is_running else 1,
             UI.upsampling_status_markdown: 'Stopping upsampling...' if is_running else 'Starting upsampling...',
             UI.upsample_button: gr.update(
               value = 'Upsample' if is_running else 'Stop upsampling',
@@ -2207,8 +2209,8 @@ with gr.Blocks(
               console.log('Upsample button clicked with args: ', args)
               confirmText = 
                 !inProgress ?
-                  'Are you sure you want to start the upsample process? THIS WILL TAKE A LONG TIME (see ⚠️ WARNING ⚠️ above).'
-                : 'Are you sure you want to stop the upsample process? You will stil need to wait for the current run to finish, and then some more to reload the composing model.'
+                  'Are you sure you want to start the upsample process? THIS WILL TAKE A LONG TIME (see “What is this?” above).'
+                : 'Are you sure you want to stop the upsample process? This will take a few minutes to stop.'
               if ( !confirm(confirmText) ) {
                 throw new Error(`${inProgress ? 'Stopping' : 'Starting'} upsample process canceled by user`)
               } else {
@@ -2218,21 +2220,11 @@ with gr.Blocks(
           """
         )
         
-        # # Make the above simpler to test because it throws an uninspectable browser error when the user clicks the button
-        # UI.upsample_button.render().click(
-        #   inputs = UI.upsampling_started,
-        #   outputs = [ UI.upsampling_started, UI.upsampling_status_markdown ],
-        #   fn = lambda is_running: {
-        #     UI.upsampling_started: 0 if is_running else 1,
-        #     UI.upsampling_status_markdown: 'Stopping upsampling...' if is_running else 'Starting upsampling...',
-        #   }
-        # )
-
         UI.upsampling_status_markdown.render()
 
-        UI.upsampling_toggled.render().change(
+        UI.upsampling_running.render().change(
           inputs = [
-            UI.upsampling_started, UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
+            UI.upsampling_running, UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
             UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
           ],
           outputs = None,
@@ -2243,16 +2235,11 @@ with gr.Blocks(
         )
 
         # Also start the refresher when upsampling is toggled on (i.e. just change the refresher value)
-        UI.upsampling_toggled.change(
-          inputs = [ UI.upsampling_toggled, UI.upsampling_refresher ],
+        UI.upsampling_running.change(
+          inputs = [ UI.upsampling_running, UI.upsampling_refresher ],
           outputs = UI.upsampling_refresher,
           fn = lambda toggled_on, refresher: refresher + 1 if toggled_on else refresher,
         )
-
-        # upsampled_audio = gr.Audio(
-        #   label = 'Upsampled sample (updated every few minutes)',
-        #   visible = False,
-        # )
 
       with gr.Tab('Panic'):
 
