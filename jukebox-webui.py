@@ -930,15 +930,15 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
         # Fade in the left overlap and add it to the existing wav if it's not empty (i.e. if this is not the first chunk)
         left_overlap = fade(left_overlap, 'in')
         print(f'Faded in left overlap')
-        # # Show as plot
-        # plt.plot(left_overlap[0, :, 0])
-        # plt.show()
+        # Show as plot
+        plt.plot(left_overlap[0, :, 0])
+        plt.show()
 
         wav[ :, -left_overlap.shape[1]: ] += left_overlap
         print(f'Added left overlap to existing wav:')
-        # # Plot the resulting (faded-in + previous fade-out) overlap
-        # plt.plot(wav[0, -left_overlap.shape[1]:, 0])
-        # plt.show()
+        # Plot the resulting (faded-in + previous fade-out) overlap
+        plt.plot(wav[0, -left_overlap.shape[1]:, 0])
+        plt.show()
 
         print(f'Added left overlap to wav, overall shape now: {wav.shape}')
 
@@ -2060,8 +2060,6 @@ with gr.Blocks(
                 api_name = 'delete-sample'
               )
 
-              UI.generation_progress.render()
-
             with gr.Accordion( 'Advanced', open = False ):
 
               with gr.Tab('Manipulate audio'):
@@ -2099,6 +2097,8 @@ with gr.Blocks(
                   fn = rename_sample,
                   api_name = 'rename-sample'
                 )
+        UI.generation_progress.render()
+
 
       with gr.Tab('Prime'):
 
@@ -2122,9 +2122,9 @@ with gr.Blocks(
 
         def trim_primed_audio(audio, sec):
           print(f'Trimming {audio} to {sec} seconds')
-          # # Plot the audio to console for debugging
-          # plt.plot(audio)
-          # plt.show()              
+          # Plot the audio to console for debugging
+          plt.plot(audio)
+          plt.show()              
           # Audio is of the form (sr, audio)
           trimmed_audio = audio[1][:int(sec * audio[0])]
           print(f'Trimmed audio shape is {trimmed_audio.shape}')
@@ -2176,11 +2176,9 @@ with gr.Blocks(
 
             Thus, say, for a one-minute song, you will need to wait around 2 hours to have the midsampled version, and around 8 hours _more_ to have the upsampled version.
 
-            As the process is time- and resource-intensive, you will not be able to upsample and compose at the same time. You can, however, stop the process at any time and resume it later. Note that both stopping and starting the process will take a few minutes because the app will need to switch the models between the two processes.
+            You will be able to listen to the audio as it is being generated: Each “window” of upsampling takes ~6 minutes and will give you respectively ~2.7 and ~0.7 additional seconds of mid- or upsampled audio to listen to.
 
-            You will also be able to listen to the audio as it is being generated: Each “window” of upsampling takes ~6 minutes and will give you respectively ~2.7 and ~0.7 additional seconds of mid- or upsampled audio to listen to.
-
-            The updated audio will be available in the “Compose” tab for the sample you are upsampling.
+            ⚠️ WARNING: As the upsampling process uses a different model, which cannot be loaded together with the composition model due to memory constraints, **you will not be able to upsample and compose at the same time**. To go back to composing you will have to restart the Colab runtime or start a second Colab runtime and use them in parallel.
           ''')
 
         UI.sample_to_upsample.render()
