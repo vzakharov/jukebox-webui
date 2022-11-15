@@ -500,11 +500,11 @@ class UI:
     value = 'Pseudo-stereo with delay',
   )
 
-  generated_audio = gr.Audio(
-    label = 'Generated audio',
-    elem_id = 'generated-audio',
-    visible = False
-  )
+  # generated_audio = gr.Audio(
+  #   label = 'Generated audio',
+  #   elem_id = 'generated-audio',
+  #   visible = False
+  # )
 
   mp3_file = gr.File(
     label = 'MP3',
@@ -1381,10 +1381,10 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
     print(f'Loaded {filename}.wav of shape {wav.shape} ({total_audio_length} sec)')
 
   return {
-    UI.generated_audio: gr.update(
-      value = ( hps.sr, wav ),
-      label = f'{sample_id} (lossless)',
-    ),
+    # UI.generated_audio: gr.update(
+    #   value = ( hps.sr, wav ),
+    #   label = f'{sample_id} (lossless)',
+    # ),
     UI.mp3_file: f'{filename}.mp3',
     UI.total_audio_length: total_audio_length,
     UI.go_to_children_button: gr.update(
@@ -1827,7 +1827,7 @@ with gr.Blocks(
               UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec, UI.upsampling_level, UI.upsample_rendering
             ],
             outputs = [ 
-              UI.sample_box, UI.generated_audio, UI.mp3_file,
+              UI.sample_box, UI.mp3_file, #UI.generated_audio,
               UI.total_audio_length, UI.go_to_children_button, UI.go_to_parent_button,
             ],
             fn = get_sample,
@@ -1921,7 +1921,7 @@ with gr.Blocks(
                 fn = show_or_hide_continue_upsampling,
               )
 
-            UI.generated_audio.render()
+            # UI.generated_audio.render()
 
             UI.mp3_file.render()
 
