@@ -24,9 +24,9 @@ base_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
 models_path = '/content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
 #@markdown This is where your models will be stored. This app is capable of loading the model from an arbitrary path, so storing it on Google Drive will save you the hassle (and time) of having to download or copy it every time you start the instance. The models will be downloaded automatically if they don’t exist, so you don’t need to download them manually.
 
-#@markdown ### *Optimized Jukebox*
-use_optimized_jukebox = True #@param{type:'boolean'}
-#@markdown The optimized version by craftmine1000 uses less memory and can run on the free Colab tier. It also has a few other improvements too. It’s not as well-tested as the original one, though, so if you run into any issues, try unchecking this box and restarting the instance.
+#@markdown ### *Optimized Jukebox* (experimental)
+use_optimized_jukebox = False #@param{type:'boolean'}
+#@markdown The optimized version by craftmine1000 uses less memory and can run on the free Colab tier. It also has a few other improvements too. It’s not as well-tested as the original one, though, so only set it if you have a good reason to.
 
 share_gradio = True #param{type:'boolean'}
 # ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
@@ -65,7 +65,7 @@ except:
     drive.mount('/content/drive')
 
   if use_optimized_jukebox:
-    !pip install git+https://github.com/craftmine1000/jukebox-opt.git
+    !pip install git+https://github.com/craftmine1000/jukebox-saveopt.git
   else:
     !pip install git+https://github.com/openai/jukebox.git
     
@@ -249,7 +249,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
       Upsampling.eta = datetime.now() + Upsampling.time_remaining
       
-      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{UI.UPSAMPLING_LEVEL_NAMES[level]}** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
+      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{ UI.UPSAMPLING_LEVEL_NAMES[level] }** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
 
       # # If this is level 1, add that level 0 will take ~4x longer
       # if level == 1:
@@ -774,9 +774,9 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
 
     # zs is a list of 3 tensors, each of shape (n_samples, n_tokens)
     # To write the z for a single sample, we need to take a subarray of each tensor
-    zs = [ z[i:i+1] for z in zs ]
+    this_sample_zs = [ z[i:i+1] for z in zs ]
 
-    t.save(zs, f'{filename}.z')
+    t.save(this_sample_zs, f'{filename}.z')
     print(f'Wrote {filename}.z')
 
   return {
@@ -1291,7 +1291,9 @@ def get_project(project_name, routed_sample_id):
 
     print(f'Loading settings for {project_name}...')
 
-    settings_path = f'{base_path}/{project_name}/{project_name}.yaml'
+    project_path = f'{base_path}/{project_name}'
+    hps.name = project_path
+    settings_path = f'{project_path}/{project_name}.yaml'
     if os.path.isfile(settings_path):
       with open(settings_path, 'r') as f:
         loaded_settings = yaml.load(f, Loader=yaml.FullLoader)
