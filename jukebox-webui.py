@@ -38,8 +38,8 @@ import subprocess
 
 def print_gpu_and_memory():
   # Print only gpu and memory info from print_gpu_and_memory()
-  print("💻 GPU, total memory, free memory:")
-  !nvidia-smi --query-gpu=gpu_name,memory.total,memory.used --format=csv,noheader,nounits
+  print("💻 GPU, total memory, memory used:")
+  !nvidia-smi --query-gpu=gpu_name,memory.total,memory.used --format=csv,noheader
 
 
 # If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
@@ -142,6 +142,7 @@ class Upsampling:
   eta = None
 
   status_markdown = None
+  should_refresh_audio = False
 
 print('Monkey patching Jukebox methods...')
 
@@ -240,7 +241,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
       Upsampling.eta = datetime.now() + Upsampling.time_remaining
       
-      Upsampling.status_markdown = f'Upsampling window { Upsampling.window_index+1 } of { len(Upsampling.windows) } at level { level }, estimated to complete at { as_local_hh_mm(Upsampling.eta) } your time'
+      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** at **level { level }**\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
 
       # # If this is level 1, add that level 0 will take ~4x longer
       # if level == 1:
@@ -264,6 +265,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       print(f'Saving upsampled z to {path}')
       t.save(Upsampling.zs, path)
       print('Done.')
+      Upsampling.should_refresh_audio = True
       Upsampling.window_index += 1
 
   return Upsampling.zs
@@ -546,10 +548,12 @@ class UI:
 
   upsampling_status_markdown = gr.Markdown('Upsampling progress will be shown here')
 
+  upsampling_audio_refresher = gr.Number( value = 0, visible = False )
+  # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
+
   upsampling_refresher = gr.Number( value = 0, visible = False )
 
   upsampling_running = gr.Number( visible = False )
-  # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
 
   upsampling_triggered_by_button = gr.Checkbox( visible = False, value = False )
 
@@ -762,9 +766,9 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
 
     # zs is a list of 3 tensors, each of shape (n_samples, n_tokens)
     # To write the z for a single sample, we need to take a subarray of each tensor
-    z = [ z[i:i+1] for z in zs ]
+    zs = [ z[i:i+1] for z in zs ]
 
-    t.save(z, f'{filename}.z')
+    t.save(zs, f'{filename}.z')
     print(f'Wrote {filename}.z')
 
   return {
@@ -776,20 +780,16 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   }
 
 
-def get_z(project_name, sample_id):
+def get_zs(project_name, sample_id):
   global base_path
 
   return t.load(f'{base_path}/{project_name}/{sample_id}.z')
 
-def get_levels(project_name, sample_id):
+def get_levels(zs):
 
-  z = get_z(project_name, sample_id)
-  
-  # z is a list of 3 tensors, each of shape (n_samples, n_tokens). We need to return the levels that have at least one token
-  # return [ i for i in range(3) if z[i].shape[1] > 0 ]
   levels = []
   for i in range(3):
-    if z[i].shape[1] == 0:
+    if zs[i].shape[1] == 0:
       # print(f'Level {i} is empty, skipping')
       pass
     else:
@@ -797,14 +797,31 @@ def get_levels(project_name, sample_id):
       # Otherwise it's a primed sample, not the one we created during upsampling
       # I agree this is a bit hacky; in the future we need to make sure that the primed samples are not saved for levels other than 2
       # But for backwards compatibility, we need to keep this check
-      if i != 2 and z[i].shape[0] != 3:
+      if i != 2 and zs[i].shape[0] != 3:
         # print(f"Level {i}'s tensor has {z[i].shape[0]} samples, not 3, skipping")
         pass
       else:
         levels.append(i)
 
-  return levels, z
+  return levels
 
+def is_upsampled(zs):
+  # Yes if there are at least 2 levels
+  return len(get_levels(zs)) >= 2
+
+def get_first_upsampled_ancestor_zs(project_name, sample_id):
+  zs = get_zs(project_name, sample_id)
+  print(f'Looing for the first upsampled ancestor of {sample_id}')
+  if is_upsampled(zs):
+    print(f'Found upsampled ancestor: {sample_id}')
+    return zs
+  else:
+    parent = get_parent(project_name, sample_id)
+    if parent:
+      return get_first_upsampled_ancestor_zs(project_name, parent)
+    else:
+      print(f'No upsampled ancestor found for {sample_id}')
+      return None
 
 def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level=2, upsample_rendering=3):
 
@@ -823,8 +840,8 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
   filename = f'{base_path}/{project_name}/{sample_id}'
 
   print(f'Loading {filename}.z')
-  z = t.load(f'{filename}.z')
-  z = z[level]
+  zs = t.load(f'{filename}.z')
+  z = zs[level]
   # z is of shape torch.Size([1, n_tokens])
   # print(f'Loaded {filename}.z at level {level}, shape: {z.shape}')
 
@@ -1025,7 +1042,7 @@ def get_children(project_name, parent_sample_id, include_custom=True):
   prefix = get_prefix(project_name, parent_sample_id)
   child_ids = []
   for filename in os.listdir(f'{base_path}/{project_name}'):
-    match = re.match(f'{prefix}(\d+)\\.zs?', filename)
+    match = re.match(f'{prefix}(\d+)\\.zs?$', filename)
     if match:
       child_ids += [ filename.split('.')[0] ]
     
@@ -1503,20 +1520,23 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   filename = f'{base_path}/{project_name}/{sample_id}.z'
 
   Upsampling.zs = t.load(filename)
-  # zs is a list of 3 tensors, one per level, each of shape (n_samples, n_tokens).
-  # For level 2, we need to repeat the first sample to make it 3.
-  # For other levels, we need to check if the number of samples is 3, and if not, replace them with an empty tensor.
-  # This is needed to avoid upsampling on top of a previously primed sample (see comments in get_levels for more info).
-  # Previous code to be rewritten where everything was repeated: Upsampling.zs = [ z[0].repeat(3, 1) if z.shape[0] != 3 else z for z in Upsampling.zs ]
-  print(f'Original zs shapes: {[z.shape for z in Upsampling.zs]}')
+
+  # Get the level 0/1 zs of the first upsampled ancestor (so we can continue upsampling from where we left off)
+  first_upsampled_ancestor = get_first_upsampled_ancestor_zs(project_name, sample_id)
   for i in range( len(Upsampling.zs) ):
     if i == 2:
       Upsampling.zs[i] = Upsampling.zs[i][0].repeat(3, 1)
     elif Upsampling.zs[i].shape[0] != 3:
-      print(f'Level {i} has {Upsampling.zs[i].shape[0]} samples, replacing with an empty tensor')
-      Upsampling.zs[i] = t.empty( (3, 0), dtype=t.int64 ).cuda()
+      # If there are no upsampled ancestors, replace with an empty tensor
+      first_upsampled_ancestor = get_first_upsampled_ancestor_zs(project_name, sample_id)
+      if not first_upsampled_ancestor:
+        print(f'No upsampled ancestors found for {sample_id}, using empty tensors')
+        Upsampling.zs[i] = t.empty( (3, 0), dtype=t.int64 ).cuda()
+      else:
+        print(f'Using first upsampled ancestor zs for {sample_id}')
+        Upsampling.zs[i] = first_upsampled_ancestor[i]
     
-  print(f'Final zs shapes: {[ z.shape for z in Upsampling.zs ]}')
+  print(f'Final z shapes: {[ z.shape for z in Upsampling.zs ]}')
 
   # We also need to create new labels from the metas with the genres replaced accordingly
   Upsampling.metas = [ dict(
@@ -1586,15 +1606,10 @@ def tokens_to_seconds(tokens, level = 2):
 def trim(project_name, sample_id, n_sec):
 
   filename = f'{base_path}/{project_name}/{sample_id}.z'
-  print(f'Loading {filename}...')
-  z = t.load(filename)
-  print(f'Loaded z, z[2] shape is {z[2].shape}')
+  zs = t.load(filename)
   n_tokens = seconds_to_tokens(n_sec)
-  print(f'Trimming to {n_tokens} tokens')
-  z[2] = z[2][:, :n_tokens]
-  print(f'z[2].shape = {z[2].shape}')
-  t.save(z, filename)
-  print(f'Saved z to {filename}')
+  zs[2] = zs[2][:, :n_tokens]
+  t.save(zs, filename)
   return 0
 
 SHOW = gr.update( visible = True )
@@ -1823,7 +1838,7 @@ with gr.Blocks(
                   # Only show the upsampling elements if there are upsampled versions of the picked sample
                   def show_or_hide_upsampling_elements(project_name, sample_id, upsampling_running):
 
-                    levels, _ = get_levels(project_name, sample_id)
+                    levels = get_levels(get_zs(project_name, sample_id))
                     # print(f'Levels: {levels}')
 
                     available_level_names = UI.UPSAMPLING_LEVEL_NAMES[:len(levels)]
@@ -1853,12 +1868,11 @@ with gr.Blocks(
 
                   # Show the column only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
                   UI.upsampling_level.change(
-                    inputs = UI.upsampling_level,
-                    outputs = [ upsampling_manipulation_column, UI.compose_row, UI.upsampling_accordion ],
-                    fn = lambda upsampling_level: [
+                    inputs = [ UI.upsampling_level, UI.upsampling_running ],
+                    outputs = [ upsampling_manipulation_column, UI.compose_row ],
+                    fn = lambda upsampling_level, upsampling_running: [
                       gr.update( visible = upsampling_level != 'Raw' ),
-                      gr.update( visible = upsampling_level == 'Raw' ),
-                      f'{upsampling_level} version',
+                      gr.update( visible = upsampling_level == 'Raw' and not upsampling_running ),
                     ]
                   )
 
@@ -1873,10 +1887,11 @@ with gr.Blocks(
               def show_or_hide_continue_upsampling(project_name, sample_id, total_audio_length, upsampling_running):
 
                 if not upsampling_running:
-                  levels, z = get_levels(project_name, sample_id)
-                  print(f'Levels: {levels}, z: {z}')
+                  zs = get_zs(project_name, sample_id)
+                  levels = get_levels(zs)
+                  print(f'Levels: {levels}, z: {zs}')
                   # We'll show if there's no level 0 in levels or if the length of level 0 (in seconds) is less than the length of level 2 (in seconds)
-                  must_show = 0 not in levels or tokens_to_seconds(len(z[0]), 0) < tokens_to_seconds(len(z[2]), 2)
+                  must_show = 0 not in levels or tokens_to_seconds(len(zs[0]), 0) < tokens_to_seconds(len(zs[2]), 2)
                   print(f'Must show: {must_show}')
                   
                 else:
@@ -1894,7 +1909,7 @@ with gr.Blocks(
                 inputs = UI.upsampling_running,
                 outputs = [ UI.upsampling_running, UI.upsampling_triggered_by_button ],
                 fn = lambda was_running: 
-                # If was running (i.e. we're stopping), kill the runtime (after a warning) and replace document body with a message saying to restart the runtime in Colab
+                # If was running (i.e. we're stopping), kill the runtime (after a warning) and show an alert saying to restart the runtime in Colab
                   [
                     print('Killing runtime...'),
                     subprocess.run(['kill', '-9', str(os.getpid())]),
@@ -1912,10 +1927,9 @@ with gr.Blocks(
                     if ( !confirm(confirmText) ) {
                       throw new Error(`${running ? 'Stopping' : 'Starting'} upsample process canceled by user`)
                     } else {
-                      // If running, replace document body with a message saying to restart the runtime in Colab
-                      // Put it in the center of the screen in big white text
+                      // If running, show a message saying to restart the runtime in Colab
                       if ( running ) {
-                        document.body.innerHTML = '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white;"><p style="font-size: 24px;">Upsampling stopped. Please restart the runtime in Colab.</p><p>(Don’t worry, your current upsampling progress is saved)</p></div>'
+                        alert('Upsample process stopped. Please re-run the cell in Colab to restart the UI')
                       }
                       return [ running ]
                     }
@@ -1925,13 +1939,37 @@ with gr.Blocks(
 
               UI.continue_upsampling_button.render().click( **upsample_button_click_args )
 
+              UI.upsampling_audio_refresher.render()
+
+              def reset_audio_refresher():
+                Upsampling.should_refresh_audio = False
+
+              [ 
+                UI.upsampling_audio_refresher.change( **action ) for action in [ 
+                  preview_args, 
+                  show_or_hide_upsampling_elements_args,
+                  dict(
+                    inputs = None,
+                    outputs = None,
+                    # Reset Upsampling.should_refresh_audio to False
+                    fn = reset_audio_refresher
+                  )
+                ] 
+              ]
+
             # UI.generated_audio.render()
 
             UI.mp3_file.render()
 
             # Refresh button
-            gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False).click(
+            internal_refresh_button = gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False)
+            
+            internal_refresh_button.click(
               **preview_args,
+            )
+
+            internal_refresh_button.click(
+              **show_or_hide_upsampling_elements_args,
             )
                 
             for element in [ 
@@ -2165,11 +2203,12 @@ with gr.Blocks(
         # If upsampling is running, enable the upsampling_refresher -- a "virtual" input that, when changed, will update the upsampling_status_markdown
         # It will do so after waiting for 10 seconds (using js). After finishing, it will update itself again, causing the process to repeat.
         UI.upsampling_refresher.render().change(
-          inputs = UI.upsampling_refresher,
-          outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown ],
-          fn = lambda refresher: {
+          inputs = [ UI.upsampling_refresher, UI.upsampling_audio_refresher ],
+          outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown, UI.upsampling_audio_refresher ],
+          fn = lambda refresher, audio_refresher: {
             UI.upsampling_status_markdown: Upsampling.status_markdown,
             UI.upsampling_refresher: refresher + 1,
+            UI.upsampling_audio_refresher: audio_refresher + 1 if Upsampling.should_refresh_audio else audio_refresher
           },
           _js = """
             async ( ...args ) => {
@@ -2218,7 +2257,7 @@ with gr.Blocks(
         # When it changes regardless of the session, e.g. also at page refresh, update the various relevant UI elements, start the refresher, etc.
         UI.upsampling_running.change(
           inputs = None,
-          outputs = [ UI.upsampling_status_markdown, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher ],
+          outputs = [ UI.upsampling_status_markdown, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher, UI.compose_row ],
           fn = lambda: {
             UI.upsampling_status_markdown: 'Upsampling in progress...',
             UI.upsample_button: gr.update(
@@ -2230,6 +2269,8 @@ with gr.Blocks(
             ),
             # Random refresher value (int) to trigger the refresher
             UI.upsampling_refresher: random.randint( 0, 1000000 ),
+            # Hide the compose row
+            UI.compose_row: HIDE,
           }
         )
 
