@@ -249,7 +249,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
       Upsampling.eta = datetime.now() + Upsampling.time_remaining
       
-      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** at **level { level }**\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
+      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{UI.UPSAMPLING_LEVEL_NAMES[level]}** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
 
       # # If this is level 1, add that level 0 will take ~4x longer
       # if level == 1:
