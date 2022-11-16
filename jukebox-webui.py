@@ -762,9 +762,9 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
 
     # zs is a list of 3 tensors, each of shape (n_samples, n_tokens)
     # To write the z for a single sample, we need to take a subarray of each tensor
-    z = [ z[i:i+1] for z in zs ]
+    zs = [ z[i:i+1] for z in zs ]
 
-    t.save(z, f'{filename}.z')
+    t.save(zs, f'{filename}.z')
     print(f'Wrote {filename}.z')
 
   return {
@@ -776,20 +776,16 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   }
 
 
-def get_z(project_name, sample_id):
+def get_zs(project_name, sample_id):
   global base_path
 
   return t.load(f'{base_path}/{project_name}/{sample_id}.z')
 
-def get_levels(project_name, sample_id):
+def get_levels(zs):
 
-  z = get_z(project_name, sample_id)
-  
-  # z is a list of 3 tensors, each of shape (n_samples, n_tokens). We need to return the levels that have at least one token
-  # return [ i for i in range(3) if z[i].shape[1] > 0 ]
   levels = []
   for i in range(3):
-    if z[i].shape[1] == 0:
+    if zs[i].shape[1] == 0:
       # print(f'Level {i} is empty, skipping')
       pass
     else:
@@ -797,14 +793,31 @@ def get_levels(project_name, sample_id):
       # Otherwise it's a primed sample, not the one we created during upsampling
       # I agree this is a bit hacky; in the future we need to make sure that the primed samples are not saved for levels other than 2
       # But for backwards compatibility, we need to keep this check
-      if i != 2 and z[i].shape[0] != 3:
+      if i != 2 and zs[i].shape[0] != 3:
         # print(f"Level {i}'s tensor has {z[i].shape[0]} samples, not 3, skipping")
         pass
       else:
         levels.append(i)
 
-  return levels, z
+  return levels
 
+def is_upsampled(zs):
+  # Yes if there are at least 2 levels
+  return len(get_levels(zs)) >= 2
+
+def get_first_upsampled_ancestor_zs(project_name, sample_id):
+  zs = get_zs(project_name, sample_id)
+  print(f'Looing for the first upsampled ancestor of {sample_id}')
+  if is_upsampled(zs):
+    print(f'Found upsampled ancestor: {sample_id}')
+    return zs
+  else:
+    parent = get_parent(project_name, sample_id)
+    if parent:
+      return get_first_upsampled_ancestor_zs(project_name, parent)
+    else:
+      print(f'No upsampled ancestor found for {sample_id}')
+      return None
 
 def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level=2, upsample_rendering=3):
 
@@ -823,8 +836,8 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
   filename = f'{base_path}/{project_name}/{sample_id}'
 
   print(f'Loading {filename}.z')
-  z = t.load(f'{filename}.z')
-  z = z[level]
+  zs = t.load(f'{filename}.z')
+  z = zs[level]
   # z is of shape torch.Size([1, n_tokens])
   # print(f'Loaded {filename}.z at level {level}, shape: {z.shape}')
 
@@ -1503,20 +1516,23 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   filename = f'{base_path}/{project_name}/{sample_id}.z'
 
   Upsampling.zs = t.load(filename)
-  # zs is a list of 3 tensors, one per level, each of shape (n_samples, n_tokens).
-  # For level 2, we need to repeat the first sample to make it 3.
-  # For other levels, we need to check if the number of samples is 3, and if not, replace them with an empty tensor.
-  # This is needed to avoid upsampling on top of a previously primed sample (see comments in get_levels for more info).
-  # Previous code to be rewritten where everything was repeated: Upsampling.zs = [ z[0].repeat(3, 1) if z.shape[0] != 3 else z for z in Upsampling.zs ]
-  print(f'Original zs shapes: {[z.shape for z in Upsampling.zs]}')
+
+  # Get the level 0/1 zs of the first upsampled ancestor (so we can continue upsampling from where we left off)
+  first_upsampled_ancestor = get_first_upsampled_ancestor_zs(project_name, sample_id)
   for i in range( len(Upsampling.zs) ):
     if i == 2:
       Upsampling.zs[i] = Upsampling.zs[i][0].repeat(3, 1)
     elif Upsampling.zs[i].shape[0] != 3:
-      print(f'Level {i} has {Upsampling.zs[i].shape[0]} samples, replacing with an empty tensor')
-      Upsampling.zs[i] = t.empty( (3, 0), dtype=t.int64 ).cuda()
+      # If there are no upsampled ancestors, replace with an empty tensor
+      first_upsampled_ancestor = get_first_upsampled_ancestor_zs(project_name, sample_id)
+      if not first_upsampled_ancestor:
+        print(f'No upsampled ancestors found for {sample_id}, using empty tensors')
+        Upsampling.zs[i] = t.empty( (3, 0), dtype=t.int64 ).cuda()
+      else:
+        print(f'Using first upsampled ancestor zs for {sample_id}')
+        Upsampling.zs[i] = first_upsampled_ancestor[i]
     
-  print(f'Final zs shapes: {[ z.shape for z in Upsampling.zs ]}')
+  print(f'Final z shapes: {[ z.shape for z in Upsampling.zs ]}')
 
   # We also need to create new labels from the metas with the genres replaced accordingly
   Upsampling.metas = [ dict(
@@ -1586,15 +1602,10 @@ def tokens_to_seconds(tokens, level = 2):
 def trim(project_name, sample_id, n_sec):
 
   filename = f'{base_path}/{project_name}/{sample_id}.z'
-  print(f'Loading {filename}...')
-  z = t.load(filename)
-  print(f'Loaded z, z[2] shape is {z[2].shape}')
+  zs = t.load(filename)
   n_tokens = seconds_to_tokens(n_sec)
-  print(f'Trimming to {n_tokens} tokens')
-  z[2] = z[2][:, :n_tokens]
-  print(f'z[2].shape = {z[2].shape}')
-  t.save(z, filename)
-  print(f'Saved z to {filename}')
+  zs[2] = zs[2][:, :n_tokens]
+  t.save(zs, filename)
   return 0
 
 SHOW = gr.update( visible = True )
@@ -1823,7 +1834,7 @@ with gr.Blocks(
                   # Only show the upsampling elements if there are upsampled versions of the picked sample
                   def show_or_hide_upsampling_elements(project_name, sample_id, upsampling_running):
 
-                    levels, _ = get_levels(project_name, sample_id)
+                    levels = get_levels(get_zs(project_name, sample_id))
                     # print(f'Levels: {levels}')
 
                     available_level_names = UI.UPSAMPLING_LEVEL_NAMES[:len(levels)]
@@ -1873,10 +1884,11 @@ with gr.Blocks(
               def show_or_hide_continue_upsampling(project_name, sample_id, total_audio_length, upsampling_running):
 
                 if not upsampling_running:
-                  levels, z = get_levels(project_name, sample_id)
-                  print(f'Levels: {levels}, z: {z}')
+                  zs = get_zs(project_name, sample_id)
+                  levels = get_levels(zs)
+                  print(f'Levels: {levels}, z: {zs}')
                   # We'll show if there's no level 0 in levels or if the length of level 0 (in seconds) is less than the length of level 2 (in seconds)
-                  must_show = 0 not in levels or tokens_to_seconds(len(z[0]), 0) < tokens_to_seconds(len(z[2]), 2)
+                  must_show = 0 not in levels or tokens_to_seconds(len(zs[0]), 0) < tokens_to_seconds(len(zs[2]), 2)
                   print(f'Must show: {must_show}')
                   
                 else:
