@@ -1868,13 +1868,12 @@ with gr.Blocks(
 
                   # Show the column only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
                   UI.upsampling_level.change(
-                    inputs = UI.upsampling_level,
-                    outputs = [ upsampling_manipulation_column, UI.compose_row, UI.upsampling_accordion ],
-                    fn = lambda upsampling_level: [
+                    inputs = [ UI.upsampling_level, UI.upsampling_running ],
+                    outputs = [ upsampling_manipulation_column, UI.compose_row ],
+                    fn = lambda upsampling_level, upsampling_running: {
                       gr.update( visible = upsampling_level != 'Raw' ),
-                      gr.update( visible = upsampling_level == 'Raw' ),
-                      f'{upsampling_level} version',
-                    ]
+                      gr.update( visible = upsampling_level == 'Raw' and not upsampling_running ),
+                    }
                   )
 
                   UI.upsample_rendering.render().change(
@@ -1939,6 +1938,8 @@ with gr.Blocks(
               )
 
               UI.continue_upsampling_button.render().click( **upsample_button_click_args )
+
+              UI.upsampling_audio_refresher.render()
 
               def reset_audio_refresher():
                 Upsampling.should_refresh_audio = False
@@ -2256,7 +2257,7 @@ with gr.Blocks(
         # When it changes regardless of the session, e.g. also at page refresh, update the various relevant UI elements, start the refresher, etc.
         UI.upsampling_running.change(
           inputs = None,
-          outputs = [ UI.upsampling_status_markdown, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher ],
+          outputs = [ UI.upsampling_status_markdown, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher, UI.compose_row ],
           fn = lambda: {
             UI.upsampling_status_markdown: 'Upsampling in progress...',
             UI.upsample_button: gr.update(
@@ -2268,6 +2269,8 @@ with gr.Blocks(
             ),
             # Random refresher value (int) to trigger the refresher
             UI.upsampling_refresher: random.randint( 0, 1000000 ),
+            # Hide the compose row
+            UI.compose_row: HIDE,
           }
         )
 
