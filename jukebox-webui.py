@@ -1943,14 +1943,18 @@ with gr.Blocks(
               def reset_audio_refresher():
                 Upsampling.should_refresh_audio = False
 
-              UI.upsampling_audio_refresher.render().change(
-                inputs = UI.upsampling_audio_refresher,
-                outputs = None,
-                # Reset Upsampling.should_refresh_audio to False
-                fn = reset_audio_refresher
-              )
-
-              [ UI.upsampling_audio_refresher.change( **action ) for action in [ preview_args, show_or_hide_upsampling_elements_args ] ]
+              [ 
+                UI.upsampling_audio_refresher.change( **action ) for action in [ 
+                  preview_args, 
+                  show_or_hide_upsampling_elements_args,
+                  dict(
+                    inputs = None,
+                    outputs = None,
+                    # Reset Upsampling.should_refresh_audio to False
+                    fn = reset_audio_refresher
+                  )
+                ] 
+              ]
 
             # UI.generated_audio.render()
 
