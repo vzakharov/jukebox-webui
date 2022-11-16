@@ -142,6 +142,7 @@ class Upsampling:
   eta = None
 
   status_markdown = None
+  should_refresh_audio = False
 
 print('Monkey patching Jukebox methods...')
 
@@ -264,6 +265,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       print(f'Saving upsampled z to {path}')
       t.save(Upsampling.zs, path)
       print('Done.')
+      Upsampling.should_refresh_audio = True
       Upsampling.window_index += 1
 
   return Upsampling.zs
@@ -546,10 +548,12 @@ class UI:
 
   upsampling_status_markdown = gr.Markdown('Upsampling progress will be shown here')
 
+  upsampling_audio_refresher = gr.Number( value = 0, visible = False )
+  # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
+
   upsampling_refresher = gr.Number( value = 0, visible = False )
 
   upsampling_running = gr.Number( visible = False )
-  # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
 
   upsampling_triggered_by_button = gr.Checkbox( visible = False, value = False )
 
@@ -1879,6 +1883,14 @@ with gr.Blocks(
 
               UI.upsampling_status_markdown.render()
 
+              UI.upsampling_audio_refresher.render().change(
+                inputs = UI.upsampling_audio_refresher,
+                outputs = None,
+                fn = None,
+                # Click internal-refresh-button
+                _js = "window.shadowRoot.getElementById('internal-refresh-button').click()"
+              )
+
               # Show the continue upsampling markdown only if the current level's length in tokens is less than the total audio length
               # Also update the upsampling button to say "Continue upsampling" instead of "Upsample"
               def show_or_hide_continue_upsampling(project_name, sample_id, total_audio_length, upsampling_running):
@@ -1942,8 +1954,14 @@ with gr.Blocks(
             UI.mp3_file.render()
 
             # Refresh button
-            gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False).click(
+            internal_refresh_button = gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False)
+            
+            internal_refresh_button.click(
               **preview_args,
+            )
+
+            internal_refresh_button.click(
+              **show_or_hide_upsampling_elements_args,
             )
                 
             for element in [ 
@@ -2177,11 +2195,12 @@ with gr.Blocks(
         # If upsampling is running, enable the upsampling_refresher -- a "virtual" input that, when changed, will update the upsampling_status_markdown
         # It will do so after waiting for 10 seconds (using js). After finishing, it will update itself again, causing the process to repeat.
         UI.upsampling_refresher.render().change(
-          inputs = UI.upsampling_refresher,
-          outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown ],
-          fn = lambda refresher: {
-            UI.upsampling_status_markdown: Upsampling.status_markdown,
+          inputs = [ UI.upsampling_refresher, UI.upsampling_audio_refresher ],
+          outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown, UI.upsampling_audio_refresher ],
+          fn = lambda refresher, audio_refresher: {
+            UI.upsampling_status_markdown: Upsampling.status_markdown + '\n\nClick 🔃 to update the audio as it is being upsampled.',
             UI.upsampling_refresher: refresher + 1,
+            UI.upsampling_audio_refresher: audio_refresher + 1 if Upsampling.should_refresh_audio else audio_refresher
           },
           _js = """
             async ( ...args ) => {
