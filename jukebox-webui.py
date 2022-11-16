@@ -1870,10 +1870,10 @@ with gr.Blocks(
                   UI.upsampling_level.change(
                     inputs = [ UI.upsampling_level, UI.upsampling_running ],
                     outputs = [ upsampling_manipulation_column, UI.compose_row ],
-                    fn = lambda upsampling_level, upsampling_running: {
+                    fn = lambda upsampling_level, upsampling_running: [
                       gr.update( visible = upsampling_level != 'Raw' ),
                       gr.update( visible = upsampling_level == 'Raw' and not upsampling_running ),
-                    }
+                    ]
                   )
 
                   UI.upsample_rendering.render().change(
