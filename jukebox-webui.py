@@ -34,10 +34,21 @@ debug_gradio = True #param{type:'boolean'}
 
 reload_all = False #param{type:'boolean'}
 
-# If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
-try:
+import subprocess
 
-  !nvidia-smi
+def print_gpu_and_memory():
+  # Print only gpu and memory info from print_gpu_and_memory()
+  print("💻 GPU, total memory, free memory:")
+  !nvidia-smi --query-gpu=gpu_name,memory.total,memory.used --format=csv,noheader,nounits
+
+
+# If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
+
+try:
+  print_gpu_and_memory()
+  empty_cache()
+  print('Cache cleared.')
+  print_gpu_and_memory()
   assert not reload_all
   repeated_run
   # ^ If this doesn't give an error, it means we're in Colab and re-running the notebook (because repeated_run is defined in the first run)
@@ -49,7 +60,6 @@ except:
     from google.colab import drive
     drive.mount('/content/drive')
 
-  !nvidia-smi
   !pip install git+https://github.com/openai/jukebox.git
   !pip install gradio
 
@@ -57,13 +67,16 @@ except:
  
 
 # import glob
-from datetime import datetime
+import base64
+from datetime import datetime, timedelta, timezone
+import hashlib
 import random
+import shutil
 import gradio as gr
 import librosa
 import os
 import re
-# from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt
 import numpy as np
 import torch as t
 import urllib.request
@@ -77,8 +90,9 @@ from jukebox.make_models import make_vqvae, make_prior, MODELS
 from jukebox.hparams import Hyperparams, setup_hparams, REMOTE_PREFIX
 from jukebox.utils.dist_utils import setup_dist_from_mpi
 from jukebox.utils.remote_utils import download
+from jukebox.utils.sample_utils import get_starts
 from jukebox.utils.torch_utils import empty_cache
-from jukebox.sample import sample_partial_window, load_prompts
+from jukebox.sample import sample_partial_window, load_prompts, upsample, sample_single_window
 
 ### Model
 
@@ -103,99 +117,199 @@ except:
   rank, local_rank, device = setup_dist_from_mpi()
   print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
-# Monkey patch jukebox.make_models.load_checkpoint to load cached checkpoints from local_data_path instead of '~/.cache'
-reload_monkey_patch = False #param{type:'boolean'}
-try:
-  assert not reload_monkey_patch and not reload_all
-  monkey_patched_load_checkpoint, monkey_patched_load_audio
-  print('Jukebox methods already monkey patched.')
-except:
+browser_timezone = None
 
-  print('Monkey patching Jukebox methods...')
+class Upsampling:
 
-  try:
-    monkey_patched_load_checkpoint
-    print('load_checkpoint already monkey patched.')
-  except:
-    # Monkey patch load_checkpoint, allowing to load models from arbitrary paths
-    def download_to_cache(remote_path, local_path):
-      print(f'Caching {remote_path} to {local_path}')
-      if not os.path.exists(os.path.dirname(local_path)):
-        print(f'Creating directory {os.path.dirname(local_path)}')
-        os.makedirs(os.path.dirname(local_path))
-      if not os.path.exists(local_path):
-        print('Downloading...')
-        download(remote_path, local_path)
-        print('Done.')
-      else:
-        print('Already cached.')
+  running = False
+  zs = None
+  project = None
+  sample_id = None
+  level = None
+  metas = None
+  labels = None
+  priors = None
+  params = None
 
-    def monkey_patched_load_checkpoint(path):
-      global models_path
-      restore = path
-      if restore.startswith(REMOTE_PREFIX):
-          remote_path = restore
-          local_path = os.path.join(models_path, remote_path[len(REMOTE_PREFIX):])
-          if dist.get_rank() % 8 == 0:
-              download_to_cache(remote_path, local_path)
-          restore = local_path
-      dist.barrier()
-      checkpoint = t.load(restore, map_location=t.device('cpu'))
-      print("Restored from {}".format(restore))
-      return checkpoint
+  windows = []
+  window_index = 0
+  window_start_time = None
+  elapsed_time = None
+  # Set time per window by default to 6 minutes (will be updated later) in timedelta format
+  time_per_window = timedelta(minutes=6)
+  windows_remaining = None
+  time_remaining = None
+  eta = None
 
-    jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
-    print('load_checkpoint monkey patched.')
+  status_markdown = None
 
-    # # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
-    # for model_path in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
-    #   download_to_cache(f'{REMOTE_PREFIX}{model_path}', os.path.join(data_path, model_path))
+print('Monkey patching Jukebox methods...')
 
-  try:
-    monkey_patched_load_audio
-    print('load_audio already monkey patched.')
-  except:
+# Monkey patch load_checkpoint, allowing to load models from arbitrary paths
+def download_to_cache(remote_path, local_path):
+  print(f'Caching {remote_path} to {local_path}')
+  if not os.path.exists(os.path.dirname(local_path)):
+    print(f'Creating directory {os.path.dirname(local_path)}')
+    os.makedirs(os.path.dirname(local_path))
+  if not os.path.exists(local_path):
+    print('Downloading...')
+    download(remote_path, local_path)
+    print('Done.')
+  else:
+    print('Already cached.')
 
-    # Monkey patch load_audio, allowing for duration = None
-    def monkey_patched_load_audio(file, sr, offset, duration, mono=False):
-      # Librosa loads more filetypes than soundfile
-      x, _ = librosa.load(file, sr=sr, mono=mono, offset=offset/sr, duration=None if duration is None else duration/sr)
-      if len(x.shape) == 1:
-          x = x.reshape((1, -1))
-      return x
+def monkey_patched_load_checkpoint(path):
+  global models_path
+  restore = path
+  if restore.startswith(REMOTE_PREFIX):
+      remote_path = restore
+      local_path = os.path.join(models_path, remote_path[len(REMOTE_PREFIX):])
+      if dist.get_rank() % 8 == 0:
+          download_to_cache(remote_path, local_path)
+      restore = local_path
+  dist.barrier()
+  checkpoint = t.load(restore, map_location=t.device('cpu'))
+  print("Restored from {}".format(restore))
+  return checkpoint
 
-    jukebox.utils.audio_utils.load_audio = monkey_patched_load_audio
-    print('load_audio monkey patched.')
+jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
+print('load_checkpoint monkey patched.')
 
-  print('Monkey patching done.')
+# # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
+# for model_path in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
+#   download_to_cache(f'{REMOTE_PREFIX}{model_path}', os.path.join(data_path, model_path))
+
+# Monkey patch load_audio, allowing for duration = None
+def monkey_patched_load_audio(file, sr, offset, duration, mono=False):
+  # Librosa loads more filetypes than soundfile
+  x, _ = librosa.load(file, sr=sr, mono=mono, offset=offset/sr, duration=None if duration is None else duration/sr)
+  if len(x.shape) == 1:
+      x = x.reshape((1, -1))
+  return x
+
+jukebox.utils.audio_utils.load_audio = monkey_patched_load_audio
+print('load_audio monkey patched.')
+
+
+# Monkey patch sample_level, saving the current upsampled z to respective file
+# The original code is as follows:
+# def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
+#   print_once(f"Sampling level {level}")
+#   if total_length >= prior.n_ctx:
+#       for start in get_starts(total_length, prior.n_ctx, hop_length):
+#           zs = sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps)
+#   else:
+#       zs = sample_partial_window(zs, labels, sampling_kwargs, level, prior, total_length, hps)
+#   return zs
+#
+# Rewritten:
+
+def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
+
+  global base_path
+
+  # The original code provides for shorter samples by sampling only a partial window, but we'll just throw an error for simplicity
+  assert total_length >= prior.n_ctx, f'Total length {total_length} is shorter than prior.n_ctx {prior.n_ctx}'
+
+  Upsampling.zs = zs
+  Upsampling.level = level
+
+  print(f"Sampling level {level}")
+  # Remember current time
+  start_time = datetime.now()
+  Upsampling.windows = get_starts(total_length, prior.n_ctx, hop_length)
+
+  print(f'Totally {len(Upsampling.windows)} windows at level {level}')
+
+  # Remove all windows whose start + n_ctx is less than however many samples we've already upsampled (at this level)
+  already_upsampled = Upsampling.zs[level].shape[1]
+  if already_upsampled > 0:
+    print(f'Already upsampled {already_upsampled} samples at level {level}')
+    Upsampling.windows = [ start for start in Upsampling.windows if start + prior.n_ctx > already_upsampled ]
+
+  if len(Upsampling.windows) == 0:
+    print(f'No windows to upsample at level {level}')
+  else:
+    print(f'Upsampling {len(Upsampling.windows)} windows, from {Upsampling.windows[0]} to {Upsampling.windows[-1]+prior.n_ctx}')
+
+    Upsampling.window_index = 0
+    for start in Upsampling.windows:
+
+      Upsampling.window_start_time = datetime.now()
+      Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
+      Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
+      Upsampling.eta = datetime.now() + Upsampling.time_remaining
+      
+      Upsampling.status_markdown = f'Upsampling window { Upsampling.window_index+1 } of { len(Upsampling.windows) } at level { level }, estimated to complete at { as_local_hh_mm(Upsampling.eta) } your time'
+
+      # # If this is level 1, add that level 0 will take ~4x longer
+      # if level == 1:
+      #   estimated_level_0_time = ( Upsampling.elapsed_time + Upsampling.time_remaining ) * 4
+      #   Upsampling.status_markdown += f'\n(Final ETA: { as_local_hh_mm(Upsampling.eta + estimated_level_0_time) })'
+          
+      # Print the status with an hourglass emoji in front of it
+      print(f'\n\n⏳ {Upsampling.status_markdown}\n\n')
+      
+      Upsampling.zs = sample_single_window(Upsampling.zs, labels, sampling_kwargs, level, prior, start, hps)
+
+      # Estimate time remaining
+      Upsampling.elapsed_time = datetime.now() - start_time
+      Upsampling.time_per_window = datetime.now() - Upsampling.window_start_time
+
+      # If this is the first window, divide the time per window by 2 because the first window is twice bigger
+      if start == 0:
+        Upsampling.time_per_window /= 2
+
+      path = f'{base_path}/{Upsampling.project}/{Upsampling.sample_id}.z'
+      print(f'Saving upsampled z to {path}')
+      t.save(Upsampling.zs, path)
+      print('Done.')
+      Upsampling.window_index += 1
+
+  return Upsampling.zs
+
+jukebox.sample.sample_level = monkey_patched_sample_level
+print('sample_level monkey patched.')
 
 reload_prior = False #param{type:'boolean'}
 
-try:
-  vqvae, priors, top_prior
-  assert total_duration == calculated_duration and not reload_prior and not reload_all
-  print('Model already loaded.')
-except:
+def load_top_prior():
+  global top_prior, vqvae, device
 
-  print(f'Loading vqvae and top_prior for duration {total_duration}...')
-
-  try:
-    del vqvae
-    print('Deleted vqvae')
-    del top_prior
-    print('Deleted top_prior')
-    empty_cache()
-    print('Emptied cache')
-  except:
-    print('Either vqvae or top_prior is not defined; skipping deletion')
-
-  vqvae, *priors = MODELS['5b_lyrics']
-
-  vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
-
+  print('Loading top prior')
   top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
 
-  calculated_duration = total_duration
+
+if Upsampling.running:
+  print('''
+    !!! APP SET FOR UPSAMPLING !!!
+
+    To use the app for composing, stop execution, create a new cell and run the following code:
+
+    Upsampling.started = False
+
+    Then run the main cell again.
+  ''')
+else:
+
+  try:
+    vqvae, priors, top_prior
+
+    assert total_duration == calculated_duration and not reload_prior and not reload_all
+    print('Model already loaded.')
+  except:
+
+    print(f'Loading vqvae and top_prior for duration {total_duration}...')
+
+    vqvae, *priors = MODELS['5b_lyrics']
+
+    vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
+
+    load_top_prior()
+
+    calculated_duration = total_duration
+
+    empty_cache
 
 
 # If the base folder doesn't exist, create it
@@ -204,9 +318,10 @@ if not os.path.isdir(base_path):
 
 try:
   calculated_metas
-  print('Using calculated metas')
+  print('Calculated metas already loaded.')
 except:
   calculated_metas = {}
+  print('Calculated metas created.')
 
 loaded_settings = {}
 custom_parents = None
@@ -214,6 +329,8 @@ custom_parents = None
 class UI:
 
   ### Meta
+
+  browser_timezone = gr.State()
 
   separate_tab_warning = gr.Box(
     visible = False
@@ -271,14 +388,14 @@ class UI:
   n_samples = gr.Slider(
     label = 'Number of samples',
     minimum = 1,
-    maximum = 10,
+    maximum = 4,
     step = 1
   )
 
   temperature = gr.Slider(
     label = 'Temperature',
-    minimum = 0,
-    maximum = 1.5,
+    minimum = 0.96,
+    maximum = 1.01,
     step = 0.005
   )
 
@@ -310,7 +427,7 @@ class UI:
     visible = False
   )
 
-  generation_progress = gr.Markdown('', elem_id = 'generation-progress')
+  generation_progress = gr.Markdown('Generation status will be shown here', elem_id = 'generation-progress')
 
   routed_sample_id = gr.State()
 
@@ -328,18 +445,48 @@ class UI:
 
 
   picked_sample = gr.Radio(
-    label = 'Sibling samples',
+    label = 'Variations',
   )
 
   sample_box = gr.Box(
     visible = False
   )
 
-  generated_audio = gr.Audio(
-    label = 'Generated audio',
-    elem_id = "generated-audio"
+  upsampling_accordion = gr.Accordion(
+    label = 'Upsampling',
+    visible = False
   )
 
+  UPSAMPLING_LEVEL_NAMES = [ 'Raw', 'Midsampled', 'Upsampled' ]
+
+  upsampling_level = gr.Dropdown(
+    label = 'Upsampling level',
+    choices = [ 'Raw' ],
+    value = 'Raw'
+  )
+
+  upsample_rendering = gr.Dropdown(
+    label = 'Render...',
+    type = 'index',
+    choices = [ 'Channel 1', 'Channel 2', 'Channel 3', 'Pseudo-stereo', 'Pseudo-stereo with delay' ],
+    value = 'Pseudo-stereo with delay',
+  )
+
+  continue_upsampling_button = gr.Button('Continue upsampling', visible = False )
+
+  # generated_audio = gr.Audio(
+  #   label = 'Generated audio',
+  #   elem_id = 'generated-audio',
+  #   visible = False
+  # )
+
+  mp3_file = gr.File(
+    label = 'MP3',
+    elem_id = 'audio-file',
+    type = 'binary',
+    visible = False
+  )
+  
   audio_waveform = gr.HTML(
     elem_id = 'audio-waveform'
   )
@@ -348,17 +495,22 @@ class UI:
     elem_id = 'audio-timeline'
   )
 
+  compose_row = gr.Box(
+    elem_id = 'compose-row',
+  )
+
   go_to_parent_button = gr.Button(
-    value = 'To parent generation',
+    value = '<',
   )
 
   go_to_children_button = gr.Button(
-    value = 'To child generations',
+    value = '>',
   )
 
   total_audio_length = gr.Number(
     label = 'Total audio length, sec',
-    elem_id = 'total-audio-length'
+    elem_id = 'total-audio-length',
+    interactive = False,
   )
 
   preview_just_the_last_n_sec = gr.Number(
@@ -366,16 +518,52 @@ class UI:
   )
 
   trim_to_n_sec = gr.Number(
-    label = 'Trim to ... seconds (0 to disable)'
+    label = 'Trim to ... seconds (0 to disable)',
+    elem_id = 'trim-to-n-sec'
   )
 
   trim_button = gr.Button( 'Trim', visible = False )
 
-  project_settings = [ *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec ]
+  sample_to_upsample = gr.Textbox(
+    label = 'Sample to upsample',
+    placeholder = 'Choose a sample in the Workspace tab first',
+    interactive = False,
+  )
+
+  genre_for_upsampling_left_channel = gr.Dropdown(
+    label = 'Genre for upsampling (left channel)'
+  )
+
+  genre_for_upsampling_center_channel = gr.Dropdown(
+    label = 'Genre for upsampling (center channel)'
+  )
+
+  genre_for_upsampling_right_channel = gr.Dropdown(
+    label = 'Genre for upsampling (right channel)'
+  )
+
+  upsample_button = gr.Button('Start upsampling', variant="primary", elem_id='upsample-button')
+
+  upsampling_status_markdown = gr.Markdown('Upsampling progress will be shown here')
+
+  upsampling_refresher = gr.Number( value = 0, visible = False )
+
+  upsampling_running = gr.Number( visible = False )
+  # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
+
+  upsampling_triggered_by_button = gr.Checkbox( visible = False, value = False )
+
+  project_settings = [ 
+    *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec,
+    genre_for_upsampling_left_channel, genre_for_upsampling_center_channel, genre_for_upsampling_right_channel 
+  ]
 
   input_names = { input: name for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
 
   inputs_by_name = { name: input for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
+
+def as_local_hh_mm(dt, include_seconds = False):
+  return dt.astimezone(browser_timezone).strftime('%H:%M:%S' if include_seconds else '%H:%M')
 
 def convert_name(name):
   return re.sub(r'[^a-z0-9]+', '-', name.lower())
@@ -462,6 +650,7 @@ def convert_audio_to_sample(project_name, audio, sec_to_trim_primed_audio, show_
       value = primed_sample_id
     ),
     UI.prime_timestamp: datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'),
+    UI.first_generation_row: HIDE,
   }
 
 def delete_sample(project_name, sample_id, confirm):
@@ -586,7 +775,48 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
     UI.generation_progress: f'Generation completed at {datetime.now().strftime("%H:%M:%S")}'
   }
 
-def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level=2):
+
+def get_z(project_name, sample_id):
+  global base_path
+
+  return t.load(f'{base_path}/{project_name}/{sample_id}.z')
+
+def get_levels(project_name, sample_id):
+
+  z = get_z(project_name, sample_id)
+  
+  # z is a list of 3 tensors, each of shape (n_samples, n_tokens). We need to return the levels that have at least one token
+  # return [ i for i in range(3) if z[i].shape[1] > 0 ]
+  levels = []
+  for i in range(3):
+    if z[i].shape[1] == 0:
+      # print(f'Level {i} is empty, skipping')
+      pass
+    else:
+      # We also need to make sure that, if it's not level 2, there are exactly 3 samples in the tensor
+      # Otherwise it's a primed sample, not the one we created during upsampling
+      # I agree this is a bit hacky; in the future we need to make sure that the primed samples are not saved for levels other than 2
+      # But for backwards compatibility, we need to keep this check
+      if i != 2 and z[i].shape[0] != 3:
+        # print(f"Level {i}'s tensor has {z[i].shape[0]} samples, not 3, skipping")
+        pass
+      else:
+        levels.append(i)
+
+  return levels, z
+
+
+def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level=2, upsample_rendering=3):
+
+  print(f'Generating audio for {project_name}/{sample_id} (level {level}, upsample_rendering {upsample_rendering}, trim_to_n_sec {trim_to_n_sec}, preview_just_the_last_n_sec {preview_just_the_last_n_sec})')
+
+  # Get current GPU memory usage. If it's above 12GB, empty the cache
+  memory = t.cuda.memory_allocated()
+  print(f'GPU memory usage is {memory / 1e9:.1f} GB')
+  if t.cuda.memory_allocated() > 12e9:
+    print('GPU memory usage is above 12GB, clearing the cache')
+    empty_cache()
+    print(f'GPU memory usage is now {t.cuda.memory_allocated() / 1e9:1f} GB')
 
   global base_path, hps
 
@@ -598,27 +828,195 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
   # z is of shape torch.Size([1, n_tokens])
   # print(f'Loaded {filename}.z at level {level}, shape: {z.shape}')
 
-  total_audio_length = int( tokens_to_seconds(z.shape[1]) * 100 ) / 100
+  total_audio_length = int( tokens_to_seconds(z.shape[1], level) * 100 ) / 100
 
   if trim_to_n_sec:
-    trim_to_tokens = seconds_to_tokens(trim_to_n_sec)
+    trim_to_tokens = seconds_to_tokens(trim_to_n_sec, level)
     # print(f'Trimming to {trim_to_n_sec} seconds ({trim_to_tokens} tokens)')
     z = z[ :, :trim_to_tokens ]
     # print(f'Trimmed to shape: {z.shape}')
   
   if preview_just_the_last_n_sec:
-    preview_tokens = seconds_to_tokens(preview_just_the_last_n_sec)
+    preview_tokens = seconds_to_tokens(preview_just_the_last_n_sec, level)
     # print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds ({preview_tokens} tokens)')
-    preview_tokens += ( len(z) / seconds_to_tokens(1) ) % 1
+    preview_tokens += ( len(z) / seconds_to_tokens(1, level) ) % 1
     z = z[ :, int( -1 * preview_tokens ): ]
     # print(f'Trimmed to shape: {z.shape}')
 
-  wav = vqvae.decode([ z ], start_level=level).cpu().numpy()
-  # wav is now of shape (1, sample_length, 1), we want (sample_length,)
-  wav = wav[0, :, 0]
+  def decode(z):
+    wav = vqvae.decode([ z ], start_level=level, end_level=level+1).cpu().numpy()
+    # the decoded wav is of shape (n_samples, sample_length, 1)
+    return wav
+  
+  # If z is longer than 30 seconds, there will likely be not enough RAM to decode it in one go
+  # In this case, we'll split it into 30-second chunks (with a 5-second overlap), decode each chunk separately, and concatenate the results, crossfading the overlaps
+  if z.shape[1] < seconds_to_tokens(30, level):
+    wav = decode(z)
+  else:
+    chunk_size = seconds_to_tokens(30, level)
+    overlap_size = seconds_to_tokens(5, level)
+    print(f'z is too long ({z.shape[1]} tokens), splitting into chunks of {chunk_size} tokens, with a {overlap_size} token overlap')
+    wav = None
+    # Keep in mind that the last chunk can be shorter if the total length is not a multiple of chunk_size)
+    for i in range(0, z.shape[1], chunk_size - overlap_size):
+
+      # If this is the last chunk, make the chunk_size smaller if necessary
+      overflow = i + chunk_size - z.shape[1]
+      is_last_chunk = overflow > 0
+      if is_last_chunk:
+        chunk_size -= overflow
+        # print(f'Last chunk, reduced chunk_size from {chunk_size + overflow} to {chunk_size} tokens')
+
+      left_overlap_z = z[ :, i:i+overlap_size ]
+      # print(f'Left overlap (tokens): {left_overlap_z.shape[1]}')
+      left_overlap = decode(left_overlap_z)
+      # print(f'Left overlap (quants): {left_overlap.shape[1]}')
+
+
+      def fade(overlap, direction):
+        # To fade in, we need to add 1/4 of the overlap as silence, 2/4 of the overlap as a linear ramp, and 1/4 of the overlap as full volume
+        is_fade_in = direction == 'in'
+        overlap_quants = overlap.shape[1]
+        silence_quants = int( overlap_quants / 4 )
+        ramp_quants = int( overlap_quants / 2 )
+        if is_fade_in:
+          overlap[:, :silence_quants, :] = 0
+        else:
+          overlap[:, -silence_quants:, :] = 0
+        start = 0 if is_fade_in else 1
+        overlap[:, silence_quants:-silence_quants, :] *= np.linspace(start, 1 - start, ramp_quants).reshape(1, -1, 1)
+        return overlap
+
+      if wav is not None:
+
+        # Fade in the left overlap and add it to the existing wav if it's not empty (i.e. if this is not the first chunk)
+        left_overlap = fade(left_overlap, 'in')
+        print(f'Faded in left overlap')
+        # # Show as plot
+        # plt.plot(left_overlap[0, :, 0])
+        # plt.show()
+
+        wav[ :, -left_overlap.shape[1]: ] += left_overlap
+        print(f'Added left overlap to existing wav:')
+        # # Plot the resulting (faded-in + previous fade-out) overlap
+        # plt.plot(wav[0, -left_overlap.shape[1]:, 0])
+        # plt.show()
+
+        print(f'Added left overlap to wav, overall shape now: {wav.shape}')
+
+      else:
+        wav = left_overlap
+        print(f'Created wav with left overlap')
+
+      # We'll also won't need right overlap for the last chunk
+      main_chunk_z = z[ :, i+overlap_size: i+chunk_size-overlap_size if not is_last_chunk else i+chunk_size ]
+      print(f'Main chunk (tokens): {main_chunk_z.shape[1]}')
+
+      if main_chunk_z.shape[1] > 0:
+
+        main_chunk = decode(main_chunk_z)
+        print(f'Main chunk (quants): {main_chunk.shape[1]}')
+
+        # Add the main chunk to the existing wav
+        wav = np.concatenate([ wav, main_chunk ], axis=1)
+        print(f'Added main chunk to wav, overall shape now: {wav.shape}')
+
+      else:
+        print('Main chunk is empty, skipping')
+        continue
+
+      # Fade out the right overlap, unless this is the last chunk
+      if not is_last_chunk:
+
+        right_overlap_z = z[ :, i+chunk_size-overlap_size:i+chunk_size ]
+        # print(f'Right overlap (tokens): {right_overlap_z.shape[1]}')
+
+        right_overlap = decode(right_overlap_z)
+        # print(f'Right overlap (quants): {right_overlap.shape[1]}')
+
+        right_overlap = fade(right_overlap, 'out')
+        # print(f'Faded out right overlap')
+        # # Show as plot
+        # plt.plot(right_overlap[0, :, 0])
+        # plt.show()
+
+        # Add the right overlap to the existing wav
+        wav = np.concatenate([ wav, right_overlap ], axis=1)
+        # print(f'Added right overlap to wav, overall shape now: {wav.shape}')
+      
+      else:
+
+        pass
+        # print(f'Last chunk, not adding right overlap')
+      
+      print(f'Decoded {i+chunk_size} tokens out of {z.shape[1]}, wav shape: {wav.shape}')
+
+  # wav is now of shape (n_samples, sample_length, 1)
+  # If this is level 2, we want just (sample_length,), picking the first sample if there are multiple
+  if level == 2:
+    wav = wav[0, :, 0]
+
+  # Otherwise, this is a batch of upsampled audio, so we need to act depending on the upsample_rendering parameter
+  else:
+
+    # upsample_rendering of 0, 1 or 2 means we just need to pick one of the samples
+    if upsample_rendering < 3:
+
+      wav = wav[upsample_rendering, :, 0]
+    
+    # upsample_rendering of 3 means we need to convert the audio to stereo, putting sample 0 to the left, 1 to the center, and 2 to the right
+    # 4 means we also want to add a delay of 20 ms for the left and 40 ms for the right channel
+
+    else:
+
+      def to_stereo(wav, stereo_delay_ms=0):
+
+        # A stereo wav is of form (sample_length + double the delay, 2)
+        delay_quants = int( stereo_delay_ms * hps.sr / 1000 )
+        stereo = np.zeros((wav.shape[1] + 2 * delay_quants, 2))
+        # First let's convert the wav to [n_quants, n_samples] by getting rid of the last dimension and transposing the rest
+        wav = wav[:, :, 0].T
+        print(f'Converted wav to shape {wav.shape}')
+        # Take sample 0 for left channel (delayed once), 1 for both channels (non-delayed), and sample 2 for right channel (delayed twice)
+        if delay_quants:
+          stereo[ delay_quants: -delay_quants, 0 ] = wav[ :, 0 ]
+          stereo[ 2 * delay_quants:, 1 ] = wav[ :, 2 ]
+          stereo[ : -2 * delay_quants, 0 ] += wav[ :, 1 ]
+          stereo[ : -2 * delay_quants, 1 ] += wav[ :, 1 ]
+        else:
+          stereo[ :, 0 ] = wav[ :, 0 ] + wav[ :, 1 ]
+          stereo[ :, 1 ] = wav[ :, 2 ] + wav[ :, 1 ]
+        # Now we have max amplitude of 2, so we need to divide by 2
+        stereo /= 2
+
+        print(f'Converted to stereo with delay {stereo_delay_ms} ms, current shape: {stereo.shape}, max/min amplitudes: {np.max(stereo)}/{np.min(stereo)}')
+
+        return stereo
+      
+      wav = to_stereo(wav, stereo_delay_ms=20 if upsample_rendering == 4 else 0)
+
   print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {total_audio_length} seconds.')
 
   return wav, total_audio_length
+
+# def get_audio_being_upsampled():
+
+#   if not Upsampling.running:
+#     return None
+
+#   zs = Upsampling.zs
+#   level = Upsampling.level
+
+#   print(f'Generating audio for level {level}')
+  
+#   x = Upsampling.priors[level].decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
+
+#   # x is of shape (1, sample_length, 1), we want (sample_length,)
+#   wav = x[0, :, 0].cpu().numpy()
+#   return gr.update(
+#     visible = True,
+#     value = ( hps.sr, wav ),
+#   )
 
 def get_children(project_name, parent_sample_id, include_custom=True):
 
@@ -751,7 +1149,16 @@ def on_load( href, query_string, error_message ):
     ),
     UI.main_window: gr.update(
       visible = True
-    )
+    ),
+    UI.genre_for_upsampling_left_channel: gr.update(
+      choices = get_list('genre')
+    ),
+    UI.genre_for_upsampling_center_channel: gr.update(
+      choices = get_list('genre'),
+    ),
+    UI.genre_for_upsampling_right_channel: gr.update(
+      choices = get_list('genre'),
+    ),
   }
 
 lists = {}
@@ -845,7 +1252,10 @@ def get_project(project_name, routed_sample_id):
     UI.generation_length: 1,
     UI.temperature: 0.98,
     UI.n_samples: 2,
-    UI.sample_tree: None
+    UI.sample_tree: None,
+    UI.genre_for_upsampling_left_channel: 'Unknown',
+    UI.genre_for_upsampling_center_channel: 'Unknown',
+    UI.genre_for_upsampling_right_channel: 'Unknown',
   }
 
   samples = []
@@ -912,14 +1322,57 @@ def get_project(project_name, routed_sample_id):
     **settings_out_dict
   }
 
-def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec):
+def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec, level_name, upsample_rendering):
 
   global hps
 
-  wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec)
+  level_names = UI.UPSAMPLING_LEVEL_NAMES
+  level = 2 - level_names.index(level_name)
+
+  print(f'Loading sample {sample_id} for level {level} ({level_name})')
+
+  filename = f'{base_path}/{project_name}/rendered/{sample_id} L{level}'
+
+  # Add trimmed/preview suffixes
+  if trim_to_n_sec:
+    filename += f' trim {trim_to_n_sec}'
+  if preview_just_the_last_n_sec:
+    filename += f' preview {preview_just_the_last_n_sec}'
+  
+  # Add lowercase of upsample rendering option
+  if upsample_rendering and level_name != 'Raw':
+    suffixes = [ 'left', 'center', 'right', 'stereo', 'stereo-delay' ]
+    filename += f' {suffixes[upsample_rendering]}'
+  
+  # Add a hash (6 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
+  filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:6]}'
+
+  print(f'Checking if {filename}.wav/.mp3 exist...')
+
+  # If the filenames do not exist, render it
+  if not os.path.isfile(f'{filename}.wav') or not os.path.isfile(f'{filename}.mp3'):
+
+    wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level, upsample_rendering)
+
+    if not os.path.exists(os.path.dirname(filename)):
+      os.makedirs(os.path.dirname(filename))
+
+    librosa.output.write_wav(f'{filename}.wav', np.asfortranarray(wav), hps.sr)
+
+    # Convert to mp3
+    subprocess.run(['ffmpeg', '-y', '-i', f'{filename}.wav', '-acodec', 'libmp3lame', '-ab', '320k', f'{filename}.mp3'])
+
+  else:
+    wav, _ = librosa.load(filename + '.wav', sr=hps.sr)
+    total_audio_length = wav.shape[0] / hps.sr
+    print(f'Loaded {filename}.wav of shape {wav.shape} ({total_audio_length} sec)')
 
   return {
-    UI.generated_audio: ( hps.sr, wav ),
+    # UI.generated_audio: gr.update(
+    #   value = ( hps.sr, wav ),
+    #   label = f'{sample_id} (lossless)',
+    # ),
+    UI.mp3_file: f'{filename}.mp3',
     UI.total_audio_length: total_audio_length,
     UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
@@ -936,11 +1389,12 @@ def refresh_siblings(project_name, sample_id):
   
   if not sample_id:
     return {
-      UI.picked_sample: gr.update( visible = False )
+      UI.picked_sample: HIDE
     }
 
-  print(f'Changing current sample to {sample_id}...')
+  # print(f'Getting siblings for {sample_id}...')
   siblings = get_siblings(project_name, sample_id)
+  # print(f'Siblings for {sample_id}: {siblings}')
   return gr.update(
     choices = siblings,
     value = sample_id,
@@ -1021,19 +1475,113 @@ def save_project(project_name, *project_input_values):
   # else:
   #   print('Settings are the same as loaded settings, not saving.')
 
-def seconds_to_tokens(sec):
+def seconds_to_tokens(sec, level = 2):
 
   global hps, raw_to_tokens, chunk_size
 
   tokens = sec * hps.sr // raw_to_tokens
   tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
+
+  # For levels 1 and 0, multiply by 4 and 16 respectively
+  tokens *= 4 ** (2 - level)
+
   return int(tokens)
 
-def tokens_to_seconds(tokens):
+def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
+
+  global hps, top_prior, priors
+
+  print(f'Starting upsampling for {sample_id}, artist: {artist}, lyrics: {lyrics}, genres: {genres}')
+
+  Upsampling.project = project_name
+  Upsampling.sample_id = sample_id
+
+  Upsampling.running = True
+  Upsampling.status_markdown = "Upsampling started. Loading the upsampling models..."
+
+  print(f'Upsampling {sample_id} with genres {genres}')
+  filename = f'{base_path}/{project_name}/{sample_id}.z'
+
+  Upsampling.zs = t.load(filename)
+  # zs is a list of 3 tensors, one per level, each of shape (n_samples, n_tokens).
+  # For level 2, we need to repeat the first sample to make it 3.
+  # For other levels, we need to check if the number of samples is 3, and if not, replace them with an empty tensor.
+  # This is needed to avoid upsampling on top of a previously primed sample (see comments in get_levels for more info).
+  # Previous code to be rewritten where everything was repeated: Upsampling.zs = [ z[0].repeat(3, 1) if z.shape[0] != 3 else z for z in Upsampling.zs ]
+  print(f'Original zs shapes: {[z.shape for z in Upsampling.zs]}')
+  for i in range( len(Upsampling.zs) ):
+    if i == 2:
+      Upsampling.zs[i] = Upsampling.zs[i][0].repeat(3, 1)
+    elif Upsampling.zs[i].shape[0] != 3:
+      print(f'Level {i} has {Upsampling.zs[i].shape[0]} samples, replacing with an empty tensor')
+      Upsampling.zs[i] = t.empty( (3, 0), dtype=t.int64 ).cuda()
+    
+  print(f'Final zs shapes: {[ z.shape for z in Upsampling.zs ]}')
+
+  # We also need to create new labels from the metas with the genres replaced accordingly
+  Upsampling.metas = [ dict(
+    artist = artist,
+    genre = genre,
+    total_length = hps.sample_length,
+    offset = 0,
+    lyrics = lyrics,
+  ) for genre in genres ]
+  
+  if not Upsampling.labels:
+
+    try:
+      assert top_prior
+    except:
+      load_top_prior()
+    
+    Upsampling.labels = top_prior.labeller.get_batch_labels(Upsampling.metas, 'cuda')
+    print('Calculated new labels from top prior')
+
+    # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
+    del top_prior
+    empty_cache()
+
+  labels = Upsampling.labels
+
+  upsamplers = [ make_prior(setup_hparams(prior, dict()), vqvae, 'cpu') for prior in priors[:-1] ]
+  
+  if type(labels)==dict:
+    labels = [ prior.labeller.get_batch_labels(Upsampling.metas, 'cuda') for prior in upsamplers ] + [ labels ]
+    print('Converted labels to list')
+    # Not sure why we need to do this -- I copied this from another notebook.
+  
+  Upsampling.labels = labels
+  
+  # Create a backup of the original file, in case something goes wrong
+  bak_filename = f'{filename}.{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.bak'
+  shutil.copy(filename, f'{bak_filename}')
+  print(f'Created backup of {filename} as {bak_filename}')
+
+  Upsampling.params = [
+    dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
+    dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
+    None
+  ]
+  
+  Upsampling.hps = hps
+
+  # Set hps.n_samples to 3, because we need 3 samples for each level
+  Upsampling.hps.n_samples = 3
+
+  # Set hps.sample_length to the actual length of the sample
+  Upsampling.hps.sample_length = Upsampling.zs[2].shape[1] * raw_to_tokens
+
+  # Set hps.name to our project directory
+  Upsampling.hps.name = f'{base_path}/{project_name}'
+
+  Upsampling.priors = [*upsamplers, None]
+  Upsampling.zs = upsample(Upsampling.zs, labels, Upsampling.params, Upsampling.priors, Upsampling.hps)
+
+def tokens_to_seconds(tokens, level = 2):
 
   global hps, raw_to_tokens
 
-  return tokens * raw_to_tokens / hps.sr
+  return tokens * raw_to_tokens / hps.sr / 4 ** (2 - level)
 
 def trim(project_name, sample_id, n_sec):
 
@@ -1049,6 +1597,9 @@ def trim(project_name, sample_id, n_sec):
   print(f'Saved z to {filename}')
   return 0
 
+SHOW = gr.update( visible = True )
+HIDE = gr.update( visible = False )
+
 with gr.Blocks(
   css = """
     .gr-button {
@@ -1063,13 +1614,21 @@ with gr.Blocks(
 
     #generation-progress {
       /* gray, smaller font */
-      color: #888;
+      color: #777;
       font-size: 0.8rem;
     }
 
+    #audio-timeline {
+      /* hide for now */
+      display: none;
+    }
+
+
   """,
-  title = 'Jukebox Web UI',
+  title = 'Jukebox Web UI v0.3',
 ) as app:
+
+  UI.browser_timezone.render()
 
   with UI.separate_tab_warning.render():
 
@@ -1179,7 +1738,7 @@ with gr.Blocks(
 
     with UI.workspace_column.render():
 
-      with gr.Tab('Compose'):
+      with gr.Tab('Workspace'):
 
         with gr.Column():
 
@@ -1199,8 +1758,8 @@ with gr.Blocks(
                 outputs = [ UI.sample_tree, UI.first_generation_row, UI.sample_tree_row, UI.generation_progress ],
                 fn = lambda *args: {
                   **generate(*args),
-                  UI.first_generation_row: gr.update( visible = False ),
-                  UI.sample_tree_row: gr.update( visible = True ),
+                  UI.first_generation_row: HIDE,
+                  UI.sample_tree_row: SHOW,
                 }
               )
 
@@ -1226,10 +1785,12 @@ with gr.Blocks(
           )
 
           preview_args = dict(
-            inputs = [ UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec ],
+            inputs = [
+              UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec, UI.upsampling_level, UI.upsample_rendering
+            ],
             outputs = [ 
-              UI.sample_box, UI.generated_audio, UI.total_audio_length, 
-              UI.go_to_children_button, UI.go_to_parent_button
+              UI.sample_box, UI.mp3_file, #UI.generated_audio,
+              UI.total_audio_length, UI.go_to_children_button, UI.go_to_parent_button,
             ],
             fn = get_sample,
           )
@@ -1249,13 +1810,138 @@ with gr.Blocks(
 
           with UI.sample_box.render():
 
-            for this in [ 
-              UI.generated_audio, 
+            with UI.upsampling_accordion.render():
+
+              with gr.Row():
+
+                with gr.Column():
+
+                  UI.upsampling_level.render().change(
+                    **preview_args,
+                  )
+
+                  # Only show the upsampling elements if there are upsampled versions of the picked sample
+                  def show_or_hide_upsampling_elements(project_name, sample_id, upsampling_running):
+
+                    levels, _ = get_levels(project_name, sample_id)
+                    # print(f'Levels: {levels}')
+
+                    available_level_names = UI.UPSAMPLING_LEVEL_NAMES[:len(levels)]
+                    print(f'Available level names: {available_level_names}')
+
+                    return {
+                      UI.upsampling_accordion: gr.update(
+                        visible = len(levels) > 1 or upsampling_running,
+                      ),
+                      UI.upsampling_level: gr.update(
+                        choices = available_level_names,
+                        # Choose the highest available level by default 
+                        value = available_level_names[-1],
+                      )
+                    }
+                  
+                  show_or_hide_upsampling_elements_args = dict(
+                    inputs = [ UI.project_name, UI.picked_sample, UI.upsampling_running ],
+                    outputs = [ UI.upsampling_accordion, UI.upsampling_level ],
+                    fn = show_or_hide_upsampling_elements,
+                  )
+
+                  UI.picked_sample.change( **show_or_hide_upsampling_elements_args )
+                  UI.upsampling_running.change( **show_or_hide_upsampling_elements_args )
+
+                with gr.Column(visible = False) as upsampling_manipulation_column:
+
+                  # Show the column only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
+                  UI.upsampling_level.change(
+                    inputs = UI.upsampling_level,
+                    outputs = [ upsampling_manipulation_column, UI.compose_row, UI.upsampling_accordion ],
+                    fn = lambda upsampling_level: [
+                      gr.update( visible = upsampling_level != 'Raw' ),
+                      gr.update( visible = upsampling_level == 'Raw' ),
+                      f'{upsampling_level} version',
+                    ]
+                  )
+
+                  UI.upsample_rendering.render().change(
+                    **preview_args,
+                  )
+
+              UI.upsampling_status_markdown.render()
+
+              # Show the continue upsampling markdown only if the current level's length in tokens is less than the total audio length
+              # Also update the upsampling button to say "Continue upsampling" instead of "Upsample"
+              def show_or_hide_continue_upsampling(project_name, sample_id, total_audio_length, upsampling_running):
+
+                if not upsampling_running:
+                  levels, z = get_levels(project_name, sample_id)
+                  print(f'Levels: {levels}, z: {z}')
+                  # We'll show if there's no level 0 in levels or if the length of level 0 (in seconds) is less than the length of level 2 (in seconds)
+                  must_show = 0 not in levels or tokens_to_seconds(len(z[0]), 0) < tokens_to_seconds(len(z[2]), 2)
+                  print(f'Must show: {must_show}')
+                  
+                else:
+                  must_show = True
+
+                return gr.update( visible = must_show )
+              
+              UI.picked_sample.change(
+                inputs = [ UI.project_name, UI.picked_sample, UI.total_audio_length, UI.upsampling_running ],
+                outputs = UI.continue_upsampling_button,
+                fn = show_or_hide_continue_upsampling,
+              )
+
+              upsample_button_click_args = dict(
+                inputs = UI.upsampling_running,
+                outputs = [ UI.upsampling_running, UI.upsampling_triggered_by_button ],
+                fn = lambda was_running: 
+                # If was running (i.e. we're stopping), kill the runtime (after a warning) and replace document body with a message saying to restart the runtime in Colab
+                  [
+                    print('Killing runtime...'),
+                    subprocess.run(['kill', '-9', str(os.getpid())]),
+                  ] if was_running else {
+                    UI.upsampling_running: 1,
+                    UI.upsampling_triggered_by_button: True,
+                  },
+                _js = """
+                  // Confirm before starting/stopping the upsample process
+                  running => {
+                    confirmText = 
+                      running ?
+                        'Are you sure you want to stop the upsample process? ⚠️ THIS WILL KILL THE RUNTIME AND YOU WILL HAVE TO RESTART IT IN COLAB ⚠️ (But your current upsampling progress will be saved)' :
+                        'Are you sure you want to start the upsample process? THIS WILL TAKE HOURS, AND YOU WON’T BE ABLE TO CONTINUE COMPOSING!'
+                    if ( !confirm(confirmText) ) {
+                      throw new Error(`${running ? 'Stopping' : 'Starting'} upsample process canceled by user`)
+                    } else {
+                      // If running, replace document body with a message saying to restart the runtime in Colab
+                      // Put it in the center of the screen in big white text
+                      if ( running ) {
+                        document.body.innerHTML = '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white;"><p style="font-size: 24px;">Upsampling stopped. Please restart the runtime in Colab.</p><p>(Don’t worry, your current upsampling progress is saved)</p></div>'
+                      }
+                      return [ running ]
+                    }
+                  }
+                """
+              )
+
+              UI.continue_upsampling_button.render().click( **upsample_button_click_args )
+
+            # UI.generated_audio.render()
+
+            UI.mp3_file.render()
+
+            # Refresh button
+            gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False).click(
+              **preview_args,
+            )
+                
+            for element in [ 
               UI.audio_waveform,
               UI.audio_timeline
             ]:
-              this.render()
+              element.render()
 
+
+            # Play/pause button, js-based
             gr.HTML("""
               <!-- Button to play/pause the audio -->
               <button class="gr-button gr-button-lg gr-button-secondary"
@@ -1267,55 +1953,66 @@ with gr.Blocks(
 
               <!-- Textbox showing current time -->
               <input type="number" class="gr-box gr-input gr-text-input" id="audio-time" value="0" readonly>
+
+              <!-- Download button -- it will be set to the right href later on -->
+              <a class="gr-button gr-button-lg gr-button-secondary" id="download-button">
+                🔗
+              </a>
+
+              <!-- Refresh button -- it virtually clicks the "internal-refresh-button" button (which is hidden) -->
+              <button class="gr-button gr-button-lg gr-button-secondary" onclick="window.shadowRoot.getElementById('internal-refresh-button').click()">
+                🔃
+              </button>
             """)
 
+            with UI.compose_row.render():
 
-            gr.Button(
-              value = 'Generate further',
-              variant = 'primary',
-            ).click(
-              inputs =  [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
-              outputs = [ UI.sample_tree, UI.generation_progress ],
-              fn = generate,
-            )
+              gr.Button(
+                value = 'Go on',
+                variant = 'primary',
+              ).click(
+                inputs =  [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
+                outputs = [ UI.sample_tree, UI.generation_progress ],
+                fn = generate,
+              )
 
-            gr.Button(
-              value = 'Generate more variations',          
-            ).click(
-              inputs = [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
-              outputs = [ UI.sample_tree, UI.generation_progress ],
-              fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(project_name, sample_id), *args),
-            )
+              gr.Button(
+                value = 'More variations',          
+              ).click(
+                inputs = [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
+                outputs = [ UI.sample_tree, UI.generation_progress ],
+                fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(project_name, sample_id), *args),
+              )
 
-            UI.go_to_parent_button.render()
-            UI.go_to_parent_button.click(
-              inputs = [ UI.project_name, UI.picked_sample ],
-              outputs = UI.sample_tree,
-              fn = get_parent
-            )
+              UI.go_to_parent_button.render()
+              UI.go_to_parent_button.click(
+                inputs = [ UI.project_name, UI.picked_sample ],
+                outputs = UI.sample_tree,
+                fn = get_parent
+              )
 
-            UI.go_to_children_button.render()
-            UI.go_to_children_button.click(
-              inputs = [ UI.project_name, UI.picked_sample ], 
-              outputs = UI.sample_tree,
-              fn = lambda project_name, sample_id: get_children(project_name, sample_id)[0]
-            )
+              UI.go_to_children_button.render()
+              UI.go_to_children_button.click(
+                inputs = [ UI.project_name, UI.picked_sample ], 
+                outputs = UI.sample_tree,
+                fn = lambda project_name, sample_id: get_children(project_name, sample_id)[0]
+              )
 
-            gr.Button('Delete').click(
-              inputs = [ UI.project_name, UI.picked_sample, gr.Checkbox(visible=False) ],
-              outputs = [ UI.picked_sample, UI.sample_box ],
-              fn = delete_sample,
-              _js = """
-                ( project_name, child_sample_id ) => {
-                  if ( confirm('Are you sure? There is no undo!') ) {
-                    return [ project_name, child_sample_id, true ]
-                  } else {
-                    throw new Error('Cancelled; not deleting')
+              gr.Button('🗑️').click(
+                inputs = [ UI.project_name, UI.picked_sample, gr.Checkbox(visible=False) ],
+                outputs = [ UI.picked_sample, UI.sample_box ],
+                fn = delete_sample,
+                _js = """
+                  ( project_name, child_sample_id ) => {
+                    if ( confirm('Are you sure? There is no undo!') ) {
+                      return [ project_name, child_sample_id, true ]
+                    } else {
+                      throw new Error('Cancelled; not deleting')
+                    }
                   }
-                }
-              """,
-              api_name = 'delete-sample'
-            )
+                """,
+                api_name = 'delete-sample'
+              )
 
             with gr.Accordion( 'Advanced', open = False ):
 
@@ -1354,8 +2051,8 @@ with gr.Blocks(
                   fn = rename_sample,
                   api_name = 'rename-sample'
                 )
-
         UI.generation_progress.render()
+
 
       with gr.Tab('Prime'):
 
@@ -1400,7 +2097,7 @@ with gr.Blocks(
                 
         prime_button.click(
           inputs = [ UI.project_name, UI.primed_audio, sec_to_trim_primed_audio, UI.show_leafs_only ],
-          outputs = [ UI.sample_tree, prime_button, UI.prime_timestamp ], # UI.prime_timestamp is updated to the current time to force tab change
+          outputs = [ UI.sample_tree, prime_button, UI.prime_timestamp, UI.first_generation_row ], # UI.prime_timestamp is updated to the current time to force tab change
           fn = convert_audio_to_sample,
           api_name = 'convert-wav-to-sample'
         )
@@ -1408,30 +2105,211 @@ with gr.Blocks(
         UI.prime_timestamp.render().change(
           inputs = UI.prime_timestamp, outputs = None, fn = None,
           _js = 
-            # Find a button inside a div inside another div with class 'tabs', the button having 'Compose' as text, and click it -- all this in the shadow DOM.
+            # Find a button inside a div inside another div with class 'tabs', the button having 'Workspace' as text, and click it -- all this in the shadow DOM.
             # Gosh, this is ugly.
             """
               timestamp => {
-                console.log(`Timestamp changed to ${timestamp}; clicking the 'Compose' tab`)
-                for ( let button of document.querySelector('gradio-app').shadowRoot.querySelectorAll('div.tabs > div > button') ) {
-                  if ( button.innerText == 'Compose' ) {
-                    button.click()
-                    break
-                  }
-                }
+                console.log(`Timestamp changed to ${timestamp}; clicking the 'Workspace' tab`)
+                Ju.clickTabWithText('Workspace')
                 return timestamp
               }
             """
         )
 
+      with gr.Tab('Upsample'):
 
-  def dummy_string_input():
-    return gr.Textbox( visible = False )
-    
+        # Warning that this process is slow and can take up to 10 minutes for 1 second of audio
+        with gr.Accordion('What is this?', open = False):
+
+          gr.Markdown('''
+            Upsampling is a process that creates higher-quality audio from your composition. It is done in two steps:
+
+            - “Midsampling,” which considerably improves the quality of the audio, takes around 2 minutes per one second of audio.
+
+            - “Upsampling,” which improves the quality some more, goes after midsampling and takes around 8 minutes per one second of audio.
+
+            Thus, say, for a one-minute song, you will need to wait around 2 hours to have the midsampled version, and around 8 hours _more_ to have the upsampled version.
+
+            You will be able to listen to the audio as it is being generated: Each “window” of upsampling takes ~6 minutes and will give you respectively ~2.7 and ~0.7 additional seconds of mid- or upsampled audio to listen to.
+
+            ⚠️ WARNING: As the upsampling process uses a different model, which cannot be loaded together with the composition model due to memory constraints, **you will not be able to upsample and compose at the same time**. To go back to composing you will have to restart the Colab runtime or start a second Colab runtime and use them in parallel.
+          ''')
+
+        UI.sample_to_upsample.render()
+
+        # Change the sample to upsample when a sample is picked
+        UI.picked_sample.change(
+          inputs = UI.picked_sample,
+          outputs = UI.sample_to_upsample,
+          fn = lambda x: x,
+        )
+
+        with gr.Accordion('Genres for upsampling (optional)', open = False):
+
+          with gr.Accordion('What is this?', open = False):
+
+            gr.Markdown('''
+              The tool will generate three upsamplings of the selected sample, which will then be panned to the left, center, and right, respectively. Choosing different genres for each of the three upsamplings will result in a more diverse sound between them, thus enhancing the (pseudo-)stereo effect. 
+
+              A good starting point is to have a genre that emphasizes vocals (e.g. `Pop`) for the center channel, and two similar but different genres for the left and right channels (e.g. `Rock` and `Metal`).
+
+              If you don’t want to use this feature, simply select the same genre for all three upsamplings.
+            ''')
+
+          with gr.Row():
+
+            for input in [ UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel ]:
+
+              input.render()
+        
+        # If upsampling is running, enable the upsampling_refresher -- a "virtual" input that, when changed, will update the upsampling_status_markdown
+        # It will do so after waiting for 10 seconds (using js). After finishing, it will update itself again, causing the process to repeat.
+        UI.upsampling_refresher.render().change(
+          inputs = UI.upsampling_refresher,
+          outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown ],
+          fn = lambda refresher: {
+            UI.upsampling_status_markdown: Upsampling.status_markdown,
+            UI.upsampling_refresher: refresher + 1,
+          },
+          _js = """
+            async ( ...args ) => {
+              await new Promise( resolve => setTimeout( resolve, 10000 ) )
+              console.log( 'Checking upsampling status...' )
+              return args
+            }
+          """
+        )
+
+        UI.upsample_button.render().click( **upsample_button_click_args )
+
+        # During app load, set upsampling_running and upsampling_stopping according to Upsampling.running
+        app.load(
+          inputs = None,
+          outputs = UI.upsampling_running,
+          fn = lambda: Upsampling.running,
+        )
+        
+        UI.upsampling_triggered_by_button.render()
+
+        # When upsampling_running changes via the button, run the upsampling process
+        UI.upsampling_running.render().change(
+          inputs = [
+            UI.upsampling_triggered_by_button,
+            UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
+            UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
+          ],
+          outputs = None,
+          fn = lambda triggered_by_button, *args: start_upsampling( *args ) if triggered_by_button else None,
+          api_name = 'toggle-upsampling',
+          # Also go to the "Workspace" tab (because that's where we'll display the upsampling status) via the Ju.clickTabWithText helper method in js
+          _js = """
+            async ( ...args ) => {
+              console.log( 'Upsampling toggled, args:', args )
+              if ( args[0] ) {
+                Ju.clickTabWithText( 'Workspace' )
+                return args
+              } else {
+                throw new Error('Upsampling not triggered by button')
+              }
+            }
+          """
+        )
+
+        # When it changes regardless of the session, e.g. also at page refresh, update the various relevant UI elements, start the refresher, etc.
+        UI.upsampling_running.change(
+          inputs = None,
+          outputs = [ UI.upsampling_status_markdown, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher ],
+          fn = lambda: {
+            UI.upsampling_status_markdown: 'Upsampling in progress...',
+            UI.upsample_button: gr.update(
+              value = 'Stop upsampling',
+              variant = 'secondary',
+            ),
+            UI.continue_upsampling_button: gr.update(
+              value = 'Stop upsampling',
+            ),
+            # Random refresher value (int) to trigger the refresher
+            UI.upsampling_refresher: random.randint( 0, 1000000 ),
+          }
+        )
+
+      with gr.Tab('Panic'):
+
+        with gr.Accordion('?', open = False):
+
+          gr.Markdown('''
+            Sometimes the app will crash due to insufficient GPU memory. If this happens, you can try using the button below to empty the cache.
+
+            If that doesn’t work, you’ll have to restart the runtime (`Runtime` > `Restart and run all` in Colab). That’ll take a couple of minutes, but the memory will be new as a daisy.
+
+            Usually around 12 GB of GPU RAM is needed to safely run the app.
+          ''')
+
+        memory_usage = gr.Textbox(
+          label = 'GPU memory usage',
+          value = 'Click Refresh to update',
+        )
+
+        def get_gpu_memory_usage():
+          return subprocess.check_output(
+            ['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader'],
+            encoding='utf-8'
+          ).strip()
+
+        with gr.Row():
+        
+          gr.Button('Refresh').click(
+            inputs = None,
+            outputs = memory_usage,
+            fn = get_gpu_memory_usage,
+          )
+
+          gr.Button('Empty cache', variant='primary').click(
+            inputs = None,
+            outputs = memory_usage,
+            fn = lambda: [
+              empty_cache(),
+              get_gpu_memory_usage(),
+            ][-1],
+          )
+
+        with gr.Accordion('Run any code', open = False):
+
+          gr.Markdown('''
+            The following input box allows you to execute arbitrary Python code. ⚠️ DON’T USE THIS FEATURE IF YOU DON’T KNOW WHAT YOU’RE DOING! ⚠️
+          ''')
+
+          eval_code = gr.Textbox(
+            label = 'Python code',
+            placeholder = 'Shift+Enter for a new line, Enter to run',
+            value = '',
+            max_lines = 10,
+          )
+
+          eval_button = gr.Button('Execute')
+
+          eval_output = gr.Textbox(
+            label = 'Output',
+            value = '',
+            max_lines = 10,
+          )
+
+          eval_args = dict(
+            inputs = eval_code,
+            outputs = eval_output,
+            fn = lambda code: eval(code),
+          )
+
+          eval_button.click(**eval_args)
+          eval_code.submit(**eval_args)
+
   app.load(
     on_load,
     inputs = [ gr.Textbox(visible=False), gr.Textbox(visible=False), gr.Textbox(visible=False) ],
-    outputs = [ UI.project_name, UI.routed_sample_id, UI.artist, UI.genre, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window ],
+    outputs = [ 
+      UI.project_name, UI.routed_sample_id, UI.artist, UI.genre, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window,
+      UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
+    ],
     api_name = 'initialize',
     _js = """async (...args) => {
       
@@ -1452,8 +2330,10 @@ with gr.Blocks(
         await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/wavesurfer.min.js')
         await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/plugin/wavesurfer.timeline.min.js')
 
+        window.shadowRoot = document.querySelector('gradio-app').shadowRoot
+
         // The wavesurfer element is hidden inside a shadow DOM hosted by <gradio-app>, so we need to get it from there
-        let shadowSelector = selector => document.querySelector('gradio-app').shadowRoot.querySelector(selector)
+        let shadowSelector = selector => window.shadowRoot.querySelector(selector)
 
         let waveformDiv = shadowSelector('#audio-waveform')
         console.log(`Found waveform div:`, waveformDiv)
@@ -1463,27 +2343,36 @@ with gr.Blocks(
         
         let getAudioTime = time => {
           let previewDuration = wavesurfer.getDuration()
-          // Take total duration from #total-audio-length's input
-          let totalDuration = parseFloat(shadowSelector('#total-audio-length input').value)
+          // console.log('Preview duration: ', previewDuration)
+          // Take total duration from #total-audio-length's input, unless #trim-to-n-sec is set, in which case use that
+          let trimToNSec = parseFloat(shadowSelector('#trim-to-n-sec input')?.value || 0)
+          // console.log('Trim to n sec: ', trimToNSec)
+          let totalDuration = trimToNSec || parseFloat(shadowSelector('#total-audio-length input').value)
+          // console.log('Total duration: ', totalDuration)
           let additionalDuration = totalDuration - previewDuration
-          return Math.round( ( time + additionalDuration ) * 100 ) / 100          
+          // console.log('Additional duration: ', additionalDuration)
+          let result = Math.round( ( time + additionalDuration ) * 100 ) / 100          
+          // console.log('Result: ', result)
+          return result
         }
 
         // Create a (global) wavesurfer object with and attach it to the div
+        window.wavesurferTimeline = WaveSurfer.timeline.create({
+          container: timelineDiv,
+          // Light colors, as the background is dark
+          primaryColor: '#eee',
+          secondaryColor: '#ccc',
+          primaryFontColor: '#eee',
+          secondaryFontColor: '#ccc',
+          formatTimeCallback: time => Math.round(getAudioTime(time))
+        })
+
         window.wavesurfer = WaveSurfer.create({
           container: waveformDiv,
           waveColor: 'skyblue',
           progressColor: 'steelblue',
           plugins: [
-            WaveSurfer.timeline.create({
-              container: timelineDiv,
-              // Light colors, as the background is dark
-              primaryColor: '#eee',
-              secondaryColor: '#ccc',
-              primaryFontColor: '#eee',
-              secondaryFontColor: '#ccc',
-              formatTimeCallback: time => Math.round(getAudioTime(time))
-            })
+            window.wavesurferTimeline
           ]
         })
         
@@ -1497,16 +2386,16 @@ with gr.Blocks(
           shadowSelector('#audio-time').value = getAudioTime(time)
         })
 
-        // Put an observer on #generated-audio (also in the shadow DOM) to reload the audio from its inner <audio> element
-        let parentElement = document.querySelector('gradio-app').shadowRoot.querySelector('#generated-audio')
+        // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
+        let parentElement = window.shadowRoot.querySelector('#audio-file')
         let parentObserver
 
         parentObserver = new MutationObserver( mutations => {
-          // Check if there is an inner <audio> element
-          let audioElement = parentElement.querySelector('audio')
-          if ( audioElement ) {
+          // Check if there is an inner <a> element
+          let wavesurferSrcElement = parentElement.querySelector('a')
+          if ( wavesurferSrcElement ) {
             
-            console.log('Found audio element:', audioElement)
+            console.log('Found audio element:', wavesurferSrcElement)
 
             // If so, create an observer on it while removing the observer on the parent
             parentObserver.disconnect()
@@ -1514,12 +2403,14 @@ with gr.Blocks(
             let audioSrc
 
             let reloadAudio = () => {
-              // Check if the audio element has a src attribute and if it has changed
-              if ( audioElement.src && audioElement.src !== audioSrc ) {
+              // Check if the audio source has changed
+              if ( wavesurferSrcElement.href && wavesurferSrcElement.href !== audioSrc ) {
                 // If so, reload the audio
-                audioSrc = audioElement.src
+                audioSrc = wavesurferSrcElement.href
                 console.log('Reloading audio from', audioSrc)
                 wavesurfer.load(audioSrc)
+                // Also set the href of #download-button to the audio source
+                window.shadowRoot.querySelector('#download-button').href = audioSrc
               }
             }
 
@@ -1527,13 +2418,24 @@ with gr.Blocks(
 
             let audioObserver = new MutationObserver( reloadAudio )
 
-            audioObserver.observe(audioElement, { attributes: true })
+            audioObserver.observe(wavesurferSrcElement, { attributes: true })
 
           }
 
         })
 
         parentObserver.observe(parentElement, { childList: true, subtree: true })
+
+        window.Ju = {}
+
+        Ju.clickTabWithText = function (buttonText) {
+          for ( let button of document.querySelector('gradio-app').shadowRoot.querySelectorAll('div.tabs > div > button') ) {
+            if ( button.innerText == buttonText ) {
+              button.click()
+              break
+            }
+          }
+        }
 
         // href, query_string, error_message
         return [ window.location.href, window.location.search.slice(1), null ]
@@ -1548,5 +2450,21 @@ with gr.Blocks(
       }
     }"""
   )
+
+  # Also load browser's time zone offset on app load
+  def set_browser_timezone(offset):
+    global browser_timezone
+
+    print('Browser time zone offset:', offset)
+    browser_timezone = timezone(timedelta(minutes = -offset))
+    print('Browser time zone:', browser_timezone)
+
+  app.load(
+    inputs = gr.Number( visible = False ),
+    outputs = None,
+    _js = '() => [ new Date().getTimezoneOffset() ]',
+    fn = set_browser_timezone
+  )
+
 
   app.launch( share = share_gradio, debug = debug_gradio )
