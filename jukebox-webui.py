@@ -38,9 +38,8 @@ import subprocess
 
 def print_gpu_and_memory():
   # Print only gpu and memory info from print_gpu_and_memory()
-  # Output in the following format: Running on [GPU name] with [memory]/[total memory] GB of memory
-  # Example: Running on Tesla T4 with 14.76/15.78 GB of memory
-  !nvidia-smi --query-gpu=gpu_name,memory.total,memory.used --format=csv,noheader,nounits | awk -F, '{printf "Running on %s with %.2f/%.2f GB of memory
+  print("💻 GPU, total memory, free memory:")
+  !nvidia-smi --query-gpu=gpu_name,memory.total,memory.used --format=csv,noheader,nounits
 
 
 # If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
@@ -123,7 +122,6 @@ browser_timezone = None
 class Upsampling:
 
   running = False
-  stopping = False
   zs = None
   project = None
   sample_id = None
@@ -208,11 +206,6 @@ print('load_audio monkey patched.')
 
 def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
 
-  if not Upsampling.running:
-    # We stopped upsampling in the UI, so now we need to reload the top prior (as we deleted it before upsampling) and exit
-    stop_upsampling()
-    return zs
-
   global base_path
 
   # The original code provides for shorter samples by sampling only a partial window, but we'll just throw an error for simplicity
@@ -242,11 +235,6 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
     Upsampling.window_index = 0
     for start in Upsampling.windows:
 
-      # If we stopped upsampling in the UI, stop here
-      if not Upsampling.running:
-        stop_upsampling()
-        return zs
-
       Upsampling.window_start_time = datetime.now()
       Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
       Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
@@ -254,10 +242,10 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       
       Upsampling.status_markdown = f'Upsampling window { Upsampling.window_index+1 } of { len(Upsampling.windows) } at level { level }, estimated to complete at { as_local_hh_mm(Upsampling.eta) } your time'
 
-      # If this is level 1, add that level 0 will take ~4x longer
-      if level == 1:
-        estimated_level_0_time = ( Upsampling.elapsed_time + Upsampling.time_remaining ) * 4
-        Upsampling.status_markdown += f'\n(Final ETA: { as_local_hh_mm(Upsampling.eta + estimated_level_0_time) })'
+      # # If this is level 1, add that level 0 will take ~4x longer
+      # if level == 1:
+      #   estimated_level_0_time = ( Upsampling.elapsed_time + Upsampling.time_remaining ) * 4
+      #   Upsampling.status_markdown += f'\n(Final ETA: { as_local_hh_mm(Upsampling.eta + estimated_level_0_time) })'
           
       # Print the status with an hourglass emoji in front of it
       print(f'\n\n⏳ {Upsampling.status_markdown}\n\n')
@@ -563,33 +551,7 @@ class UI:
   upsampling_running = gr.Number( visible = False )
   # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
 
-  upsampling_stopping = gr.State()
-
-  upsampling_toggled_during_this_session = gr.Checkbox( visible = False, value = False )
-
-  upsample_button_click_args = dict(
-    inputs = upsampling_running,
-    outputs = [ upsampling_running, upsampling_stopping, upsampling_toggled_during_this_session ],
-    fn = lambda was_running: {
-      UI.upsampling_running: 0 if was_running else 1,
-      UI.upsampling_stopping: was_running,
-      UI.upsampling_toggled_during_this_session: True,
-    },
-    _js = """
-      // Confirm before starting/stopping the upsample process
-      running => {
-        confirmText = 
-          running ?
-            'Are you sure you want to stop the upsample process? It will take a few minutes to stop.'
-          : 'Are you sure you want to start the upsample process? THIS WILL TAKE A LONG TIME (see “What is this?” above).'
-        if ( !confirm(confirmText) ) {
-          throw new Error(`${running ? 'Stopping' : 'Starting'} upsample process canceled by user`)
-        } else {
-          return [ running ]
-        }
-      }
-    """
-  )
+  upsampling_triggered_by_button = gr.Checkbox( visible = False, value = False )
 
   project_settings = [ 
     *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec,
@@ -930,15 +892,15 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
         # Fade in the left overlap and add it to the existing wav if it's not empty (i.e. if this is not the first chunk)
         left_overlap = fade(left_overlap, 'in')
         print(f'Faded in left overlap')
-        # Show as plot
-        plt.plot(left_overlap[0, :, 0])
-        plt.show()
+        # # Show as plot
+        # plt.plot(left_overlap[0, :, 0])
+        # plt.show()
 
         wav[ :, -left_overlap.shape[1]: ] += left_overlap
         print(f'Added left overlap to existing wav:')
-        # Plot the resulting (faded-in + previous fade-out) overlap
-        plt.plot(wav[0, -left_overlap.shape[1]:, 0])
-        plt.show()
+        # # Plot the resulting (faded-in + previous fade-out) overlap
+        # plt.plot(wav[0, -left_overlap.shape[1]:, 0])
+        # plt.show()
 
         print(f'Added left overlap to wav, overall shape now: {wav.shape}')
 
@@ -1525,53 +1487,14 @@ def seconds_to_tokens(sec, level = 2):
 
   return int(tokens)
 
-def stop_upsampling():
-  # Nvidia-smi, GPU & memory only
-  print_gpu_and_memory()
-  for prior in Upsampling.priors:
-    del prior
-  Upsampling.priors = None
-  empty_cache()
-  print('Deleted Upsampling.priors and emptied cache')
-  print_gpu_and_memory()
-  Upsampling.status_markdown = "Reloading the model for composing..."
-  load_top_prior()
-  Upsampling.status_markdown = 'Upsampling stopped. You can continue upsampling by going to the **Upsample** tab again.'
-
-def toggle_upsampling(toggled_on, project_name, sample_id, artist, lyrics, *genres):
+def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
 
   global hps, top_prior, priors
 
-  print(f'Toggling upsampling for {sample_id} to {toggled_on}')
+  print(f'Starting upsampling for {sample_id}, artist: {artist}, lyrics: {lyrics}, genres: {genres}')
 
   Upsampling.project = project_name
   Upsampling.sample_id = sample_id
-
-  if not toggled_on:
-
-    print('Stopping upsampling')
-
-    try:
-
-      if Upsampling.window_start_time:
-        Upsampling.time_remaining = Upsampling.time_per_window - ( datetime.now() - Upsampling.window_start_time )
-        Upsampling.eta = datetime.now() + Upsampling.time_remaining
-        # Add 1 minute for loading top prior
-        Upsampling.eta += timedelta(minutes = 1)
-        Upsampling.status_markdown = f'Upsampling stopping. Please wait until ~{as_local_hh_mm(Upsampling.eta)} for the current window to finish.'
-      else:
-        Upsampling.status_markdown = 'Stopping upsampling, please wait...'
-
-    
-    except Exception as e:
-
-      print(f'Error while trying to stop upsampling: {e}')
-      Upsampling.status_markdown = 'Stopping upsampling, please wait...'
-
-    print(Upsampling.status_markdown)
-    Upsampling.running = False
-    Upsampling.stopping = True
-    return
 
   Upsampling.running = True
   Upsampling.status_markdown = "Upsampling started. Loading the upsampling models..."
@@ -1622,11 +1545,6 @@ def toggle_upsampling(toggled_on, project_name, sample_id, artist, lyrics, *genr
 
   upsamplers = [ make_prior(setup_hparams(prior, dict()), vqvae, 'cpu') for prior in priors[:-1] ]
   
-  # Check if upsampling wasn't stopped while we were loading the models
-  if Upsampling.stopping:
-    stop_upsampling()
-    return
-
   if type(labels)==dict:
     labels = [ prior.labeller.get_batch_labels(Upsampling.metas, 'cuda') for prior in upsamplers ] + [ labels ]
     print('Converted labels to list')
@@ -1903,7 +1821,7 @@ with gr.Blocks(
                   )
 
                   # Only show the upsampling elements if there are upsampled versions of the picked sample
-                  def show_or_hide_upsampling_elements(project_name, sample_id, upsampling_level, upsampling_running):
+                  def show_or_hide_upsampling_elements(project_name, sample_id, upsampling_running):
 
                     levels, _ = get_levels(project_name, sample_id)
                     # print(f'Levels: {levels}')
@@ -1922,11 +1840,14 @@ with gr.Blocks(
                       )
                     }
                   
-                  UI.picked_sample.change(
-                    inputs = [ UI.project_name, UI.picked_sample, UI.upsampling_level, UI.upsampling_running ],
+                  show_or_hide_upsampling_elements_args = dict(
+                    inputs = [ UI.project_name, UI.picked_sample, UI.upsampling_running ],
                     outputs = [ UI.upsampling_accordion, UI.upsampling_level ],
                     fn = show_or_hide_upsampling_elements,
                   )
+
+                  UI.picked_sample.change( **show_or_hide_upsampling_elements_args )
+                  UI.upsampling_running.change( **show_or_hide_upsampling_elements_args )
 
                 with gr.Column(visible = False) as upsampling_manipulation_column:
 
@@ -1969,7 +1890,40 @@ with gr.Blocks(
                 fn = show_or_hide_continue_upsampling,
               )
 
-              UI.continue_upsampling_button.render().click( **UI.upsample_button_click_args )
+              upsample_button_click_args = dict(
+                inputs = UI.upsampling_running,
+                outputs = [ UI.upsampling_running, UI.upsampling_triggered_by_button ],
+                fn = lambda was_running: 
+                # If was running (i.e. we're stopping), kill the runtime (after a warning) and replace document body with a message saying to restart the runtime in Colab
+                  [
+                    print('Killing runtime...'),
+                    subprocess.run(['kill', '-9', str(os.getpid())]),
+                  ] if was_running else {
+                    UI.upsampling_running: 1,
+                    UI.upsampling_triggered_by_button: True,
+                  },
+                _js = """
+                  // Confirm before starting/stopping the upsample process
+                  running => {
+                    confirmText = 
+                      running ?
+                        'Are you sure you want to stop the upsample process? ⚠️ THIS WILL KILL THE RUNTIME AND YOU WILL HAVE TO RESTART IT IN COLAB ⚠️ (But your current upsampling progress will be saved)' :
+                        'Are you sure you want to start the upsample process? THIS WILL TAKE HOURS, AND YOU WON’T BE ABLE TO CONTINUE COMPOSING!'
+                    if ( !confirm(confirmText) ) {
+                      throw new Error(`${running ? 'Stopping' : 'Starting'} upsample process canceled by user`)
+                    } else {
+                      // If running, replace document body with a message saying to restart the runtime in Colab
+                      // Put it in the center of the screen in big white text
+                      if ( running ) {
+                        document.body.innerHTML = '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white;"><p style="font-size: 24px;">Upsampling stopped. Please restart the runtime in Colab.</p><p>(Don’t worry, your current upsampling progress is saved)</p></div>'
+                      }
+                      return [ running ]
+                    }
+                  }
+                """
+              )
+
+              UI.continue_upsampling_button.render().click( **upsample_button_click_args )
 
             # UI.generated_audio.render()
 
@@ -2122,9 +2076,9 @@ with gr.Blocks(
 
         def trim_primed_audio(audio, sec):
           print(f'Trimming {audio} to {sec} seconds')
-          # Plot the audio to console for debugging
-          plt.plot(audio)
-          plt.show()              
+          # # Plot the audio to console for debugging
+          # plt.plot(audio)
+          # plt.show()              
           # Audio is of the form (sr, audio)
           trimmed_audio = audio[1][:int(sec * audio[0])]
           print(f'Trimmed audio shape is {trimmed_audio.shape}')
@@ -2211,11 +2165,11 @@ with gr.Blocks(
         # If upsampling is running, enable the upsampling_refresher -- a "virtual" input that, when changed, will update the upsampling_status_markdown
         # It will do so after waiting for 10 seconds (using js). After finishing, it will update itself again, causing the process to repeat.
         UI.upsampling_refresher.render().change(
-          inputs = [ UI.upsampling_running, UI.upsampling_refresher, UI.upsampling_stopping ],
+          inputs = UI.upsampling_refresher,
           outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown ],
-          fn = lambda running, refresher, stopping: {
+          fn = lambda refresher: {
             UI.upsampling_status_markdown: Upsampling.status_markdown,
-            UI.upsampling_refresher: refresher + 1 if running or stopping else refresher,
+            UI.upsampling_refresher: refresher + 1,
           },
           _js = """
             async ( ...args ) => {
@@ -2226,29 +2180,26 @@ with gr.Blocks(
           """
         )
 
-        UI.upsample_button.render().click( **UI.upsample_button_click_args )
+        UI.upsample_button.render().click( **upsample_button_click_args )
 
         # During app load, set upsampling_running and upsampling_stopping according to Upsampling.running
         app.load(
           inputs = None,
-          outputs = [ UI.upsampling_running, UI.upsampling_stopping ],
-          fn = lambda: [ Upsampling.running, Upsampling.stopping ],
+          outputs = UI.upsampling_running,
+          fn = lambda: Upsampling.running,
         )
         
-        UI.upsampling_toggled_during_this_session.render()
-        UI.upsampling_stopping.render()
+        UI.upsampling_triggered_by_button.render()
 
-        # When upsampling_running changes in this session, i.e. via the button, run the upsampling process
+        # When upsampling_running changes via the button, run the upsampling process
         UI.upsampling_running.render().change(
           inputs = [
-            UI.upsampling_toggled_during_this_session, UI.upsampling_running, 
+            UI.upsampling_triggered_by_button,
             UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
             UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
           ],
           outputs = None,
-          fn = lambda toggled_during_this_session, *args: toggle_upsampling( *args ) if toggled_during_this_session else None,
-          # fn = None,
-          # # (Temporarily disabled to test the UI)
+          fn = lambda triggered_by_button, *args: start_upsampling( *args ) if triggered_by_button else None,
           api_name = 'toggle-upsampling',
           # Also go to the "Workspace" tab (because that's where we'll display the upsampling status) via the Ju.clickTabWithText helper method in js
           _js = """
@@ -2258,7 +2209,7 @@ with gr.Blocks(
                 Ju.clickTabWithText( 'Workspace' )
                 return args
               } else {
-                throw new Error('Upsampling not toggled during this session')
+                throw new Error('Upsampling not triggered by button')
               }
             }
           """
@@ -2266,18 +2217,19 @@ with gr.Blocks(
 
         # When it changes regardless of the session, e.g. also at page refresh, update the various relevant UI elements, start the refresher, etc.
         UI.upsampling_running.change(
-          inputs = [ UI.upsampling_running, UI.upsampling_stopping, UI.upsampling_refresher ],
+          inputs = None,
           outputs = [ UI.upsampling_status_markdown, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher ],
-          fn = lambda is_running, is_stopping, refresher: {
-            UI.upsampling_status_markdown: 'Upsampling in progress...' if is_running else 'Stopping upsampling...' if is_stopping else 'Upsampling stopped',
+          fn = lambda: {
+            UI.upsampling_status_markdown: 'Upsampling in progress...',
             UI.upsample_button: gr.update(
-              value = 'Stop upsampling' if is_running else 'Start upsampling',
-              variant = 'secondary' if is_running else 'primary',
+              value = 'Stop upsampling',
+              variant = 'secondary',
             ),
             UI.continue_upsampling_button: gr.update(
-              value = 'Stop upsampling' if is_running else 'Continue upsampling',
+              value = 'Stop upsampling',
             ),
-            UI.upsampling_refresher: refresher + 1 if is_running else refresher,
+            # Random refresher value (int) to trigger the refresher
+            UI.upsampling_refresher: random.randint( 0, 1000000 ),
           }
         )
 
@@ -2321,16 +2273,15 @@ with gr.Blocks(
             ][-1],
           )
 
-        # Accordion for eval (danger zone)
-        with gr.Accordion('Danger zone', open = False):
+        with gr.Accordion('Run any code', open = False):
 
           gr.Markdown('''
-            The following input box allows you to execute arbitrary Python code. IF YOU DON’T KNOW WHAT YOU’RE DOING, DON’T USE THIS FEATURE.
+            The following input box allows you to execute arbitrary Python code. ⚠️ DON’T USE THIS FEATURE IF YOU DON’T KNOW WHAT YOU’RE DOING! ⚠️
           ''')
 
           eval_code = gr.Textbox(
             label = 'Python code',
-            placeholder = 'Shift+Enter for a new line',
+            placeholder = 'Shift+Enter for a new line, Enter to run',
             value = '',
             max_lines = 10,
           )
@@ -2352,9 +2303,6 @@ with gr.Blocks(
           eval_button.click(**eval_args)
           eval_code.submit(**eval_args)
 
-  def dummy_string_input():
-    return gr.Textbox( visible = False )
-    
   app.load(
     on_load,
     inputs = [ gr.Textbox(visible=False), gr.Textbox(visible=False), gr.Textbox(visible=False) ],
