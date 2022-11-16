@@ -1042,7 +1042,7 @@ def get_children(project_name, parent_sample_id, include_custom=True):
   prefix = get_prefix(project_name, parent_sample_id)
   child_ids = []
   for filename in os.listdir(f'{base_path}/{project_name}'):
-    match = re.match(f'{prefix}(\d+)\\.zs?', filename)
+    match = re.match(f'{prefix}(\d+)\\.zs?$', filename)
     if match:
       child_ids += [ filename.split('.')[0] ]
     
