@@ -1,6 +1,6 @@
 #@title Jukebox Web UI
 
-#@markdown This Notebook allows you to creating music with OpenAI’s Jukebox model using a simple, web-based UI that uses your Colab Notebook as a backend.
+#@markdown This Notebook allows you to create music with OpenAI’s Jukebox model using a simple, web-based UI that uses your Colab Notebook as a backend.
 #@markdown I strongly suggest that you refer to the [getting started page](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md) before running it.
 #@markdown ***
 
@@ -23,6 +23,10 @@ base_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
 #@markdown ### *Path for models*
 models_path = '/content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
 #@markdown This is where your models will be stored. This app is capable of loading the model from an arbitrary path, so storing it on Google Drive will save you the hassle (and time) of having to download or copy it every time you start the instance. The models will be downloaded automatically if they don’t exist, so you don’t need to download them manually.
+
+#@markdown ### *Optimized Jukebox*
+use_optimized_jukebox = True #@param{type:'boolean'}
+#@markdown The optimized version by craftmine1000 uses less memory and can run on the free Colab tier. It also has a few other improvements too. It’s not as well-tested as the original one, though, so if you run into any issues, try unchecking this box and restarting the instance.
 
 share_gradio = True #param{type:'boolean'}
 # ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
@@ -60,7 +64,11 @@ except:
     from google.colab import drive
     drive.mount('/content/drive')
 
-  !pip install git+https://github.com/openai/jukebox.git
+  if use_optimized_jukebox:
+    !pip install git+https://github.com/craftmine1000/jukebox-opt.git
+  else:
+    !pip install git+https://github.com/openai/jukebox.git
+    
   !pip install gradio
 
   repeated_run = True
