@@ -38,8 +38,8 @@ import subprocess
 
 def print_gpu_and_memory():
   # Print only gpu and memory info from print_gpu_and_memory()
-  print("💻 GPU, total memory, free memory:")
-  !nvidia-smi --query-gpu=gpu_name,memory.total,memory.used --format=csv,noheader,nounits
+  print("💻 GPU, total memory, memory used:")
+  !nvidia-smi --query-gpu=gpu_name,memory.total,memory.used --format=csv,noheader
 
 
 # If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
@@ -241,7 +241,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
       Upsampling.eta = datetime.now() + Upsampling.time_remaining
       
-      Upsampling.status_markdown = f'Upsampling window { Upsampling.window_index+1 } of { len(Upsampling.windows) } at level { level }, estimated to complete at { as_local_hh_mm(Upsampling.eta) } your time'
+      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** at **level { level }**\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
 
       # # If this is level 1, add that level 0 will take ~4x longer
       # if level == 1:
@@ -1883,14 +1883,6 @@ with gr.Blocks(
 
               UI.upsampling_status_markdown.render()
 
-              UI.upsampling_audio_refresher.render().change(
-                inputs = UI.upsampling_audio_refresher,
-                outputs = None,
-                fn = None,
-                # Click internal-refresh-button
-                _js = "window.shadowRoot.getElementById('internal-refresh-button').click()"
-              )
-
               # Show the continue upsampling markdown only if the current level's length in tokens is less than the total audio length
               # Also update the upsampling button to say "Continue upsampling" instead of "Upsample"
               def show_or_hide_continue_upsampling(project_name, sample_id, total_audio_length, upsampling_running):
@@ -1918,7 +1910,7 @@ with gr.Blocks(
                 inputs = UI.upsampling_running,
                 outputs = [ UI.upsampling_running, UI.upsampling_triggered_by_button ],
                 fn = lambda was_running: 
-                # If was running (i.e. we're stopping), kill the runtime (after a warning) and replace document body with a message saying to restart the runtime in Colab
+                # If was running (i.e. we're stopping), kill the runtime (after a warning) and show an alert saying to restart the runtime in Colab
                   [
                     print('Killing runtime...'),
                     subprocess.run(['kill', '-9', str(os.getpid())]),
@@ -1936,10 +1928,9 @@ with gr.Blocks(
                     if ( !confirm(confirmText) ) {
                       throw new Error(`${running ? 'Stopping' : 'Starting'} upsample process canceled by user`)
                     } else {
-                      // If running, replace document body with a message saying to restart the runtime in Colab
-                      // Put it in the center of the screen in big white text
+                      // If running, show a message saying to restart the runtime in Colab
                       if ( running ) {
-                        document.body.innerHTML = '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white;"><p style="font-size: 24px;">Upsampling stopped. Please restart the runtime in Colab.</p><p>(Don’t worry, your current upsampling progress is saved)</p></div>'
+                        alert('Upsample process stopped. Please re-run the cell in Colab to restart the UI')
                       }
                       return [ running ]
                     }
@@ -1948,6 +1939,18 @@ with gr.Blocks(
               )
 
               UI.continue_upsampling_button.render().click( **upsample_button_click_args )
+
+              def reset_audio_refresher():
+                Upsampling.should_refresh_audio = False
+
+              UI.upsampling_audio_refresher.render().change(
+                inputs = UI.upsampling_audio_refresher,
+                outputs = None,
+                # Reset Upsampling.should_refresh_audio to False
+                fn = reset_audio_refresher
+              )
+
+              [ UI.upsampling_audio_refresher.change( **action ) for action in [ preview_args, show_or_hide_upsampling_elements_args ] ]
 
             # UI.generated_audio.render()
 
@@ -2198,7 +2201,7 @@ with gr.Blocks(
           inputs = [ UI.upsampling_refresher, UI.upsampling_audio_refresher ],
           outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown, UI.upsampling_audio_refresher ],
           fn = lambda refresher, audio_refresher: {
-            UI.upsampling_status_markdown: Upsampling.status_markdown + '\n\nClick 🔃 to update the audio as it is being upsampled.',
+            UI.upsampling_status_markdown: Upsampling.status_markdown,
             UI.upsampling_refresher: refresher + 1,
             UI.upsampling_audio_refresher: audio_refresher + 1 if Upsampling.should_refresh_audio else audio_refresher
           },
