@@ -38,6 +38,7 @@ debug_gradio = True #param{type:'boolean'}
 
 reload_all = False #param{type:'boolean'}
 
+import math
 import subprocess
 
 def print_gpu_and_memory():
@@ -494,11 +495,12 @@ class UI:
   #   visible = False
   # )
 
-  mp3_file = gr.File(
+  mp3_files = gr.File(
     label = 'MP3',
     elem_id = 'audio-file',
     type = 'binary',
-    visible = False
+    visible = False,
+    file_count = 'multiple'
   )
   
   audio_waveform = gr.HTML(
@@ -1396,6 +1398,7 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
 
   else:
     print('Yep, using it.')
+    wav = None
 
     if trim_to_n_sec:
       total_audio_length = tokens_to_seconds(seconds_to_tokens(trim_to_n_sec, level), level)
@@ -1404,8 +1407,29 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
       z = get_zs(project_name, sample_id)[level]
       total_audio_length = tokens_to_seconds(z.shape[1], level)
 
+  mp3_files = [f'{filename}.mp3']
+
+  # If the mp3 size is > 1MB, we'll need to send it back in chunks, so we divide the wav into as many chunks as needed
+  file_size = os.path.getsize(f'{filename}.mp3')
+  if file_size > 1000000:
+    print(f'MP3 file size is {file_size} bytes, so we need to send it in chunks')
+    if wav is None:
+      wav = librosa.load(f'{filename}.mp3', sr=hps.sr)[0]
+    num_chunks = math.ceil(file_size / 1000000)
+    print(f'Number of chunks: {num_chunks}')
+    wav_chunks = np.array_split(wav, num_chunks)
+    print(f'Wav chunk sizes: {[len(wav_chunk) for wav_chunk in wav_chunks]}')
+    for i, wav_chunk in enumerate(wav_chunks):
+      chunk_filename = f'{filename} chunk {i}'
+      librosa.output.write_wav(f'{chunk_filename}.wav', np.asfortranarray(wav_chunk), hps.sr)
+      subprocess.run(['ffmpeg', '-y', '-i', f'{chunk_filename}.wav', '-acodec', 'libmp3lame', '-ab', '320k', f'{chunk_filename}.mp3'])
+      mp3_files.append(f'{chunk_filename}.mp3')
+      # (We're always sending the complete mp3 as well, so that the user can download it if they want to)
+    print(f'Created {len(mp3_files)} MP3 files with sizes {[os.path.getsize(mp3_file) for mp3_file in mp3_files]}')
+        
+
   return {
-    UI.mp3_file: f'{filename}.mp3',
+    UI.mp3_files: mp3_files,
     UI.total_audio_length: total_audio_length,
     UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
@@ -1820,7 +1844,7 @@ with gr.Blocks(
               UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec, UI.upsampling_level, UI.upsample_rendering
             ],
             outputs = [ 
-              UI.sample_box, UI.mp3_file, #UI.generated_audio,
+              UI.sample_box, UI.mp3_files, #UI.generated_audio,
               UI.total_audio_length, UI.go_to_children_button, UI.go_to_parent_button,
             ],
             fn = get_sample,
@@ -1975,7 +1999,7 @@ with gr.Blocks(
 
             # UI.generated_audio.render()
 
-            UI.mp3_file.render()
+            UI.mp3_files.render()
 
             # Refresh button
             internal_refresh_button = gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False)
@@ -2490,38 +2514,41 @@ with gr.Blocks(
 
         // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
         let parentElement = window.shadowRoot.querySelector('#audio-file')
-        let parentObserver
-
-        parentObserver = new MutationObserver( mutations => {
+        let parentObserver = new MutationObserver( asyncmutations => {
+          
           // Check if there is an inner <a> element
-          let wavesurferSrcElement = parentElement.querySelector('a')
-          if ( wavesurferSrcElement ) {
+          let audioElements = parentElement.querySelectorAll('a')
+          if ( audioElements ) {
             
-            console.log('Found audio element:', wavesurferSrcElement)
+            console.log('Found audio elements:', audioElements)
 
-            // If so, create an observer on it while removing the observer on the parent
-            parentObserver.disconnect()
-
-            let audioSrc
-
-            let reloadAudio = () => {
-              // Check if the audio source has changed
-              if ( wavesurferSrcElement.href && wavesurferSrcElement.href !== audioSrc ) {
-                // If so, reload the audio
-                audioSrc = wavesurferSrcElement.href
-                console.log('Reloading audio from', audioSrc)
-                wavesurfer.load(audioSrc)
-                // Also set the href of #download-button to the audio source
-                window.shadowRoot.querySelector('#download-button').href = audioSrc
+            if ( audioElements.length ) {
+              // If there are several audio elements, load the ones starting with the second one as blobs and add them to the wavesurfer object
+              if ( audioElements.length > 1 ) {
+                let audioBlobPromises = []
+                for ( let i = 1; i < audioElements.length; i++ ) {
+                  let audioElement = audioElements[i]
+                  let audioBlobPromise = fetch(audioElement.href).then( async response => {
+                    let blob = await response.blob()
+                    console.log('Loaded audio blob:', blob)
+                    return blob
+                  })
+                  audioBlobPromises.push(audioBlobPromise)
+                }
+                Promise.all(audioBlobPromises).then( audioBlobs => {                  
+                  // Combine the audio blobs into a single blob
+                  let combinedAudioBlob = new Blob(audioBlobs, { type: 'audio/wav' })
+                  console.log('Combined audio blob:', combinedAudioBlob)
+                  // Load the combined audio blob into wavesurfer
+                  wavesurfer.loadBlob(combinedAudioBlob)
+                } )
+              } else {
+                // If there is only one audio element, load it directly
+                wavesurfer.load(audioElements[0].href)
               }
+              window.shadowRoot.querySelector('#download-button').href = audioElements[0].href
             }
-
-            reloadAudio()
-
-            let audioObserver = new MutationObserver( reloadAudio )
-
-            audioObserver.observe(wavesurferSrcElement, { attributes: true })
-
+            
           }
 
         })
