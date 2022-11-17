@@ -487,6 +487,11 @@ class UI:
     value = 'Pseudo-stereo with delay',
   )
 
+  upsample_pad_with_lower_sampled = gr.Checkbox(
+    label = 'Pad with lower-sampled audio',
+    value = False
+  )
+
   continue_upsampling_button = gr.Button('Continue upsampling', visible = False )
 
   # generated_audio = gr.Audio(
@@ -837,7 +842,7 @@ def get_first_upsampled_ancestor_zs(project_name, sample_id):
       print(f'No upsampled ancestor found for {sample_id}')
       return None
 
-def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level=2, upsample_rendering=3):
+def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level=2, upsample_rendering=3, pad_with_lower_sampled=False):
 
   print(f'Generating audio for {project_name}/{sample_id} (level {level}, upsample_rendering {upsample_rendering}, trim_to_n_sec {trim_to_n_sec}, preview_just_the_last_n_sec {preview_just_the_last_n_sec})')
 
@@ -859,8 +864,8 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
   # z is of shape torch.Size([1, n_tokens])
   # print(f'Loaded {filename}.z at level {level}, shape: {z.shape}')
 
-  total_audio_length = int( tokens_to_seconds(z.shape[1], level) * 100 ) / 100
-
+  level_audio_length = int( tokens_to_seconds(z.shape[1], level) * 100 ) / 100
+  
   if trim_to_n_sec:
     trim_to_tokens = seconds_to_tokens(trim_to_n_sec, level)
     # print(f'Trimming to {trim_to_n_sec} seconds ({trim_to_tokens} tokens)')
@@ -1026,9 +1031,34 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
       
       wav = to_stereo(wav, stereo_delay_ms=20 if upsample_rendering == 4 else 0)
 
-  print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {total_audio_length} seconds.')
+  if pad_with_lower_sampled and level < 2:
 
-  return wav, total_audio_length
+    lower_sampled_wav, level_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level+1, upsample_rendering, True)
+
+    # Get the length of lower_sampled_wav in seconds and compare it to the length of the upsampled wav
+    lower_sampled_seconds = lower_sampled_wav.shape[0] / hps.sr
+    upsampled_seconds = wav.shape[0] / hps.sr
+    pad_seconds = lower_sampled_seconds - upsampled_seconds
+    print(f'Level {level} wav is {upsampled_seconds} seconds long, level {level+1} wav is {lower_sampled_seconds} seconds long.')
+    if pad_seconds < 0:
+      print(f'Level {level} wav is longer than level {level+1} wav, not padding.')
+
+    else:
+      print(f'Level {level} wav is {pad_seconds} seconds shorter than level {level+1} wav, padding with {pad_seconds} seconds of level {level+1} wav.')
+
+      # If level is 1, then level 2 audio is mono, so we need to convert it to stereo by using the same values for both channels
+      if level == 1:
+        lower_sampled_wav = np.stack([ lower_sampled_wav, lower_sampled_wav ], axis=1)
+        print(f'Converted level 2 wav to stereo, shape now: {lower_sampled_wav.shape}')
+      
+      # Now we can pad our wav with the lower_sampled_wav, i.e. add the respective (end) part of the lower_sampled_wav to the end of the wav
+      wav = np.concatenate([ wav, lower_sampled_wav[ -int(pad_seconds * hps.sr): ] ], axis=0)
+
+      print(f'Added lower_sampled_wav to wav, shape now: {wav.shape}')
+
+  print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {level_audio_length} seconds.')
+
+  return wav, level_audio_length
 
 # def get_audio_being_upsampled():
 
@@ -1355,7 +1385,7 @@ def get_project(project_name, routed_sample_id):
     **settings_out_dict
   }
 
-def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec, level_name, upsample_rendering):
+def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec, level_name, upsample_rendering, pad_with_lower_sampled):
 
   global hps
 
@@ -1377,6 +1407,9 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
     suffixes = [ 'left', 'center', 'right', 'stereo', 'stereo-delay' ]
     filename += f' {suffixes[upsample_rendering]}'
   
+  if pad_with_lower_sampled and level_name != 'Raw':
+    filename += ' padded'
+  
   # Add a hash (6 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
   filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:6]}'
 
@@ -1386,7 +1419,7 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
   if not os.path.isfile(f'{filename}.wav') or not os.path.isfile(f'{filename}.mp3'):
 
     print('Nope, rendering...')
-    wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level, upsample_rendering)
+    wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level, upsample_rendering, pad_with_lower_sampled)
 
     if not os.path.exists(os.path.dirname(filename)):
       os.makedirs(os.path.dirname(filename))
@@ -1404,8 +1437,9 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
       total_audio_length = tokens_to_seconds(seconds_to_tokens(trim_to_n_sec, level), level)
     else:
       # We need to load the zs to know the total audio length
-      z = get_zs(project_name, sample_id)[level]
-      total_audio_length = tokens_to_seconds(z.shape[1], level)
+      level_for_audio_length = level if not pad_with_lower_sampled else 2
+      z = get_zs(project_name, sample_id)[level_for_audio_length]
+      total_audio_length = tokens_to_seconds(z.shape[1], level_for_audio_length)
 
   mp3_files = [f'{filename}.mp3']
 
@@ -1836,7 +1870,7 @@ with gr.Blocks(
 
           preview_args = dict(
             inputs = [
-              UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec, UI.upsampling_level, UI.upsample_rendering
+              UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec, UI.upsampling_level, UI.upsample_rendering, UI.upsample_pad_with_lower_sampled
             ],
             outputs = [ 
               UI.sample_box, UI.mp3_files, #UI.generated_audio,
@@ -1911,9 +1945,15 @@ with gr.Blocks(
                     ]
                   )
 
-                  UI.upsample_rendering.render().change(
-                    **preview_args,
-                  )
+                  with gr.Row():
+
+                    UI.upsample_rendering.render().change(
+                      **preview_args,
+                    )
+
+                    UI.upsample_pad_with_lower_sampled.render().change(
+                      **preview_args,
+                    )
 
               UI.upsampling_status_markdown.render()
 
@@ -2510,7 +2550,7 @@ with gr.Blocks(
         // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
         let parentElement = window.shadowRoot.querySelector('#audio-file')
         let previousAudioHrefs = null
-        let parentObserver = new MutationObserver( asyncmutations => {
+        let parentObserver = new MutationObserver( async mutations => {
           
           // Check if there is an inner <a> element
           let audioElements = parentElement.querySelectorAll('a')
@@ -2543,12 +2583,15 @@ with gr.Blocks(
                 } )
               } else {
                 // If there is only one audio element, load it directly
-                wavesurfer.load(audioElements[0].href)
+                let blob = await fetch(audioElements[0].href).then( async response => response.blob() )
+                console.log('Loaded audio blob:', blob)
+                wavesurfer.loadBlob(blob)
               }
               window.shadowRoot.querySelector('#download-button').href = audioElements[0].href
+
+              previousAudioHrefs = audioHrefs
             }
 
-            previousAudioHrefs = audioHrefs
             
           }
 
