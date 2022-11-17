@@ -249,7 +249,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
       Upsampling.eta = datetime.now() + Upsampling.time_remaining
       
-      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{ UI.UPSAMPLING_LEVEL_NAMES[level] }** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
+      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{ UI.UPSAMPLING_LEVEL_NAMES[2-level] }** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
 
       # # If this is level 1, add that level 0 will take ~4x longer
       # if level == 1:
@@ -402,10 +402,14 @@ class UI:
     step = 1
   )
 
+  max_n_samples = gr.Number(
+    visible = False
+  )
+
   temperature = gr.Slider(
     label = 'Temperature',
-    minimum = 0.96,
-    maximum = 1.01,
+    minimum = 0.9,
+    maximum = 1.1,
     step = 0.005
   )
 
@@ -528,7 +532,7 @@ class UI:
   )
 
   trim_to_n_sec = gr.Number(
-    label = 'Trim to ... seconds (0 to disable)',
+    label = 'Trim (unfocus to preview, then click **Trim**)',
     elem_id = 'trim-to-n-sec'
   )
 
@@ -1374,11 +1378,12 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
   # Add a hash (6 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
   filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:6]}'
 
-  print(f'Checking if {filename}.wav/.mp3 exist...')
+  print(f'Checking if {filename}.wav exist...')
 
   # If the filenames do not exist, render it
   if not os.path.isfile(f'{filename}.wav') or not os.path.isfile(f'{filename}.mp3'):
 
+    print('Nope, rendering...')
     wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level, upsample_rendering)
 
     if not os.path.exists(os.path.dirname(filename)):
@@ -1390,15 +1395,16 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
     subprocess.run(['ffmpeg', '-y', '-i', f'{filename}.wav', '-acodec', 'libmp3lame', '-ab', '320k', f'{filename}.mp3'])
 
   else:
-    wav, _ = librosa.load(filename + '.wav', sr=hps.sr)
-    total_audio_length = wav.shape[0] / hps.sr
-    print(f'Loaded {filename}.wav of shape {wav.shape} ({total_audio_length} sec)')
+    print('Yep, using it.')
+
+    if trim_to_n_sec:
+      total_audio_length = tokens_to_seconds(seconds_to_tokens(trim_to_n_sec, level), level)
+    else:
+      # We need to load the zs to know the total audio length
+      z = get_zs(project_name, sample_id)[level]
+      total_audio_length = tokens_to_seconds(z.shape[1], level)
 
   return {
-    # UI.generated_audio: gr.update(
-    #   value = ( hps.sr, wav ),
-    #   label = f'{sample_id} (lossless)',
-    # ),
     UI.mp3_file: f'{filename}.mp3',
     UI.total_audio_length: total_audio_length,
     UI.go_to_children_button: gr.update(
@@ -1860,8 +1866,8 @@ with gr.Blocks(
                       ),
                       UI.upsampling_level: gr.update(
                         choices = available_level_names,
-                        # Choose the highest available level by default 
-                        value = available_level_names[-1],
+                        # Choose the highest available level, unless we're upsampling, in which case choose 2-Upsampling.level (because they're in reverse order)
+                        value = available_level_names[-1 if not Upsampling.running else 2 - Upsampling.level],
                       )
                     }
                   
@@ -2067,6 +2073,51 @@ with gr.Blocks(
               with gr.Tab('Manipulate audio'):
 
                 UI.total_audio_length.render()
+
+                # Change the max n samples depending on the audio length
+                def set_max_n_samples( total_audio_length, n_samples ):
+
+                  max_n_samples_by_gpu_and_duration = {
+                    'Tesla T4': {
+                      0: 4,
+                      8.5: 3,
+                      13: 2
+                    }
+                    # The key indicates the audio length threshold in seconds trespassing which makes max_n_samples equal to the value
+                  }
+
+                  # Get GPU via nvidia-smi
+                  gpu = subprocess.check_output( 'nvidia-smi --query-gpu=gpu_name --format=csv,noheader', shell=True ).decode('utf-8').strip()
+
+                  # The default value is 4
+                  max_n_samples = 4
+                  if gpu in max_n_samples_by_gpu_and_duration and total_audio_length:
+                    # Get the max n samples for the GPU from the respective dict
+                    max_n_samples_for_gpu = max_n_samples_by_gpu_and_duration[gpu]
+                    max_n_samples_above_threshold = [ max_n_samples_for_gpu[threshold] for threshold in max_n_samples_for_gpu if total_audio_length > threshold ]
+                    if len(max_n_samples_above_threshold) > 0:
+                      max_n_samples = min( max_n_samples_for_gpu[ threshold ] for threshold in max_n_samples_for_gpu if total_audio_length > threshold )
+
+                  return max_n_samples
+
+                # Do this on audio length change and app load
+                for handler in [ UI.total_audio_length.change, app.load ]:
+                  handler(
+                    inputs = [ UI.total_audio_length, UI.n_samples ],
+                    outputs = UI.max_n_samples,
+                    fn = set_max_n_samples,
+                  )
+                
+                # If max_n_samples changes, update the n_samples input respectively
+                UI.max_n_samples.render().change(
+                  inputs = [ UI.max_n_samples, UI.n_samples ],
+                  outputs = UI.n_samples,
+                  fn = lambda max_n_samples, n_samples: gr.update(
+                    maximum = max_n_samples,
+                    value = min( n_samples, max_n_samples ),
+                  )
+                )
+
                 UI.preview_just_the_last_n_sec.render().blur(**preview_args)
                 UI.trim_to_n_sec.render().blur(**preview_args)
 
