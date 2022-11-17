@@ -825,7 +825,7 @@ def is_upsampled(zs):
 
 def get_first_upsampled_ancestor_zs(project_name, sample_id):
   zs = get_zs(project_name, sample_id)
-  print(f'Looing for the first upsampled ancestor of {sample_id}')
+  # print(f'Looking for the first upsampled ancestor of {sample_id}')
   if is_upsampled(zs):
     print(f'Found upsampled ancestor: {sample_id}')
     return zs
@@ -1409,24 +1409,19 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
 
   mp3_files = [f'{filename}.mp3']
 
-  # If the mp3 size is > 1MB, we'll need to send it back in chunks, so we divide the wav into as many chunks as needed
+  # If the mp3 size is > 1MB, we'll need to send it back in chunks, so we divide the mp3 into as many chunks as needed
   file_size = os.path.getsize(f'{filename}.mp3')
   if file_size > 1000000:
-    print(f'MP3 file size is {file_size} bytes, so we need to send it in chunks')
-    if wav is None:
-      wav = librosa.load(f'{filename}.mp3', sr=hps.sr)[0]
-    num_chunks = math.ceil(file_size / 1000000)
-    print(f'Number of chunks: {num_chunks}')
-    wav_chunks = np.array_split(wav, num_chunks)
-    print(f'Wav chunk sizes: {[len(wav_chunk) for wav_chunk in wav_chunks]}')
-    for i, wav_chunk in enumerate(wav_chunks):
-      chunk_filename = f'{filename} chunk {i}'
-      librosa.output.write_wav(f'{chunk_filename}.wav', np.asfortranarray(wav_chunk), hps.sr)
-      subprocess.run(['ffmpeg', '-y', '-i', f'{chunk_filename}.wav', '-acodec', 'libmp3lame', '-ab', '320k', f'{chunk_filename}.mp3'])
-      mp3_files.append(f'{chunk_filename}.mp3')
-      # (We're always sending the complete mp3 as well, so that the user can download it if they want to)
-    print(f'Created {len(mp3_files)} MP3 files with sizes {[os.path.getsize(mp3_file) for mp3_file in mp3_files]}')
-        
+    print(f'MP3 file size is {file_size} bytes, splitting into chunks...')
+    file_content = open(f'{filename}.mp3', 'rb').read()
+    for i in range(0, file_size, 1000000):
+      chunk_filename = f'{filename} {i}-{i+1000000}.mp3.chunk'
+      with open(chunk_filename, 'wb') as f:
+        f.write(file_content[i:i+1000000])
+        print(f'Wrote bytes {i}-{i+1000000} to {chunk_filename}')
+      mp3_files.append(chunk_filename)
+  
+  print(f'Files to send: {mp3_files}')
 
   return {
     UI.mp3_files: mp3_files,
@@ -2514,11 +2509,15 @@ with gr.Blocks(
 
         // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
         let parentElement = window.shadowRoot.querySelector('#audio-file')
+        let previousAudioHrefs = null
         let parentObserver = new MutationObserver( asyncmutations => {
           
           // Check if there is an inner <a> element
           let audioElements = parentElement.querySelectorAll('a')
-          if ( audioElements ) {
+
+          let audioHrefs = Array.from(audioElements).map( el => el.href )
+
+          if ( audioElements && JSON.stringify(audioHrefs) !== JSON.stringify(previousAudioHrefs) ) {
             
             console.log('Found audio elements:', audioElements)
 
@@ -2548,6 +2547,8 @@ with gr.Blocks(
               }
               window.shadowRoot.querySelector('#download-button').href = audioElements[0].href
             }
+
+            previousAudioHrefs = audioHrefs
             
           }
 
