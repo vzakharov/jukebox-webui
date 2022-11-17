@@ -2537,7 +2537,7 @@ with gr.Blocks(
                 }
                 Promise.all(audioBlobPromises).then( audioBlobs => {                  
                   // Combine the audio blobs into a single blob
-                  let combinedAudioBlob = new Blob(audioBlobs, { type: 'audio/wav' })
+                  let combinedAudioBlob = new Blob(audioBlobs, { type: 'audio/mpeg' })
                   console.log('Combined audio blob:', combinedAudioBlob)
                   // Load the combined audio blob into wavesurfer
                   wavesurfer.loadBlob(combinedAudioBlob)
