@@ -921,15 +921,15 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
         # Fade in the left overlap and add it to the existing wav if it's not empty (i.e. if this is not the first chunk)
         left_overlap = fade(left_overlap, 'in')
         print(f'Faded in left overlap')
-        # # Show as plot
-        # plt.plot(left_overlap[0, :, 0])
-        # plt.show()
+        # Show as plot
+        plt.plot(left_overlap[0, :, 0])
+        plt.show()
 
         wav[ :, -left_overlap.shape[1]: ] += left_overlap
         print(f'Added left overlap to existing wav:')
-        # # Plot the resulting (faded-in + previous fade-out) overlap
-        # plt.plot(wav[0, -left_overlap.shape[1]:, 0])
-        # plt.show()
+        # Plot the resulting (faded-in + previous fade-out) overlap
+        plt.plot(wav[0, -left_overlap.shape[1]:, 0])
+        plt.show()
 
         print(f'Added left overlap to wav, overall shape now: {wav.shape}')
 
@@ -964,10 +964,10 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
         # print(f'Right overlap (quants): {right_overlap.shape[1]}')
 
         right_overlap = fade(right_overlap, 'out')
-        # print(f'Faded out right overlap')
-        # # Show as plot
-        # plt.plot(right_overlap[0, :, 0])
-        # plt.show()
+        print(f'Faded out right overlap')
+        # Show as plot
+        plt.plot(right_overlap[0, :, 0])
+        plt.show()
 
         # Add the right overlap to the existing wav
         wav = np.concatenate([ wav, right_overlap ], axis=1)
@@ -975,8 +975,8 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
       
       else:
 
-        pass
-        # print(f'Last chunk, not adding right overlap')
+        print(f'Last chunk, not adding right overlap')
+        break
       
       print(f'Decoded {i+chunk_size} tokens out of {z.shape[1]}, wav shape: {wav.shape}')
 
