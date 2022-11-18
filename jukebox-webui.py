@@ -1908,7 +1908,7 @@ with gr.Blocks(
                   inputs = UI.project_name,
                   outputs = [ UI.branch_sample_count, UI.leaf_sample_count ],
                   fn = lambda project_name: [
-                    get_samples(project_name, leafs_only) for leafs_only in [ False, True ]
+                    len(get_samples(project_name, leafs_only)) for leafs_only in [ False, True ]
                   ]
                 )
             
