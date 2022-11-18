@@ -1896,9 +1896,15 @@ with gr.Blocks(
 
             with gr.Column():
 
-              UI.show_leafs_only.render()
+              with gr.Accordion('Options & stats'):
 
-              with gr.Row():
+                UI.show_leafs_only.render()
+
+                UI.show_leafs_only.change(
+                  inputs = [ UI.project_name, UI.show_leafs_only ],
+                  outputs = UI.sample_tree,
+                  fn = lambda *args: gr.update( choices = get_samples(*args) ),
+                )
 
                 UI.branch_sample_count.render()
                 UI.leaf_sample_count.render()
@@ -1912,12 +1918,6 @@ with gr.Blocks(
                   ]
                 )
             
-            UI.show_leafs_only.change(
-              inputs = [ UI.project_name, UI.show_leafs_only ],
-              outputs = UI.sample_tree,
-              fn = lambda *args: gr.update( choices = get_samples(*args) ),
-            )
-
           UI.picked_sample.render()
 
           UI.sample_tree.change(
