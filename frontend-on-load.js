@@ -122,7 +122,6 @@ async () => {
             for ( let i = 1; i < audioElements.length; i++ ) {
               let audioElement = audioElements[i]
               audioBlobPromises.push( loadBlob(audioElement.href, true) )
-              audioBlobPromises.push(audioBlobPromise)
             }
             Promise.all(audioBlobPromises).then( audioBlobs => {                  
               // Combine the audio blobs into a single blob
