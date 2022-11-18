@@ -106,7 +106,7 @@ async () => {
             return
           }
 
-          console.log('Audio href has changed, reloading audio...')
+          console.log(`Audio href changed to ${audioHref}, reloading wavesurfer...`)
           let loadBlob = async element => {
             let response = await fetch(element.href)
             let blob = await response.blob()
