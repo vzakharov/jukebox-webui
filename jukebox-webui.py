@@ -2096,7 +2096,7 @@ with gr.Blocks(
               </a>
 
               <!-- Refresh button -- it virtually clicks the "internal-refresh-button" button (which is hidden) -->
-              <button class="gr-button gr-button-lg gr-button-secondary" onclick="window.shadowRoot.getElementById('internal-refresh-button').click()">
+              <button class="gr-button gr-button-lg gr-button-secondary" onclick="window.shadowRoot.getElementById('internal-refresh-button').click()" id="refresh-button">
                 🔃
               </button>
             """)

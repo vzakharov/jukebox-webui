@@ -107,6 +107,11 @@ async () => {
           }
 
           console.log(`Audio href changed to ${audioHref}, reloading wavesurfer...`)
+
+          // Replace the #reload-button inner text with an ellipsis
+          let oldReloadButtonText = shadowSelector('#reload-button').innerText
+          shadowSelector('#reload-button').innerText = '...'
+
           let loadBlob = async element => {
             let response = await fetch(element.href)
             let blob = await response.blob()
@@ -123,6 +128,8 @@ async () => {
           window.shadowRoot.querySelector('#download-button').href = Ju.audioElements[0].href
 
           lastAudioHref = audioHref
+
+          shadowSelector('#reload-button').innerText = oldReloadButtonText
 
         }
 
