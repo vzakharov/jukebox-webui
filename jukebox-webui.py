@@ -1463,16 +1463,17 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
 
   mp3_files = [f'{filename}.mp3']
 
-  # If the mp3 size is > 1MB, we'll need to send it back in chunks, so we divide the mp3 into as many chunks as needed
+  # If the mp3 size is > certain sie, we'll need to send it back in chunks, so we divide the mp3 into as many chunks as needed
   file_size = os.path.getsize(f'{filename}.mp3')
-  if file_size > 1000000:
+  file_limit = 300000
+  if file_size > file_limit:
     print(f'MP3 file size is {file_size} bytes, splitting into chunks...')
     file_content = open(f'{filename}.mp3', 'rb').read()
-    for i in range(0, file_size, 1000000):
-      chunk_filename = f'{filename} {i}-{i+1000000}.mp3.chunk'
+    for i in range(0, file_size, file_limit):
+      chunk_filename = f'{filename} {i}-{i+file_limit}.mp3.chunk'
       with open(chunk_filename, 'wb') as f:
-        f.write(file_content[i:i+1000000])
-        print(f'Wrote bytes {i}-{i+1000000} to {chunk_filename}')
+        f.write(file_content[i:i+file_limit])
+        print(f'Wrote bytes {i}-{i+file_limit} to {chunk_filename}')
       mp3_files.append(chunk_filename)
   
   print(f'Files to send: {mp3_files}')
