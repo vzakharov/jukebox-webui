@@ -97,7 +97,7 @@ async () => {
           console.log('Audio element updated, checking if href changed...')
           audioElements = parentElement.querySelectorAll('a')
 
-          let audioHref = audioElements[0].href
+          // let audioHref = audioElements[0].href
 
           if ( audioHref == lastAudioHref ) {
             console.log('Audio href has not changed, skipping.')
@@ -105,34 +105,21 @@ async () => {
           }
 
           console.log('Audio href has changed, reloading audio...')
-          let loadBlob = async ( href, isPartial ) => {
-            let response = await fetch(href)
+          let loadBlob = async element => {
+            let response = await fetch(element.href)
             let blob = await response.blob()
-            console.log(`Loaded ${isPartial ? 'partial ' : ''}audio blob:`, blob)
+            console.log(`Loaded blob:`, blob)
             return blob
           }
 
-          let blob
-
-          // If there are several audio elements, load the ones starting with the second one as blobs and add them to the wavesurfer object
-          if ( audioElements.length > 1 ) {
-            
-            let audioBlobPromises = []
-
-            for ( let i = 1; i < audioElements.length; i++ ) {
-              let audioElement = audioElements[i]
-              audioBlobPromises.push( loadBlob(audioElement.href, true) )
-            }
-            blob = new Blob(await Promise.all(audioBlobPromises), { type: 'audio/mpeg' })
-            console.log('Combined audio blob:', blob)
-
-          } else {
-            // If there is only one audio element, load it directly
-            blob = await loadBlob(audioHref)
-          }
-
-          // Load the blob into wavesurfer
-          wavesurfer.loadBlob(blob)
+          wavesurfer.loadBlob(
+            audioElements.length > 1 ?
+              (
+                new Blob(await Promise.all( Array.from(audioElements).slice(1).map( loadBlob ) ), { type: 'audio/mpeg' }),
+                console.log('Combined audio blob:', blob)
+              ) :
+              await loadBlob(audioElements[0])              
+          )
 
           window.shadowRoot.querySelector('#download-button').href = audioElements[0].href
 
