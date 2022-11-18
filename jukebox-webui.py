@@ -2485,8 +2485,9 @@ with gr.Blocks(
           eval_button.click(**eval_args)
           eval_code.submit(**eval_args)
 
-  # On app load on the frontend, we use the js located at https://github.com/vzakharov/jukebox-webui/blob/[github_branch]/frontend-on-load.js
-  with urllib.request.urlopen(f'https://raw.githubusercontent.com/vzakharov/jukebox-webui/{github_branch}/frontend-on-load.js') as response:
+  # On app load on the frontend, we use the js located at https://github.com/vzakharov/jukebox-webui/blob/[github_branch]/frontend-on-load.js with a random URL query parameter to prevent caching
+  frontend_on_load_url = f'https://raw.githubusercontent.com/vzakharov/jukebox-webui/{github_branch}/frontend-on-load.js?{random.randint(0, 1000000)}'
+  with urllib.request.urlopen(frontend_on_load_url) as response:
     frontend_on_load_js = response.read().decode('utf-8')
 
     try:
