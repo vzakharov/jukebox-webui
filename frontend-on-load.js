@@ -109,8 +109,10 @@ async () => {
           console.log(`Audio href changed to ${audioHref}, reloading wavesurfer...`)
 
           // Replace the #reload-button inner text with an ellipsis
-          let oldReloadButtonText = shadowSelector('#reload-button').innerText
-          shadowSelector('#reload-button').innerText = '...'
+          let refreshButton = shadowSelector('#reload-button')
+          if ( refreshButton ) {
+            refreshButton.innerText = '...'
+          }
 
           let loadBlob = async element => {
             let response = await fetch(element.href)
@@ -129,7 +131,9 @@ async () => {
 
           lastAudioHref = audioHref
 
-          shadowSelector('#reload-button').innerText = oldReloadButtonText
+          if ( refreshButton ) {
+            refreshButton.innerText = '↻'
+          }
 
         }
 
