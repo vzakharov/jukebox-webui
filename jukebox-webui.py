@@ -1614,7 +1614,6 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   Upsampling.zs = t.load(filename)
 
   # Get the level 0/1 zs of the first upsampled ancestor (so we can continue upsampling from where we left off)
-  first_upsampled_ancestor = get_first_upsampled_ancestor_zs(project_name, sample_id)
   for i in range( len(Upsampling.zs) ):
     if i == 2:
       Upsampling.zs[i] = Upsampling.zs[i][0].repeat(3, 1)
