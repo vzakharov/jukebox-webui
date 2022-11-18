@@ -97,7 +97,7 @@ async () => {
           console.log('Audio element updated, checking if href changed...')
           audioElements = parentElement.querySelectorAll('a')
 
-          // let audioHref = audioElements[0].href
+          let audioHref = audioElements[0].href
 
           if ( audioHref == lastAudioHref ) {
             console.log('Audio href has not changed, skipping.')
