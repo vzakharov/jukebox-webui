@@ -109,7 +109,7 @@ async () => {
           console.log(`Audio href changed to ${audioHref}, reloading wavesurfer...`)
 
           // Replace the #reload-button inner text with an ellipsis
-          let refreshButton = shadowSelector('#reload-button')
+          let refreshButton = shadowRoot.querySelector('#refresh-button')
           if ( refreshButton ) {
             refreshButton.innerText = '...'
           }
