@@ -175,6 +175,8 @@ class Upsampling:
   status_markdown = None
   should_refresh_audio = False
 
+  stop = False
+
 print('Monkey patching Jukebox methods...')
 
 # Monkey patch load_checkpoint, allowing to load models from arbitrary paths
@@ -266,6 +268,12 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
 
     Upsampling.window_index = 0
     for start in Upsampling.windows:
+
+      if Upsampling.stop:
+        print(f'Upsampling stopped for level {level}')
+        if Upsampling.level == 0:
+          Upsampling.stop = False
+        break
 
       Upsampling.window_start_time = datetime.now()
       Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
@@ -1596,6 +1604,9 @@ def seconds_to_tokens(sec, level = 2):
 
   return int(tokens)
 
+def stop_upsampling():
+  Upsampling.stop = True
+
 def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
 
   global hps, top_prior, priors
@@ -1667,6 +1678,8 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   bak_filename = f'{filename}.{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.bak'
   shutil.copy(filename, f'{bak_filename}')
   print(f'Created backup of {filename} as {bak_filename}')
+
+  t.save(Upsampling.zs, filename)
 
   Upsampling.params = [
     dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
