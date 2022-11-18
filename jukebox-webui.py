@@ -40,6 +40,7 @@ debug_gradio = True #param{type:'boolean'}
 
 reload_all = False #param{type:'boolean'}
 
+import json
 import math
 import subprocess
 
@@ -1627,6 +1628,8 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   Upsampling.running = True
   Upsampling.status_markdown = "Loading the upsampling models..."
 
+  Upsampling.level = 1
+
   print(f'Upsampling {sample_id} with genres {genres}')
   filename = f'{base_path}/{project_name}/{sample_id}.z'
 
@@ -1656,16 +1659,25 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
     offset = 0,
     lyrics = lyrics,
   ) for genre in genres ]
-  
+
   if not Upsampling.labels:
 
     # Search for labels under [project_name]/[project_name].labels
     labels_path = f'{base_path}/{project_name}/{project_name}.labels'
 
+    should_reload_labels = True
+
     if os.path.exists(labels_path):
-      Upsampling.labels = t.load(labels_path)
+      Upsampling.labels, stored_metas = t.load(labels_path)
       print(f'Loaded labels from {labels_path}')
-    else:
+      # Make sure the metas match
+      if stored_metas == Upsampling.metas:
+        print('Metas match, not reloading labels')
+        should_reload_labels = False
+      else:
+        print(f'Metas do not match, reloading labels. Stored metas: {stored_metas}, current metas: {Upsampling.metas}')
+    
+    if should_reload_labels:
 
       try:
         assert top_prior
@@ -1675,8 +1687,8 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
       Upsampling.labels = top_prior.labeller.get_batch_labels(Upsampling.metas, 'cuda')
       print('Calculated new labels from top prior')
 
-      t.save(Upsampling.labels, labels_path)
-      print(f'Saved labels to {labels_path}')
+      t.save([ Upsampling.labels, Upsampling.metas ], labels_path)
+      print(f'Saved labels and metas to {labels_path}')
 
       # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
       del top_prior
@@ -1722,7 +1734,10 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
 
 def request_to_stop_upsampling():
   if Upsampling.running:
+    print('Stopping upsampling...')
     Upsampling.stop = True
+  else:
+    print('No upsampling running')
 
 def is_ancestor(project_name, potential_ancestor, potential_descendant):
   parent = get_parent(project_name, potential_descendant)
@@ -1734,6 +1749,8 @@ def is_ancestor(project_name, potential_ancestor, potential_descendant):
     return False
 
 def restart_upsampling(sample_id, even_if_no_labels = False, even_if_not_ancestor = False):
+
+  global sample_id_to_restart_upsampling_with
 
   if Upsampling.running:
     print('Upsampling is already running; stopping & waiting for it to finish to restart')
