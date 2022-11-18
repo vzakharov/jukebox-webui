@@ -1,7 +1,9 @@
 async () => {
 
   // The function is called by the `load` event handler in the python backend (Gradio)
-      
+
+  window.Ju = {}
+
   try {
 
     // Create and inject wavesurfer scripts
@@ -92,7 +94,7 @@ async () => {
         parentObserver.disconnect()
         lastAudioHref = null
 
-        let reloadAudio = async () => {
+        Ju.reloadAudio = async () => {
 
           console.log('Audio element updated, checking if href changed...')
           audioElements = parentElement.querySelectorAll('a')
@@ -128,18 +130,16 @@ async () => {
         }
 
         // Reload the audio at once
-        reloadAudio()
+        Ju.reloadAudio()
 
         // And also reload it whenever the audio href changes
-        new MutationObserver(reloadAudio).observe(audioElements[0], { attributes: true, attributeFilter: ['href'] })
+        new MutationObserver(Ju.reloadAudio).observe(audioElements[0], { attributes: true, attributeFilter: ['href'] })
 
       }
         
     })
 
     parentObserver.observe(parentElement, { childList: true, subtree: true })
-
-    window.Ju = {}
 
     Ju.clickTabWithText = function (buttonText) {
       for ( let button of document.querySelector('gradio-app').shadowRoot.querySelectorAll('div.tabs > div > button') ) {
