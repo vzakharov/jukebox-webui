@@ -150,32 +150,40 @@ except:
 
 browser_timezone = None
 
-class Upsampling:
+try:
+  keep_upsampling_after_restart
+except NameError:
+  keep_upsampling_after_restart = False
 
-  running = False
-  zs = None
-  project = None
-  sample_id = None
-  level = None
-  metas = None
-  labels = None
-  priors = None
-  params = None
+if not keep_upsampling_after_restart:
 
-  windows = []
-  window_index = 0
-  window_start_time = None
-  elapsed_time = None
-  # Set time per window by default to 6 minutes (will be updated later) in timedelta format
-  time_per_window = timedelta(minutes=6)
-  windows_remaining = None
-  time_remaining = None
-  eta = None
+  class Upsampling:
 
-  status_markdown = None
-  should_refresh_audio = False
+    project = None
+    sample_id = None
 
-  stop = False
+    running = False
+    zs = None
+    level = None
+    metas = None
+    labels = None
+    priors = None
+    params = None
+
+    windows = []
+    window_index = 0
+    window_start_time = None
+    elapsed_time = None
+    # Set time per window by default to 6 minutes (will be updated later) in timedelta format
+    time_per_window = timedelta(minutes=6)
+    windows_remaining = None
+    time_remaining = None
+    eta = None
+
+    status_markdown = None
+    should_refresh_audio = False
+
+    stop = False
 
 print('Monkey patching Jukebox methods...')
 
@@ -224,19 +232,7 @@ def monkey_patched_load_audio(file, sr, offset, duration, mono=False):
 jukebox.utils.audio_utils.load_audio = monkey_patched_load_audio
 print('load_audio monkey patched.')
 
-
-# Monkey patch sample_level, saving the current upsampled z to respective file
-# The original code is as follows:
-# def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
-#   print_once(f"Sampling level {level}")
-#   if total_length >= prior.n_ctx:
-#       for start in get_starts(total_length, prior.n_ctx, hop_length):
-#           zs = sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps)
-#   else:
-#       zs = sample_partial_window(zs, labels, sampling_kwargs, level, prior, total_length, hps)
-#   return zs
-#
-# Rewritten:
+sample_id_to_restart_upsampling_with = None
 
 def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
 
@@ -273,6 +269,12 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
         print(f'Upsampling stopped for level {level}')
         if Upsampling.level == 0:
           Upsampling.stop = False
+        Upsampling.running = False
+
+        if sample_id_to_restart_upsampling_with is not None:
+          print(f'Upsampling will be restarted for sample {sample_id_to_restart_upsampling}')
+          restart_upsampling(sample_id_to_restart_upsampling_with)
+
         break
 
       Upsampling.window_start_time = datetime.now()
@@ -333,24 +335,26 @@ if Upsampling.running:
   ''')
 else:
 
-  try:
-    vqvae, priors, top_prior
+  if not keep_upsampling_after_restart:
 
-    assert total_duration == calculated_duration and not reload_prior and not reload_all
-    print('Model already loaded.')
-  except:
+    try:
+      vqvae, priors, top_prior
 
-    print(f'Loading vqvae and top_prior for duration {total_duration}...')
+      assert total_duration == calculated_duration and not reload_prior and not reload_all
+      print('Model already loaded.')
+    except:
 
-    vqvae, *priors = MODELS['5b_lyrics']
+      print(f'Loading vqvae and top_prior for duration {total_duration}...')
 
-    vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
+      vqvae, *priors = MODELS['5b_lyrics']
 
-    load_top_prior()
+      vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
 
-    calculated_duration = total_duration
+      load_top_prior()
 
-    empty_cache
+      calculated_duration = total_duration
+
+      empty_cache
 
 
 # If the base folder doesn't exist, create it
@@ -1139,11 +1143,11 @@ def get_children(project_name, parent_sample_id, include_custom=True):
 
   return child_ids
 
-def get_custom_parents(project_name):
+def get_custom_parents(project_name, force_reload=False):
 
   global base_path, custom_parents
   
-  if not custom_parents or custom_parents['project_name'] != project_name:
+  if not custom_parents or custom_parents['project_name'] != project_name or force_reload:
     print('Loading custom parents...')
     custom_parents = {}
     filename = f'{base_path}/{project_name}/{project_name}-parents.yaml'
@@ -1611,9 +1615,6 @@ def seconds_to_tokens(sec, level = 2):
 
   return int(tokens)
 
-def stop_upsampling():
-  Upsampling.stop = True
-
 def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
 
   global hps, top_prior, priors
@@ -1658,17 +1659,28 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   
   if not Upsampling.labels:
 
-    try:
-      assert top_prior
-    except:
-      load_top_prior()
-    
-    Upsampling.labels = top_prior.labeller.get_batch_labels(Upsampling.metas, 'cuda')
-    print('Calculated new labels from top prior')
+    # Search for labels under [project_name]/[project_name].labels
+    labels_path = f'{base_path}/{project_name}/{project_name}.labels'
 
-    # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
-    del top_prior
-    empty_cache()
+    if os.path.exists(labels_path):
+      Upsampling.labels = t.load(labels_path)
+      print(f'Loaded labels from {labels_path}')
+    else:
+
+      try:
+        assert top_prior
+      except:
+        load_top_prior()
+      
+      Upsampling.labels = top_prior.labeller.get_batch_labels(Upsampling.metas, 'cuda')
+      print('Calculated new labels from top prior')
+
+      t.save(Upsampling.labels, labels_path)
+      print(f'Saved labels to {labels_path}')
+
+      # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
+      del top_prior
+      empty_cache()
 
   labels = Upsampling.labels
 
@@ -1707,6 +1719,44 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
 
   Upsampling.priors = [*upsamplers, None]
   Upsampling.zs = upsample(Upsampling.zs, labels, Upsampling.params, Upsampling.priors, Upsampling.hps)
+
+def request_to_stop_upsampling():
+  if Upsampling.running:
+    Upsampling.stop = True
+
+def is_ancestor(project_name, potential_ancestor, potential_descendant):
+  parent = get_parent(project_name, potential_descendant)
+  if parent == potential_ancestor:
+    return True
+  elif parent:
+    return is_ancestor(project_name, potential_ancestor, parent)
+  else:
+    return False
+
+def restart_upsampling(sample_id, even_if_no_labels = False, even_if_not_ancestor = False):
+
+  if Upsampling.running:
+    print('Upsampling is already running; stopping & waiting for it to finish to restart')
+    request_to_stop_upsampling()
+    sample_id_to_restart_upsampling_with = sample_id
+    return
+
+  assert not Upsampling.running, 'Upsampling is already running. Use stop_upsampling() to stop it and wait for the current window to finish.'
+
+  assert Upsampling.labels or even_if_no_labels, 'Upsampling.labels is empty, cannot restart. If you want to restart anyway, set even_if_no_labels to True.'
+  if not Upsampling.labels:
+    load_top_prior()
+    # (We deleted the top_prior object in start_upsampling, so we need to reload it to recalculate the labels)
+
+  get_custom_parents(Upsampling.project, force_reload = True)
+  assert even_if_not_ancestor or is_ancestor(Upsampling.project, Upsampling.sample_id, sample_id), 'Cannot restart upsampling with a sample that is not a descendant of the currently upsampled sample. If you really want to do this, set even_if_not_ancestor to True.'
+
+  start_upsampling(Upsampling.project, sample_id, Upsampling.metas[0]['artist'], Upsampling.metas[0]['lyrics'], *[ meta['genre'] for meta in Upsampling.metas ])
+  # (Note that the metas don't do anything here, as we're already using the calculated labels. Keeping for future cases where we might want to restart with different metas.)
+  print('Warning: Using the same labels as before. If you want to restart with different labels, you need to set Upsampling.labels to None before calling restart_upsampling.')
+
+def set_keep_upsampling_after_restart():
+  keep_upsampling_after_restart = True
 
 def tokens_to_seconds(tokens, level = 2):
 
@@ -1896,7 +1946,7 @@ with gr.Blocks(
 
             with gr.Column():
 
-              with gr.Accordion('Options & stats'):
+              with gr.Accordion('Options & stats', open=False ):
 
                 UI.show_leafs_only.render()
 
