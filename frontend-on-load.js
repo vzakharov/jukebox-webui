@@ -77,7 +77,7 @@ async () => {
 
     // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
     let parentElement = window.shadowRoot.querySelector('#audio-file')
-    let parentObserver = new MutationObserver( async mutations => {
+    let parentObserver = new MutationObserver( () => {
       
       // Check if there is an inner <a> element
       let audioElements = parentElement.querySelectorAll('a')
@@ -92,7 +92,7 @@ async () => {
         parentObserver.disconnect()
         lastAudioHref = null
 
-        reloadAudio = () => {
+        reloadAudio = async () => {
 
           audioElements = parentElement.querySelectorAll('a')
 
