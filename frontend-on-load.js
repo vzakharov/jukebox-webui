@@ -78,13 +78,13 @@ async () => {
     })
 
     // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
-    let parentElement = window.shadowRoot.querySelector('#audio-file')
+    Ju.parentAudioElement = window.shadowRoot.querySelector('#audio-file')
     let parentObserver = new MutationObserver( () => {
       
       // Check if there is an inner <a> element
-      let audioElements = parentElement.querySelectorAll('a')
+      Ju.audioElements = Ju.parentAudioElement.querySelectorAll('a')
 
-      if ( audioElements.length ) {
+      if ( Ju.audioElements.length ) {
 
         // Once we've foun audio elements, we can remove the parent observer and create one for the first audio element instead
         // This element contains the actual audio file (the others contain chunks of it for faster loading), so whenever the first one changes, we need to reload wavesurfer
@@ -97,9 +97,9 @@ async () => {
         Ju.reloadAudio = async () => {
 
           console.log('Audio element updated, checking if href changed...')
-          audioElements = parentElement.querySelectorAll('a')
+          Ju.audioElements = Ju.parentAudioElement.querySelectorAll('a')
 
-          let audioHref = audioElements[0].href
+          let audioHref = Ju.audioElements[0].href
 
           if ( audioHref == lastAudioHref ) {
             console.log('Audio href has not changed, skipping.')
@@ -115,15 +115,12 @@ async () => {
           }
 
           wavesurfer.loadBlob(
-            audioElements.length > 1 ?
-              (
-                new Blob(await Promise.all( Array.from(audioElements).slice(1).map( loadBlob ) ), { type: 'audio/mpeg' }),
-                console.log('Combined audio blob:', blob)
-              ) :
-              await loadBlob(audioElements[0])              
+            Ju.audioElements.length > 1 ?
+              new Blob(await Promise.all( Array.from(Ju.audioElements).slice(1).map( loadBlob ) ), { type: 'audio/mpeg' }) :
+              await loadBlob(Ju.audioElements[0])              
           )
 
-          window.shadowRoot.querySelector('#download-button').href = audioElements[0].href
+          window.shadowRoot.querySelector('#download-button').href = Ju.audioElements[0].href
 
           lastAudioHref = audioHref
 
@@ -133,13 +130,13 @@ async () => {
         Ju.reloadAudio()
 
         // And also reload it whenever the audio href changes
-        new MutationObserver(Ju.reloadAudio).observe(audioElements[0], { attributes: true, attributeFilter: ['href'] })
+        new MutationObserver(Ju.reloadAudio).observe(Ju.audioElements[0], { attributes: true, attributeFilter: ['href'] })
 
       }
         
     })
 
-    parentObserver.observe(parentElement, { childList: true, subtree: true })
+    parentObserver.observe(Ju.parentAudioElement, { childList: true, subtree: true })
 
     Ju.clickTabWithText = function (buttonText) {
       for ( let button of document.querySelector('gradio-app').shadowRoot.querySelectorAll('div.tabs > div > button') ) {
