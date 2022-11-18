@@ -1296,13 +1296,13 @@ def get_parent(project_name, sample_id):
 def get_prefix(project_name, parent_sample_id):
   return f'{parent_sample_id or project_name}-'
 
-def get_samples(project_name, show_leafs_only):
+def get_samples(project_name, leafs_only):
 
   choices = []
   for filename in os.listdir(f'{base_path}/{project_name}'):
     if re.match(r'.*\.zs?$', filename):
       id = filename.split('.')[0]
-      if show_leafs_only and len( get_children(project_name, id) ) > 0:
+      if leafs_only and len( get_children(project_name, id) ) > 0:
         continue
       choices += [ id ]
   
@@ -1901,7 +1901,16 @@ with gr.Blocks(
               with gr.Row():
 
                 UI.branch_sample_count.render()
-                UI.leaves_sample_count.render()
+                UI.leaf_sample_count.render()
+
+                # Recount on sample_tree change
+                UI.sample_tree.change(
+                  inputs = UI.project_name,
+                  outputs = [ UI.branch_sample_count, UI.leaf_sample_count ],
+                  fn = lambda project_name: [
+                    get_samples(project_name, leafs_only) for leafs_only in [ False, True ]
+                  ]
+                )
             
             UI.show_leafs_only.change(
               inputs = [ UI.project_name, UI.show_leafs_only ],
