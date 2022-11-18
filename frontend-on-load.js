@@ -140,7 +140,7 @@ async () => {
 
           window.shadowRoot.querySelector('#download-button').href = audioElements[0].href
 
-          previousAudioHrefs = audioHrefs
+          lastAudioHref = audioHref
 
         }
 
