@@ -1,4 +1,6 @@
-async (...args) => {
+async () => {
+
+  // The function is called by the `load` event handler in the python backend (Gradio)
       
   try {
 
@@ -75,52 +77,81 @@ async (...args) => {
 
     // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
     let parentElement = window.shadowRoot.querySelector('#audio-file')
-    let previousAudioHrefs = null
     let parentObserver = new MutationObserver( async mutations => {
       
       // Check if there is an inner <a> element
       let audioElements = parentElement.querySelectorAll('a')
 
-      let audioHrefs = Array.from(audioElements).map( el => el.href )
+      if ( audioElements.length ) {
 
-      if ( audioElements && JSON.stringify(audioHrefs) !== JSON.stringify(previousAudioHrefs) ) {
+        // Once we've foun audio elements, we can remove the parent observer and create one for the first audio element instead
+        // This element contains the actual audio file (the others contain chunks of it for faster loading), so whenever the first one changes, we need to reload wavesurfer
         
-        console.log('Found audio elements:', audioElements)
+        console.log('Found audio elements, removing parent observer')
 
-        if ( audioElements.length ) {
+        parentObserver.disconnect()
+        lastAudioHref = null
+
+        reloadAudio = () => {
+
+          audioElements = parentElement.querySelectorAll('a')
+
+          let audioHref = audioElements[0].href
+
+          if ( audioHref == lastAudioHref ) {
+            console.log('Audio href has not changed, skipping')
+            return
+          }
+
+          let loadBlob = async ( href, isPartial ) => {
+            let response = await fetch(href)
+            let blob = await response.blob()
+            console.log(`Loaded ${isPartial ? 'partial ' : ''}audio blob:`, blob)
+            return blob
+          }
+
+          let blob
+
           // If there are several audio elements, load the ones starting with the second one as blobs and add them to the wavesurfer object
           if ( audioElements.length > 1 ) {
+            
             let audioBlobPromises = []
+
             for ( let i = 1; i < audioElements.length; i++ ) {
               let audioElement = audioElements[i]
-              let audioBlobPromise = fetch(audioElement.href).then( async response => {
-                let blob = await response.blob()
-                console.log('Loaded audio blob:', blob)
-                return blob
-              })
+              audioBlobPromises.push( loadBlob(audioElement.href, true) )
               audioBlobPromises.push(audioBlobPromise)
             }
             Promise.all(audioBlobPromises).then( audioBlobs => {                  
               // Combine the audio blobs into a single blob
-              let combinedAudioBlob = new Blob(audioBlobs, { type: 'audio/mpeg' })
-              console.log('Combined audio blob:', combinedAudioBlob)
-              // Load the combined audio blob into wavesurfer
-              wavesurfer.loadBlob(combinedAudioBlob)
+              blob = new Blob(audioBlobs, { type: 'audio/mpeg' })
+              console.log('Combined audio blob:', blob)
             } )
+
           } else {
             // If there is only one audio element, load it directly
-            let blob = await fetch(audioElements[0].href).then( async response => response.blob() )
-            console.log('Loaded audio blob:', blob)
-            wavesurfer.loadBlob(blob)
+            blob = await loadBlob(audioHref)
           }
+
+          // Load the blob into wavesurfer
+          wavesurfer.loadBlob(blob)
+
           window.shadowRoot.querySelector('#download-button').href = audioElements[0].href
 
           previousAudioHrefs = audioHrefs
-        }
 
-        
+        }
       }
 
+      // Reload the audio at once
+      reloadAudio()
+
+      // And also reload it whenever the audio href changes
+      new MutationObserver( () => {
+        console.log('First audio element changed, reloading audio')
+        reloadAudio()
+      } ).observe(audioElements[0], { attributes: true, attributeFilter: ['href'] })
+        
     })
 
     parentObserver.observe(parentElement, { childList: true, subtree: true })
