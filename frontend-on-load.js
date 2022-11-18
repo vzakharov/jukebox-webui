@@ -123,11 +123,8 @@ async () => {
               let audioElement = audioElements[i]
               audioBlobPromises.push( loadBlob(audioElement.href, true) )
             }
-            Promise.all(audioBlobPromises).then( audioBlobs => {                  
-              // Combine the audio blobs into a single blob
-              blob = new Blob(audioBlobs, { type: 'audio/mpeg' })
-              console.log('Combined audio blob:', blob)
-            } )
+            blob = new Blob(await Promise.all(audioBlobPromises), { type: 'audio/mpeg' })
+            console.log('Combined audio blob:', blob)
 
           } else {
             // If there is only one audio element, load it directly
