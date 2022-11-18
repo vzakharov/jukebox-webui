@@ -70,7 +70,7 @@ else:
 
 
 try:
-  
+
   print_gpu_and_memory()
   empty_cache()
   print('Cache cleared.')
@@ -1606,7 +1606,7 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   Upsampling.sample_id = sample_id
 
   Upsampling.running = True
-  Upsampling.status_markdown = "Upsampling started. Loading the upsampling models..."
+  Upsampling.status_markdown = "Loading the upsampling models..."
 
   print(f'Upsampling {sample_id} with genres {genres}')
   filename = f'{base_path}/{project_name}/{sample_id}.z'
@@ -1943,7 +1943,7 @@ with gr.Blocks(
                       UI.upsampling_level: gr.update(
                         choices = available_level_names,
                         # Choose the highest available level, unless we're upsampling, in which case choose 2-Upsampling.level (because they're in reverse order), if it's available
-                        value = available_level_names[-1 if not Upsampling.running or UI.UPSAMPLING_LEVEL_NAMES(2 - Upsampling.level) not in available_level_names else 2 - Upsampling.level],
+                        value = available_level_names[-1 if not Upsampling.running or UI.UPSAMPLING_LEVEL_NAMES[2 - Upsampling.level] not in available_level_names else 2 - Upsampling.level],
                       )
                     }
                   
