@@ -92,17 +92,19 @@ async () => {
         parentObserver.disconnect()
         lastAudioHref = null
 
-        reloadAudio = async () => {
+        let reloadAudio = async () => {
 
+          console.log('Audio element updated, checking if href changed...')
           audioElements = parentElement.querySelectorAll('a')
 
           let audioHref = audioElements[0].href
 
           if ( audioHref == lastAudioHref ) {
-            console.log('Audio href has not changed, skipping')
+            console.log('Audio href has not changed, skipping.')
             return
           }
 
+          console.log('Audio href has changed, reloading audio...')
           let loadBlob = async ( href, isPartial ) => {
             let response = await fetch(href)
             let blob = await response.blob()
@@ -141,16 +143,14 @@ async () => {
           previousAudioHrefs = audioHrefs
 
         }
-      }
 
-      // Reload the audio at once
-      reloadAudio()
-
-      // And also reload it whenever the audio href changes
-      new MutationObserver( () => {
-        console.log('First audio element changed, reloading audio')
+        // Reload the audio at once
         reloadAudio()
-      } ).observe(audioElements[0], { attributes: true, attributeFilter: ['href'] })
+
+        // And also reload it whenever the audio href changes
+        new MutationObserver(reloadAudio).observe(audioElements[0], { attributes: true, attributeFilter: ['href'] })
+
+      }
         
     })
 
