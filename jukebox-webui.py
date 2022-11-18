@@ -51,11 +51,29 @@ def print_gpu_and_memory():
 
 # If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
 
+
+# Print the IP address of the current Colab instance
+import socket
+
 try:
-  print_gpu_and_memory()
-  empty_cache()
-  print('Cache cleared.')
-  print_gpu_and_memory()
+  old_colab_instance_ip = colab_instance_ip
+except NameError:
+  old_colab_instance_ip = None
+
+colab_instance_ip = socket.gethostbyname(socket.gethostname())
+print(f'🌐 IP address: {colab_instance_ip}')
+
+if colab_instance_ip == old_colab_instance_ip:
+  print('(Same as during the previous run)')
+else:
+  print('(New IP)')
+
+print_gpu_and_memory()
+empty_cache()
+print('Cache cleared.')
+print_gpu_and_memory()
+
+try:
   assert not reload_all
   repeated_run
   # ^ If this doesn't give an error, it means we're in Colab and re-running the notebook (because repeated_run is defined in the first run)
@@ -2469,7 +2487,20 @@ with gr.Blocks(
   # On app load on the frontend, we use the js located at https://github.com/vzakharov/jukebox-webui/blob/[github_branch]/frontend-on-load.js
   with urllib.request.urlopen(f'https://raw.githubusercontent.com/vzakharov/jukebox-webui/{github_branch}/frontend-on-load.js') as response:
     frontend_on_load_js = response.read().decode('utf-8')
-    print(f'Loaded frontend-on-load.js from {response.geturl()}, md5: {hashlib.md5(frontend_on_load_js.encode("utf-8")).hexdigest()}')
+
+    try:
+      old_frontend_on_load_md5 = frontend_on_load_md5
+    except NameError:
+      old_frontend_on_load_md5 = None
+
+    frontend_on_load_md5 = hashlib.md5(frontend_on_load_js.encode('utf-8')).hexdigest()
+    print(f'Loaded frontend-on-load.js from {response.geturl()}, md5: {frontend_on_load_md5}')
+
+    if frontend_on_load_md5 != old_frontend_on_load_md5:
+      print('(New version)')
+    else:
+      print('(Same version as during the previous run)')
+
     # print(frontend_on_load_js)
 
   app.load(
