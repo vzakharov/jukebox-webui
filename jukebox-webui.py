@@ -2467,8 +2467,8 @@ with gr.Blocks(
           eval_code.submit(**eval_args)
 
   # On app load on the frontend, we use the js located at https://github.com/vzakharov/jukebox-webui/blob/[github_branch]/frontend-on-load.js
-  with open( f'https://raw.githubusercontent.com/vzakharov/jukebox-webui/{github_branch}/frontend-on-load.js' ) as f:
-    frontend_on_load_js = f.read()
+  with urllib.request.urlopen(f'https://raw.githubusercontent.com/vzakharov/jukebox-webui/{github_branch}/frontend-on-load.js') as response:
+    frontend_on_load_js = response.read().decode('utf-8')
 
   app.load(
     on_load,
