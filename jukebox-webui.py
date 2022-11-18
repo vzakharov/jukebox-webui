@@ -68,12 +68,14 @@ if colab_instance_ip == old_colab_instance_ip:
 else:
   print('(New IP)')
 
-print_gpu_and_memory()
-empty_cache()
-print('Cache cleared.')
-print_gpu_and_memory()
 
 try:
+  
+  print_gpu_and_memory()
+  empty_cache()
+  print('Cache cleared.')
+  print_gpu_and_memory()
+
   assert not reload_all
   repeated_run
   # ^ If this doesn't give an error, it means we're in Colab and re-running the notebook (because repeated_run is defined in the first run)
