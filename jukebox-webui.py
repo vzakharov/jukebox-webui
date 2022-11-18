@@ -1940,8 +1940,8 @@ with gr.Blocks(
                       ),
                       UI.upsampling_level: gr.update(
                         choices = available_level_names,
-                        # Choose the highest available level, unless we're upsampling, in which case choose 2-Upsampling.level (because they're in reverse order)
-                        value = available_level_names[-1 if not Upsampling.running else 2 - Upsampling.level],
+                        # Choose the highest available level, unless we're upsampling, in which case choose 2-Upsampling.level (because they're in reverse order), if it's available
+                        value = available_level_names[-1 if not Upsampling.running or UI.UPSAMPLING_LEVEL_NAMES(2 - Upsampling.level) not in available_level_names else 2 - Upsampling.level],
                       )
                     }
                   
