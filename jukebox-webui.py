@@ -485,7 +485,14 @@ class UI:
   )
 
   show_leafs_only = gr.Checkbox(
-    label = 'Do not show intermediate samples',
+    label = 'Hide branch samples',
+  )
+
+  branch_sample_count = gr.Number(
+    label = '# branch samples',
+  )
+  leaf_sample_count = gr.Number(
+    label = '# leaf samples',
   )
 
 
@@ -1886,7 +1893,15 @@ with gr.Blocks(
             
             UI.routed_sample_id.render()
             UI.sample_tree.render()
-            UI.show_leafs_only.render()
+
+            with gr.Column():
+
+              UI.show_leafs_only.render()
+
+              with gr.Row():
+
+                UI.branch_sample_count.render()
+                UI.leaves_sample_count.render()
             
             UI.show_leafs_only.change(
               inputs = [ UI.project_name, UI.show_leafs_only ],
