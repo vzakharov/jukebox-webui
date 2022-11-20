@@ -82,13 +82,13 @@ async () => {
 
     Ju.blobCache = []
 
-    Ju.addBlobToCache = ( url, blob ) => {
+    Ju.addBlobToCache = ( filename, blob ) => {
       // If there's >= 100 blobs in the cache, remove the oldest one
       if ( Ju.blobCache.length >= 100 ) {
         Ju.blobCache.shift()
       }
-      Ju.blobCache.push({ url, blob })
-      console.log(`Added ${url} to cache, total cache size: ${Ju.blobCache.length}`)
+      Ju.blobCache.push({ filename, blob })
+      console.log(`Added ${filename} to cache, total cache size: ${Ju.blobCache.length}`)
     }
 
 
@@ -128,11 +128,11 @@ async () => {
           }
 
           let loadBlob = async element => {
-            // if the blob is already in the cache, return it (the cache is an array of { url, blob } objects)
             console.log(`Checking cache for ${element.href}`)
-            let cachedBlob = Ju.blobCache.find( ({ url }) => url == element.href )
+            let filename = element.href.split('/').pop()
+            let cachedBlob = Ju.blobCache.find( blob => blob.filename == filename )
             if ( cachedBlob ) {
-              console.log(`Found blob in cache for ${element.href}`)
+              console.log(`Found blob in cache for ${filename}`)
               return cachedBlob.blob
             }
             // Otherwise, fetch it and add it to the cache
@@ -140,7 +140,7 @@ async () => {
             let response = await fetch(element.href)
             let blob = await response.blob()
             console.log(`Loaded blob:`, blob)
-            Ju.addBlobToCache(element.href, blob)
+            Ju.addBlobToCache(filename, blob)
             return blob
           }
 
