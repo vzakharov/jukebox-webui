@@ -2038,10 +2038,9 @@ with gr.Blocks(
                   if ( blob ) {
                     console.log('Pre-loading blob from cache')
                     wavesurfer.loadBlob( blob )
-                    // Calculate sha for the blob using javascript's native crypto library
-                    Ju.preloadedBlobSha = await crypto.subtle.digest( 'SHA-256', blob )
-                    console.log('Pre-loaded blob sha:', Ju.preloadedBlobSha)
-                    Ju.preloadedBlobKey = null
+                    // Calculate checksum for the blob
+                    Ju.preloadedBlob = blob
+                    del Ju.preloadedBlobKey
                   } else {
                     Ju.preloadedBlobKey = key
                     console.log(`Loading blob from server, to be later cached under key ${key}`)
@@ -2632,7 +2631,7 @@ with gr.Blocks(
           eval_button.click(**eval_args)
           eval_code.submit(**eval_args)
 
-  frontend_on_load_commit_sha = 'ffa918bb4e45fae8f0c34c053689ab3c6dcc25b3'
+  frontend_on_load_commit_sha = 'e386048aa1a15089671ea8ac64cdac7b7c010f36'
   # TODO: Don't forget to remove this line before publishing the app
   frontend_on_load_url = f'https://cdn.jsdelivr.net/gh/vzakharov/jukebox-webui@{frontend_on_load_commit_sha}/frontend-on-load.js'
   with urllib.request.urlopen(frontend_on_load_url) as response:

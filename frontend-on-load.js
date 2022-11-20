@@ -151,12 +151,13 @@ async () => {
               await loadBlob(Ju.audioElements[0])
           )
           
-          // compare the blob's SHA with that of the preloaded blob
-          if ( preloadedBlobSha != await crypto.subtle.digest('SHA-256', blob) ) {
-            console.log('Blob SHA does not match preloaded blob SHA, reloading...')
+          // compare the blob's size with the newly loaded one
+          // TODO: Find a better way to check if the blob has changed (although two mp3s with the same exact size are unlikely to be different)
+          if ( Ju.preloadedBlob?.size != blob.size ) {
+            console.log(`Blob size changed, reloading wavesurfer`)
             wavesurfer.loadBlob(blob)
           } else {
-            console.log('Blob SHA matches preloaded blob SHA, skipping.')
+            console.log('Blob size has not changed, skipping.')
           }
 
           !cachedBlob && Ju.addBlobToCache( filename, blob )
