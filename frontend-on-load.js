@@ -82,13 +82,15 @@ async () => {
 
     Ju.blobCache = []
 
+    Ju.maxCacheSize = 1000
+
     Ju.addBlobToCache = ( filename, blob ) => {
-      // If there's >= 100 blobs in the cache, remove the oldest one
-      if ( Ju.blobCache.length >= 100 ) {
+      // If there's >= Ju.maxCacheSize elements in the cache, remove the oldest one
+      if ( Ju.blobCache.length >= Ju.maxCacheSize ) {
         Ju.blobCache.shift()
       }
       Ju.blobCache.push({ filename, blob })
-      console.log(`Added ${filename} to cache, total cache size: ${Ju.blobCache.length}`)
+      console.log(`Added ${filename} to cache, total cache size: ${Ju.blobCache.length} (${Ju.blobCache.reduce( (acc, { blob }) => acc + blob.size, 0 )/1000000} MB)`)
     }
 
 
