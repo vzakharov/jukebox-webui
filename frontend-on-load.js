@@ -47,24 +47,10 @@ async () => {
       return result
     }
 
-    // Create a (global) wavesurfer object with and attach it to the div
-    window.wavesurferTimeline = WaveSurfer.timeline.create({
-      container: timelineDiv,
-      // Light colors, as the background is dark
-      primaryColor: '#eee',
-      secondaryColor: '#ccc',
-      primaryFontColor: '#eee',
-      secondaryFontColor: '#ccc',
-      formatTimeCallback: time => Math.round(getAudioTime(time))
-    })
-
     window.wavesurfer = WaveSurfer.create({
       container: waveformDiv,
       waveColor: 'skyblue',
-      progressColor: 'steelblue',
-      plugins: [
-        window.wavesurferTimeline
-      ]
+      progressColor: 'steelblue'
     })
     
     // Add a seek event listener to the wavesurfer object, modifying the #audio-time input
@@ -75,6 +61,7 @@ async () => {
     // Also update the time when the audio is playing
     wavesurfer.on('audioprocess', time => {
       shadowSelector('#audio-time').value = getAudioTime(time)
+      Ju.currentTime = time
     })
 
     // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
@@ -141,9 +128,6 @@ async () => {
 
           console.log(`Audio href changed to ${audioHref}, reloading wavesurfer...`)
 
-          // Remember the current playback position (time)
-          let currentTime = wavesurfer.getCurrentTime()
-
           // Replace the #reload-button inner text with an hourglass
           let refreshButton = shadowRoot.querySelector('#refresh-button')
           if ( refreshButton ) {
@@ -182,7 +166,7 @@ async () => {
             wavesurfer.on('ready', () => {
               // Seek to the remembered time, unless it's higher than the new audio length
               let duration = wavesurfer.getDuration()
-              currentTime < duration && wavesurfer.seekTo(currentTime / duration)
+              Ju.currentTime < duration && wavesurfer.seekTo(Ju.currentTime / duration)
               
               // Replace the hourglass with a refresh glyph
               if ( refreshButton ) {
