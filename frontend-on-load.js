@@ -150,16 +150,18 @@ async () => {
               new Blob(await Promise.all( Array.from(Ju.audioElements).slice(1).map( loadBlob ) ), { type: 'audio/mpeg' }) :
               await loadBlob(Ju.audioElements[0])
           )
-
-          if ( blob != Ju.preloadedBlob ) {
+          
+          // compare the blob's SHA with that of the preloaded blob
+          if ( preloadedBlobSha != await crypto.subtle.digest('SHA-256', blob) ) {
+            console.log('Blob SHA does not match preloaded blob SHA, reloading...')
             wavesurfer.loadBlob(blob)
           } else {
-            console.log('Blob has not changed, skipping.')
+            console.log('Blob SHA matches preloaded blob SHA, skipping.')
           }
 
           !cachedBlob && Ju.addBlobToCache( filename, blob )
 
-          Ju.paramKeyForBlobCache && Ju.addBlobToCache( Ju.paramKeyForBlobCache, blob )
+          Ju.preloadedBlobKey && Ju.addBlobToCache( Ju.preloadedBlobKey, blob )
 
           window.shadowRoot.querySelector('#download-button').href = audioHref
 
