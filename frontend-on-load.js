@@ -176,25 +176,29 @@ async () => {
           if ( blobSHA != Ju.preloadedBlobSHA ) {
             console.log(`Blob SHA changed to ${blobSHA}, reloading wavesurfer...`)
             wavesurfer.loadBlob(blob)
+
+            Ju.preloadedBlobKey && Ju.addBlobToCache( Ju.preloadedBlobKey, blob )
+            
+            wavesurfer.on('ready', () => {
+              // Seek to the remembered time, unless it's higher than the new audio length
+              let duration = wavesurfer.getDuration()
+              currentTime < duration && wavesurfer.seekTo(currentTime / duration)
+              
+              // Replace the hourglass with a refresh glyph
+              if ( refreshButton ) {
+                refreshButton.innerText = '↻'
+              }
+            })
+
           } else {
             console.log('Blob SHA has not changed, skipping.')
           }
 
           !cachedBlob && Ju.addBlobToCache( filename, blob )
 
-          Ju.preloadedBlobKey && Ju.addBlobToCache( Ju.preloadedBlobKey, blob )
-
           window.shadowRoot.querySelector('#download-button').href = audioHref
 
           lastAudioHref = audioHref
-
-          if ( refreshButton ) {
-            refreshButton.innerText = '↻'
-          }
-
-          // Seek to the remembered time, unless it's higher than the new audio length
-          let duration = wavesurfer.getDuration()
-          currentTime < duration && wavesurfer.seekTo(currentTime / duration)
           
         }
 
