@@ -130,38 +130,31 @@ async () => {
           }
 
           let loadBlob = async element => {
-            console.log(`Checking cache for ${element.href}`)
-
-            // Remove the path from the href
-            let filename = element.href.split('/').pop()
-
-            // Also remove 8 characters from the end, which Gradio adds to the filename (but keep the extension)
-            let extension = filename.split('.').pop()
-            filename = filename.slice(0, -8-(extension.length+1)) + '.' + extension
-
-            console.log(`Filename: ${filename}`)
-
-            let cachedBlob = Ju.blobCache.find( blob => blob.filename == filename )
-            if ( cachedBlob ) {
-              console.log(`Found blob in cache for ${filename}`)
-              return cachedBlob.blob
-            }
-            // Otherwise, fetch it and add it to the cache
             console.log(`Fetching blob for ${filename}`)
             let response = await fetch(element.href)
             let blob = await response.blob()
             console.log(`Loaded blob:`, blob)
-            Ju.addBlobToCache(filename, blob)
             return blob
           }
 
-          wavesurfer.loadBlob(
+          // Remove path & extension
+          let filename = audioHref.replace(/^.*/,'').replace(/\..*$/,'')
+          
+
+          console.log(`Checking blob cache for ${filename}`)
+          let cachedBlob = Ju.blobCache.find( blob => blob.filename == filename )
+
+          let blob = cachedBlob?.blob || (
             Ju.audioElements.length > 1 ?
               new Blob(await Promise.all( Array.from(Ju.audioElements).slice(1).map( loadBlob ) ), { type: 'audio/mpeg' }) :
-              await loadBlob(Ju.audioElements[0])              
+              await loadBlob(Ju.audioElements[0])
           )
 
-          window.shadowRoot.querySelector('#download-button').href = Ju.audioElements[0].href
+          wavesurfer.loadBlob(blob)
+
+          !cachedBlob && Ju.addBlobToCache(filename, blob)
+
+          window.shadowRoot.querySelector('#download-button').href = audioHref
 
           lastAudioHref = audioHref
 
