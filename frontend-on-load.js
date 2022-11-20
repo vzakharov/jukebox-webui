@@ -139,7 +139,7 @@ async () => {
           }
 
           // Remove path & extension
-          let filename = audioHref.replace(/^.*/,'').replace(/\..*$/,'')
+          let filename = audioHref.replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
           
 
           console.log(`Checking blob cache for ${filename}`)
