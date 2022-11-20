@@ -80,18 +80,18 @@ async () => {
     // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
     Ju.parentAudioElement = window.shadowRoot.querySelector('#audio-file')
 
-    Ju.blobCacheByFilename = []
-    Ju.blobCacheByParams = []
+    Ju.blobCache = []
 
     Ju.maxCacheSize = 1000
 
-    Ju.addBlobToCache = ( cache, key, blob ) => {
+    Ju.addBlobToCache = ( key, blob ) => {
+      let { blobCache, maxCacheSize } = Ju
       // If there's >= Ju.maxCacheSize elements in the cache, remove the oldest one
-      if ( cache.length >= Ju.maxCacheSize ) {
-        cache.shift()
+      if ( blobCache.length >= maxCacheSize ) {
+        blobCache.shift()
       }
-      cache.push({ key, blob })
-      console.log(`Added ${key} to cache, total cache size: ${cache.length} (${cache.reduce( (acc, { blob }) => acc + blob.size, 0 )/1000000} MB)`)
+      blobCache.push({ key, blob })
+      console.log(`Added ${key} to cache, total cache size: ${blobCache.length} (${blobCache.reduce( (acc, { blob }) => acc + blob.size, 0 )/1000000} MB)`)
     }
 
 
@@ -153,9 +153,9 @@ async () => {
 
           wavesurfer.loadBlob(blob)
 
-          !cachedBlob && Ju.addBlobToCache( Ju.blogCacheByFilename, filename, blob )
+          !cachedBlob && Ju.addBlobToCache( filename, blob )
 
-          Ju.paramKeyForBlobCache && Ju.addBlobToCache( Ju.blogCacheByParams, Ju.paramKeyForBlobCache, blob )
+          Ju.paramKeyForBlobCache && Ju.addBlobToCache( Ju.paramKeyForBlobCache, blob )
 
           window.shadowRoot.querySelector('#download-button').href = audioHref
 
