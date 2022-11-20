@@ -2023,10 +2023,25 @@ with gr.Blocks(
             _js =
             # Set the search string to ?[sample_id] for easier navigation
             '''
-              ( ...args ) => (
-                args[1] && window.history.pushState( {}, '', `?${args[1]}` ),
-                args
-              ) 
+              ( ...args ) => {
+
+                args[1] && window.history.pushState( {}, '', `?${args[1]}` )
+
+                // Check Ju.blogCacheByParams for a key equal to a JSON string of the args
+                // If it exists, loadBlob wavesurver from the cache
+                // Otherwise, loadBlob wavesurver from the server
+                let key = JSON.stringify(args)
+                let blob = Ju.blogCacheByParams.find( entry => entry.key == key )
+                if ( blob ) {
+                  wavesurfer.loadBlob( blob )
+                  Ju.paramKeyForBlobCache = null
+                } else {
+                  Ju.paramKeyForBlobCache = key
+                }
+
+                return args
+
+              }
             '''
           )
 
