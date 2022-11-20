@@ -1,4 +1,4 @@
-github_sha = 'b19e1999d8eeaefb850def5647d0a93d116883bb'
+github_sha = 'a2d971503c50674eeaf8d5ae3918d1433101e030'
 
 #@title Jukebox Web UI
 
@@ -2335,11 +2335,11 @@ with gr.Blocks(
                 
                 # If max_n_samples changes, update the n_samples input respectively
                 UI.max_n_samples.render().change(
-                  inputs = [ UI.max_n_samples, UI.n_samples ],
+                  inputs = UI.max_n_samples,
                   outputs = UI.n_samples,
-                  fn = lambda max_n_samples, n_samples: gr.update(
+                  fn = lambda max_n_samples: gr.update(
                     maximum = max_n_samples,
-                    value = min( n_samples, max_n_samples ),
+                    # value = min( n_samples, max_n_samples ),
                   )
                 )
 
