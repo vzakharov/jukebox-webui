@@ -1963,27 +1963,27 @@ with gr.Blocks(
 
             with gr.Column():
 
-              with gr.Accordion('Options & stats', open=False ):
+              # with gr.Accordion('Options & stats', open=False ):
 
-                UI.show_leafs_only.render()
+              UI.show_leafs_only.render()
 
-                UI.show_leafs_only.change(
-                  inputs = [ UI.project_name, UI.show_leafs_only ],
-                  outputs = UI.sample_tree,
-                  fn = lambda *args: gr.update( choices = get_samples(*args) ),
-                )
+              UI.show_leafs_only.change(
+                inputs = [ UI.project_name, UI.show_leafs_only ],
+                outputs = UI.sample_tree,
+                fn = lambda *args: gr.update( choices = get_samples(*args) ),
+              )
 
-                UI.branch_sample_count.render()
-                UI.leaf_sample_count.render()
+                # UI.branch_sample_count.render()
+                # UI.leaf_sample_count.render()
 
-                # Recount on sample_tree change
-                UI.sample_tree.change(
-                  inputs = UI.project_name,
-                  outputs = [ UI.branch_sample_count, UI.leaf_sample_count ],
-                  fn = lambda project_name: [
-                    len(get_samples(project_name, leafs_only)) for leafs_only in [ False, True ]
-                  ]
-                )
+                # # Recount on sample_tree change
+                # UI.sample_tree.change(
+                #   inputs = UI.project_name,
+                #   outputs = [ UI.branch_sample_count, UI.leaf_sample_count ],
+                #   fn = lambda project_name: [
+                #     len(get_samples(project_name, leafs_only)) for leafs_only in [ False, True ]
+                #   ]
+                # )
             
           UI.picked_sample.render()
 
