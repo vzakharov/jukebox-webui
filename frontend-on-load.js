@@ -151,7 +151,11 @@ async () => {
               await loadBlob(Ju.audioElements[0])
           )
 
-          wavesurfer.loadBlob(blob)
+          if ( blob != Ju.preloadedBlob ) {
+            wavesurfer.loadBlob(blob)
+          } else {
+            console.log('Blob has not changed, skipping.')
+          }
 
           !cachedBlob && Ju.addBlobToCache( filename, blob )
 

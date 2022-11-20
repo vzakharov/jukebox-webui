@@ -2036,10 +2036,13 @@ with gr.Blocks(
                   let key = JSON.stringify( args.slice(0,7) )
                   let blob = Ju.blobCache.find( entry => entry.key == key )?.blob
                   if ( blob ) {
+                    console.log('Pre-loading blob from cache')
                     wavesurfer.loadBlob( blob )
+                    Ju.preloadedBlob = blob
                     Ju.paramKeyForBlobCache = null
                   } else {
                     Ju.paramKeyForBlobCache = key
+                    console.log(`Loading blob from server, to be later cached under key ${key}`)
                   }
 
                 } catch (e) {
@@ -2627,7 +2630,7 @@ with gr.Blocks(
           eval_button.click(**eval_args)
           eval_code.submit(**eval_args)
 
-  frontend_on_load_commit_sha = '01ad5e71fc32237310c4352411437de34b91858b'
+  frontend_on_load_commit_sha = '22633cda0dc08c671000555d89876c37007da0e0'
   # TODO: Don't forget to remove this line before publishing the app
   frontend_on_load_url = f'https://cdn.jsdelivr.net/gh/vzakharov/jukebox-webui@{frontend_on_load_commit_sha}/frontend-on-load.js'
   with urllib.request.urlopen(frontend_on_load_url) as response:
