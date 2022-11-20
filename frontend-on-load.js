@@ -129,6 +129,7 @@ async () => {
 
           let loadBlob = async element => {
             // if the blob is already in the cache, return it (the cache is an array of { url, blob } objects)
+            console.log(`Checking cache for ${element.href}`)
             let cachedBlob = Ju.blobCache.find( ({ url }) => url == element.href )
             if ( cachedBlob ) {
               console.log(`Found blob in cache for ${element.href}`)

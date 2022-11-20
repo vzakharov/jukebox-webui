@@ -1493,6 +1493,9 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
     file_content = open(f'{filename}.mp3', 'rb').read()
     for i in range(0, file_size, file_limit):
       # Place the chunk file in tmp/[filename without path] [range].mp3.chunk
+      # Create the tmp folder if it doesn't exist
+      if not os.path.exists(f'tmp'):        
+        os.makedirs(f'tmp')
       chunk_filename = f'tmp/{os.path.basename(filename)} {i}-{i+file_limit}.mp3.chunk'
       with open(chunk_filename, 'wb') as f:
         f.write(file_content[i:i+file_limit])
@@ -2620,6 +2623,9 @@ with gr.Blocks(
     ],
     api_name = 'initialize',
     _js = frontend_on_load_js,
+    # _js = """
+    # // (insert manually for debugging)
+    # """,
   )
 
   # Also load browser's time zone offset on app load
