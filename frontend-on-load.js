@@ -94,6 +94,23 @@ async () => {
       console.log(`Added ${key} to cache, total cache size: ${blobCache.length} (${blobCache.reduce( (acc, { blob }) => acc + blob.size, 0 )/1000000} MB)`)
     }
 
+    Ju.blobSHA = blob => {
+      return new Promise( resolve => {
+        let reader = new FileReader()
+        reader.onload = () => {
+          let arrayBuffer = reader.result
+          // use javascrit's built in crypto library to create a sha1 hash of the arrayBuffer
+          crypto.subtle.digest('SHA-1', arrayBuffer).then( hashBuffer => {
+            // convert the hashBuffer to a hex string
+            let hashArray = Array.from(new Uint8Array(hashBuffer))
+            let hashHex = hashArray.map( b => b.toString(16).padStart(2, '0') ).join('')
+            resolve(hashHex)
+          })
+        }
+        reader.readAsArrayBuffer(blob)
+      })
+    }        
+
 
     let parentObserver = new MutationObserver( () => {
       
@@ -151,13 +168,13 @@ async () => {
               await loadBlob(Ju.audioElements[0])
           )
           
-          // compare the blob's size with the newly loaded one
-          // TODO: Find a better way to check if the blob has changed (although two mp3s with the same exact size are unlikely to be different)
-          if ( Ju.preloadedBlobSize != blob.size ) {
-            console.log(`Blob size changed to ${blob.size}, reloading wavesurfer...`)
+          // compare the preloaded blob's SHA to the one in the cache
+          let blobSHA = await Ju.blobSHA(blob)
+          if ( blobSHA != Ju.preloadedBlobSHA ) {
+            console.log(`Blob SHA changed to ${blobSHA}, reloading wavesurfer...`)
             wavesurfer.loadBlob(blob)
           } else {
-            console.log('Blob size has not changed, skipping.')
+            console.log('Blob SHA has not changed, skipping.')
           }
 
           !cachedBlob && Ju.addBlobToCache( filename, blob )
