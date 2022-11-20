@@ -129,7 +129,16 @@ async () => {
 
           let loadBlob = async element => {
             console.log(`Checking cache for ${element.href}`)
+
+            // Remove the path from the href
             let filename = element.href.split('/').pop()
+
+            // Also remove 8 characters from the end, which Gradio adds to the filename (but keep the extension)
+            let extension = filename.split('.').pop()
+            filename = filename.slice(0, -8-(extension.length+1)) + '.' + extension
+
+            console.log(`Filename: ${filename}`)
+
             let cachedBlob = Ju.blobCache.find( blob => blob.filename == filename )
             if ( cachedBlob ) {
               console.log(`Found blob in cache for ${filename}`)
