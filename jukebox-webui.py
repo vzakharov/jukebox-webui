@@ -1492,7 +1492,8 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
     print(f'MP3 file size is {file_size} bytes, splitting into chunks...')
     file_content = open(f'{filename}.mp3', 'rb').read()
     for i in range(0, file_size, file_limit):
-      chunk_filename = f'{filename} {i}-{i+file_limit}.mp3.chunk'
+      # Place the chunk file in tmp/[filename without path] [range].mp3.chunk
+      chunk_filename = f'tmp/{os.path.basename(filename)} {i}-{i+file_limit}.mp3.chunk'
       with open(chunk_filename, 'wb') as f:
         f.write(file_content[i:i+file_limit])
         print(f'Wrote bytes {i}-{i+file_limit} to {chunk_filename}')
