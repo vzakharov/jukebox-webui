@@ -580,13 +580,6 @@ class UI:
     label = 'Preview just the last ... seconds (0 to disable)'
   )
 
-  trim_to_n_sec = gr.Number(
-    label = 'Trim (0 to sec)',
-    elem_id = 'trim-to-n-sec'
-  )
-
-  trim_button = gr.Button( 'Trim', visible = False )
-
   cut_out = gr.Textbox(
     label = 'Cut out',
     placeholder = 'e.g. 0.5-1.5',
@@ -911,10 +904,10 @@ def get_first_upsampled_ancestor_zs(project_name, sample_id):
       print(f'No upsampled ancestor found for {sample_id}')
       return None
 
-def get_audio(project_name, sample_id, trim_to_n_sec, cut_out, preview_just_the_last_n_sec, level=2, upsample_rendering=3, pad_with_lower_sampled=False):
+def get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level=2, upsample_rendering=3, pad_with_lower_sampled=False):
 
   print(f'Generating audio for {project_name}/{sample_id} (level {level}, upsample_rendering {upsample_rendering}, pad_with_lower_sampled {pad_with_lower_sampled})')
-  print(f'Will trim to {trim_to_n_sec} seconds, cut out intervals {cut_out}, preview just the last {preview_just_the_last_n_sec} seconds')
+  print(f'Will cut out interval {cut_out} & preview just the last {preview_just_the_last_n_sec} seconds')
 
   # Get current GPU memory usage. If it's above 12GB, empty the cache
   memory = t.cuda.memory_allocated()
@@ -945,12 +938,6 @@ def get_audio(project_name, sample_id, trim_to_n_sec, cut_out, preview_just_the_
   get_audio_length = lambda: int( tokens_to_seconds(z.shape[1], level) * 100 ) / 100
   audio_length = get_audio_length()
   
-  if trim_to_n_sec:
-    trim_to_tokens = seconds_to_tokens(trim_to_n_sec, level)
-    # print(f'Trimming to {trim_to_n_sec} seconds ({trim_to_tokens} tokens)')
-    z = z[ :, :trim_to_tokens ]
-    # print(f'Trimmed to shape: {z.shape}')
-
   if cut_out:
     z = cut_out_z(z, cut_out, level)
   
@@ -1120,7 +1107,7 @@ def get_audio(project_name, sample_id, trim_to_n_sec, cut_out, preview_just_the_
 
   if pad_with_lower_sampled and level < 2:
 
-    lower_sampled_wav, audio_length = get_audio(project_name, sample_id, trim_to_n_sec, cut_out, preview_just_the_last_n_sec, level+1, upsample_rendering, True)
+    lower_sampled_wav, audio_length = get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level+1, upsample_rendering, True)
 
     # Get the length of lower_sampled_wav in seconds and compare it to the length of the upsampled wav
     lower_sampled_seconds = lower_sampled_wav.shape[0] / hps.sr
@@ -1472,7 +1459,7 @@ def get_project(project_name, routed_sample_id):
     **settings_out_dict
   }
 
-def get_sample(project_name, sample_id, trim_to_n_sec, cut_out, preview_just_the_last_n_sec, level_name, upsample_rendering, pad_with_lower_sampled):
+def get_sample(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level_name, upsample_rendering, pad_with_lower_sampled):
 
   global hps
 
@@ -1483,9 +1470,7 @@ def get_sample(project_name, sample_id, trim_to_n_sec, cut_out, preview_just_the
 
   filename = f'{base_path}/{project_name}/rendered/{sample_id} L{level}'
 
-  # Add trimmed/cutout/preview suffixes
-  if trim_to_n_sec:
-    filename += f' trim {trim_to_n_sec}'
+  # Add cutout/preview suffixes
   if cut_out:
     filename += f' cut {cut_out}'
   if preview_just_the_last_n_sec:
@@ -1508,7 +1493,7 @@ def get_sample(project_name, sample_id, trim_to_n_sec, cut_out, preview_just_the
   if not os.path.isfile(f'{filename}.wav') or not os.path.isfile(f'{filename}.mp3'):
 
     print('Nope, rendering...')
-    wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, cut_out, preview_just_the_last_n_sec, level, upsample_rendering, pad_with_lower_sampled)
+    wav, total_audio_length = get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level, upsample_rendering, pad_with_lower_sampled)
 
     if not os.path.exists(os.path.dirname(filename)):
       os.makedirs(os.path.dirname(filename))
@@ -1522,13 +1507,10 @@ def get_sample(project_name, sample_id, trim_to_n_sec, cut_out, preview_just_the
     print('Yep, using it.')
     wav = None
 
-    if trim_to_n_sec:
-      total_audio_length = tokens_to_seconds(seconds_to_tokens(trim_to_n_sec, level), level)
-    else:
-      # We need to load the zs to know the total audio length
-      level_for_audio_length = level if not pad_with_lower_sampled else 2
-      z = get_zs(project_name, sample_id)[level_for_audio_length]
-      total_audio_length = tokens_to_seconds(z.shape[1], level_for_audio_length)
+    # We still need to load the zs to know the total audio length
+    level_for_audio_length = level if not pad_with_lower_sampled else 2
+    z = get_zs(project_name, sample_id)[level_for_audio_length]
+    total_audio_length = tokens_to_seconds(z.shape[1], level_for_audio_length)
 
   mp3_files = [f'{filename}.mp3']
 
@@ -1824,6 +1806,8 @@ def restart_upsampling(sample_id, even_if_no_labels = False, even_if_not_ancesto
   print('Warning: Using the same labels as before. If you want to restart with different labels, you need to set Upsampling.labels to None before calling restart_upsampling.')
 
 def set_keep_upsampling_after_restart():
+  global keep_upsampling_after_restart
+
   keep_upsampling_after_restart = True
 
 def tokens_to_seconds(tokens, level = 2):
@@ -1831,16 +1815,6 @@ def tokens_to_seconds(tokens, level = 2):
   global hps, raw_to_tokens
 
   return tokens * raw_to_tokens / hps.sr / 4 ** (2 - level)
-
-def trim(project_name, sample_id, n_sec):
-
-  zs = get_zs(project_name, sample_id)
-  backup_zs(zs, project_name, sample_id)
-  for level in get_levels(zs):
-    n_tokens = seconds_to_tokens(n_sec, level)
-    zs[level] = zs[level][:, :n_tokens]
-  save_zs(zs, project_name, sample_id)
-  return 0
 
 def cut_out_z(z, interval, level):
   # cut_out is a string of format 'start-end' or just 'start'. In the latter case, end is assumed to be the end of the sample
@@ -2066,7 +2040,7 @@ with gr.Blocks(
 
           preview_args = dict(
             inputs = [
-              UI.project_name, UI.picked_sample, UI.trim_to_n_sec, UI.cut_out, UI.preview_just_the_last_n_sec,
+              UI.project_name, UI.picked_sample, UI.cut_out, UI.preview_just_the_last_n_sec,
               UI.upsampling_level, UI.upsample_rendering, UI.upsample_pad_with_lower_sampled
             ],
             outputs = [ 
@@ -2403,21 +2377,6 @@ with gr.Blocks(
                 )
 
                 UI.preview_just_the_last_n_sec.render().blur(**preview_args)
-                UI.trim_to_n_sec.render().blur(**preview_args)
-
-                # Also make the trim button visible or not depending on whether the cut value is 0
-                UI.trim_to_n_sec.change(
-                  inputs = UI.trim_to_n_sec,
-                  outputs = UI.trim_button,
-                  fn = SHOW_OR_HIDE,
-                )
-
-                UI.trim_button.render().click(
-                  inputs = [ UI.project_name, UI.picked_sample, UI.trim_to_n_sec ],
-                  outputs = UI.trim_to_n_sec,
-                  fn = trim,
-                  api_name = 'trim'
-                )
 
                 UI.cut_out.render().blur(**preview_args)
 
