@@ -1,4 +1,4 @@
-github_sha = 'd021c86a94fadbdee41b8d9f9b950c50f6f29306'
+github_sha = '1d189270c3c31abbbea1384304e6c607e0e33f3c'
 
 #@title Jukebox Web UI
 
@@ -2037,7 +2037,7 @@ with gr.Blocks(
                   let blob = Ju.blobCache.find( entry => entry.key == key )?.blob
                   if ( blob ) {
                     wavesurfer.loadBlob( blob )
-                    Ju.preloadedBlobSHA = Ju.blobSHA( blob )
+                    Ju.preloadedBlobSHA = await Ju.blobSHA( blob )
                     console.log( `Loaded blob for ${key} from cache, SHA: ${Ju.preloadedBlobSHA}` )
                     delete Ju.preloadedBlobKey
                   } else {
