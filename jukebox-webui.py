@@ -909,7 +909,7 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
     lowest_level = min(levels)
     print(f'Level {level} does not exist for {sample_id}, using {lowest_level} instead')
     level = lowest_level
-    
+
   z = zs[level]
   # z is of shape torch.Size([1, n_tokens])
   # print(f'Loaded {filename}.z at level {level}, shape: {z.shape}')
@@ -2057,8 +2057,8 @@ with gr.Blocks(
                       ),
                       UI.upsampling_level: gr.update(
                         choices = available_level_names,
-                        # Choose the highest available level, unless we're upsampling, in which case choose 2-Upsampling.level (because they're in reverse order), if it's available
-                        value = available_level_names[-1 if not Upsampling.running or UI.UPSAMPLING_LEVEL_NAMES[2 - Upsampling.level] not in available_level_names else 2 - Upsampling.level],
+                        # Choose the highest available level
+                        value = available_level_names[-1],
                       )
                     }
                   
