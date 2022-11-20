@@ -1,4 +1,4 @@
-github_sha = 'da0b21f9b958142144bab51d1d9912106cae2bc4'
+github_sha = 'b19e1999d8eeaefb850def5647d0a93d116883bb'
 
 #@title Jukebox Web UI
 

@@ -176,9 +176,6 @@ async () => {
           if ( blobSHA != Ju.preloadedBlobSHA ) {
             console.log(`Blob SHA changed to ${blobSHA}, reloading wavesurfer...`)
             wavesurfer.loadBlob(blob)
-            // Seek to the remembered time, unless it's higher than the new audio length
-            let duration = wavesurfer.getDuration()
-            currentTime < duration && wavesurfer.seekTo(currentTime / duration)
           } else {
             console.log('Blob SHA has not changed, skipping.')
           }
@@ -195,6 +192,10 @@ async () => {
             refreshButton.innerText = '↻'
           }
 
+          // Seek to the remembered time, unless it's higher than the new audio length
+          let duration = wavesurfer.getDuration()
+          currentTime < duration && wavesurfer.seekTo(currentTime / duration)
+          
         }
 
         // Reload the audio at once
