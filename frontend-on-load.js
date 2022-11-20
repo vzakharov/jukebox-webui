@@ -153,8 +153,8 @@ async () => {
           
           // compare the blob's size with the newly loaded one
           // TODO: Find a better way to check if the blob has changed (although two mp3s with the same exact size are unlikely to be different)
-          if ( Ju.preloadedBlob?.size != blob.size ) {
-            console.log(`Blob size changed, reloading wavesurfer`)
+          if ( Ju.preloadedBlobSize != blob.size ) {
+            console.log(`Blob size changed to ${blob.size}, reloading wavesurfer...`)
             wavesurfer.loadBlob(blob)
           } else {
             console.log('Blob size has not changed, skipping.')

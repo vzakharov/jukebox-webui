@@ -2036,10 +2036,9 @@ with gr.Blocks(
                   let key = JSON.stringify( args.slice(0,7) )
                   let blob = Ju.blobCache.find( entry => entry.key == key )?.blob
                   if ( blob ) {
-                    console.log('Pre-loading blob from cache')
                     wavesurfer.loadBlob( blob )
-                    // Calculate checksum for the blob
-                    Ju.preloadedBlob = blob
+                    Ju.preloadedBlobSize = blob.size
+                    console.log( `Loaded blob for ${key} from cache, size: ${blob.size}` )
                     delete Ju.preloadedBlobKey
                   } else {
                     Ju.preloadedBlobKey = key
