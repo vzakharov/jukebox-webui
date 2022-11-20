@@ -82,7 +82,7 @@ async () => {
 
     Ju.blobCache = []
 
-    Ju.addBlobToCache = url, blob => {
+    Ju.addBlobToCache = ( url, blob ) => {
       // If there's >= 100 blobs in the cache, remove the oldest one
       if ( Ju.blobCache.length >= 100 ) {
         Ju.blobCache.shift()
