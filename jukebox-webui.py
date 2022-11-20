@@ -2034,7 +2034,7 @@ with gr.Blocks(
                   // Otherwise, loadBlob wavesurver from the server
                   // Use just the inputs for the key (args contains both inputs and outputs, so we only need to take the first 7 elements)
                   let key = JSON.stringify( args.slice(0,7) )
-                  let blob = Ju.blobCache.find( entry => entry.key == key )
+                  let blob = Ju.blobCache.find( entry => entry.key == key )?.blob
                   if ( blob ) {
                     wavesurfer.loadBlob( blob )
                     Ju.paramKeyForBlobCache = null
