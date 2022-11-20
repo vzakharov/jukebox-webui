@@ -2029,11 +2029,11 @@ with gr.Blocks(
 
                   args[1] && window.history.pushState( {}, '', `?${args[1]}` )
 
-                  // Check Ju.blobCacheByParams for a key equal to a JSON string of the args
+                  // Check Ju.blobCache for a key equal to a JSON string of the args
                   // If it exists, loadBlob wavesurver from the cache
                   // Otherwise, loadBlob wavesurver from the server
                   let key = JSON.stringify(args)
-                  let blob = Ju.blobCacheByParams.find( entry => entry.key == key )
+                  let blob = Ju.blobCache.find( entry => entry.key == key )
                   if ( blob ) {
                     wavesurfer.loadBlob( blob )
                     Ju.paramKeyForBlobCache = null
@@ -2626,7 +2626,7 @@ with gr.Blocks(
           eval_button.click(**eval_args)
           eval_code.submit(**eval_args)
 
-  frontend_on_load_commit_sha = 'ea43f27f70dadcf0659b03d6758227dd85acaa80'
+  frontend_on_load_commit_sha = '01ad5e71fc32237310c4352411437de34b91858b'
   # TODO: Don't forget to remove this line before publishing the app
   frontend_on_load_url = f'https://cdn.jsdelivr.net/gh/vzakharov/jukebox-webui@{frontend_on_load_commit_sha}/frontend-on-load.js'
   with urllib.request.urlopen(frontend_on_load_url) as response:
