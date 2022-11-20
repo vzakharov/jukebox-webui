@@ -79,6 +79,19 @@ async () => {
 
     // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
     Ju.parentAudioElement = window.shadowRoot.querySelector('#audio-file')
+
+    Ju.blobCache = []
+
+    Ju.addBlobToCache = url, blob => {
+      // If there's >= 100 blobs in the cache, remove the oldest one
+      if ( Ju.blobCache.length >= 100 ) {
+        Ju.blobCache.shift()
+      }
+      Ju.blobCache.push({ url, blob })
+      console.log(`Added ${url} to cache, total cache size: ${Ju.blobCache.length}`)
+    }
+
+
     let parentObserver = new MutationObserver( () => {
       
       // Check if there is an inner <a> element
@@ -115,9 +128,18 @@ async () => {
           }
 
           let loadBlob = async element => {
+            // if the blob is already in the cache, return it (the cache is an array of { url, blob } objects)
+            let cachedBlob = Ju.blobCache.find( ({ url }) => url == element.href )
+            if ( cachedBlob ) {
+              console.log(`Found blob in cache for ${element.href}`)
+              return cachedBlob.blob
+            }
+            // Otherwise, fetch it and add it to the cache
+            console.log(`Fetching blob for ${element.href}`)
             let response = await fetch(element.href)
             let blob = await response.blob()
             console.log(`Loaded blob:`, blob)
+            Ju.addBlobToCache(element.href, blob)
             return blob
           }
 
