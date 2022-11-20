@@ -977,16 +977,16 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
 
         # Fade in the left overlap and add it to the existing wav if it's not empty (i.e. if this is not the first chunk)
         left_overlap = fade(left_overlap, 'in')
-        print(f'Faded in left overlap')
-        # Show as plot
-        plt.plot(left_overlap[0, :, 0])
-        plt.show()
+        # print(f'Faded in left overlap')
+        # # Show as plot
+        # plt.plot(left_overlap[0, :, 0])
+        # plt.show()
 
         wav[ :, -left_overlap.shape[1]: ] += left_overlap
-        print(f'Added left overlap to existing wav:')
-        # Plot the resulting (faded-in + previous fade-out) overlap
-        plt.plot(wav[0, -left_overlap.shape[1]:, 0])
-        plt.show()
+        # print(f'Added left overlap to existing wav:')
+        # # Plot the resulting (faded-in + previous fade-out) overlap
+        # plt.plot(wav[0, -left_overlap.shape[1]:, 0])
+        # plt.show()
 
         print(f'Added left overlap to wav, overall shape now: {wav.shape}')
 
@@ -1021,10 +1021,10 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
         # print(f'Right overlap (quants): {right_overlap.shape[1]}')
 
         right_overlap = fade(right_overlap, 'out')
-        print(f'Faded out right overlap')
-        # Show as plot
-        plt.plot(right_overlap[0, :, 0])
-        plt.show()
+        # print(f'Faded out right overlap')
+        # # Show as plot
+        # plt.plot(right_overlap[0, :, 0])
+        # plt.show()
 
         # Add the right overlap to the existing wav
         wav = np.concatenate([ wav, right_overlap ], axis=1)
@@ -2025,21 +2025,30 @@ with gr.Blocks(
             '''
               ( ...args ) => {
 
-                args[1] && window.history.pushState( {}, '', `?${args[1]}` )
+                try {
 
-                // Check Ju.blogCacheByParams for a key equal to a JSON string of the args
-                // If it exists, loadBlob wavesurver from the cache
-                // Otherwise, loadBlob wavesurver from the server
-                let key = JSON.stringify(args)
-                let blob = Ju.blogCacheByParams.find( entry => entry.key == key )
-                if ( blob ) {
-                  wavesurfer.loadBlob( blob )
-                  Ju.paramKeyForBlobCache = null
-                } else {
-                  Ju.paramKeyForBlobCache = key
+                  args[1] && window.history.pushState( {}, '', `?${args[1]}` )
+
+                  // Check Ju.blobCacheByParams for a key equal to a JSON string of the args
+                  // If it exists, loadBlob wavesurver from the cache
+                  // Otherwise, loadBlob wavesurver from the server
+                  let key = JSON.stringify(args)
+                  let blob = Ju.blobCacheByParams.find( entry => entry.key == key )
+                  if ( blob ) {
+                    wavesurfer.loadBlob( blob )
+                    Ju.paramKeyForBlobCache = null
+                  } else {
+                    Ju.paramKeyForBlobCache = key
+                  }
+
+                } catch (e) {
+                  console.error(e)
+                } finally {
+
+                  return args
+
                 }
 
-                return args
 
               }
             '''
@@ -2617,8 +2626,9 @@ with gr.Blocks(
           eval_button.click(**eval_args)
           eval_code.submit(**eval_args)
 
-  # On app load on the frontend, we use the js located at https://github.com/vzakharov/jukebox-webui/blob/[github_branch]/frontend-on-load.js with a random URL query parameter to prevent caching
-  frontend_on_load_url = f'https://raw.githubusercontent.com/vzakharov/jukebox-webui/{github_branch}/frontend-on-load.js?{random.randint(0, 1000000)}'
+  frontend_on_load_commit_sha = 'ea43f27f70dadcf0659b03d6758227dd85acaa80'
+  # TODO: Don't forget to remove this line before publishing the app
+  frontend_on_load_url = f'https://cdn.jsdelivr.net/gh/vzakharov/jukebox-webui@{frontend_on_load_commit_sha}/frontend-on-load.js'
   with urllib.request.urlopen(frontend_on_load_url) as response:
     frontend_on_load_js = response.read().decode('utf-8')
 
