@@ -902,6 +902,14 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
 
   print(f'Loading {filename}.z')
   zs = t.load(f'{filename}.z')
+
+  # Make sure that the level exists for the zs, if not use the lowest available level
+  levels = get_levels(zs)
+  if level not in levels:
+    lowest_level = min(levels)
+    print(f'Level {level} does not exist for {sample_id}, using {lowest_level} instead')
+    level = lowest_level
+    
   z = zs[level]
   # z is of shape torch.Size([1, n_tokens])
   # print(f'Loaded {filename}.z at level {level}, shape: {z.shape}')
