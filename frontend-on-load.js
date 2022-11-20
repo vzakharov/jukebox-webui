@@ -141,10 +141,10 @@ async () => {
 
           console.log(`Audio href changed to ${audioHref}, reloading wavesurfer...`)
 
-          // Replace the #reload-button inner text with an ellipsis
+          // Replace the #reload-button inner text with an hourglass
           let refreshButton = shadowRoot.querySelector('#refresh-button')
           if ( refreshButton ) {
-            refreshButton.innerText = '...'
+            refreshButton.innerText = '⏳'
           }
 
           let loadBlob = async element => {
