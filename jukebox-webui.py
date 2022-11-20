@@ -1,6 +1,6 @@
-#@title Jukebox Web UI
+github_sha = '808acad8823632d2d3b304922676bd00a88944b0'
 
-github_branch = 'v0.3'
+#@title Jukebox Web UI
 
 #@markdown This Notebook allows you to create music with OpenAI’s Jukebox model using a simple, web-based UI that uses your Colab Notebook as a backend.
 #@markdown I strongly suggest that you refer to the [getting started page](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md) before running it.
@@ -2040,7 +2040,7 @@ with gr.Blocks(
                     wavesurfer.loadBlob( blob )
                     // Calculate checksum for the blob
                     Ju.preloadedBlob = blob
-                    del Ju.preloadedBlobKey
+                    delete Ju.preloadedBlobKey
                   } else {
                     Ju.preloadedBlobKey = key
                     console.log(`Loading blob from server, to be later cached under key ${key}`)
@@ -2631,9 +2631,8 @@ with gr.Blocks(
           eval_button.click(**eval_args)
           eval_code.submit(**eval_args)
 
-  frontend_on_load_commit_sha = 'e386048aa1a15089671ea8ac64cdac7b7c010f36'
   # TODO: Don't forget to remove this line before publishing the app
-  frontend_on_load_url = f'https://cdn.jsdelivr.net/gh/vzakharov/jukebox-webui@{frontend_on_load_commit_sha}/frontend-on-load.js'
+  frontend_on_load_url = f'https://cdn.jsdelivr.net/gh/vzakharov/jukebox-webui@{github_sha}/frontend-on-load.js'
   with urllib.request.urlopen(frontend_on_load_url) as response:
     frontend_on_load_js = response.read().decode('utf-8')
 
