@@ -145,7 +145,7 @@ async () => {
               return cachedBlob.blob
             }
             // Otherwise, fetch it and add it to the cache
-            console.log(`Fetching blob for ${element.href}`)
+            console.log(`Fetching blob for ${filename}`)
             let response = await fetch(element.href)
             let blob = await response.blob()
             console.log(`Loaded blob:`, blob)
