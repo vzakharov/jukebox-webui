@@ -1,4 +1,4 @@
-github_sha = 'b4060a8444b33dbafd728ffe98e6c0a79890e894'
+github_sha = '1429901ab0b4e9f5020357e23bc07fc26cfe6a17'
 
 #@title Jukebox Web UI
 
@@ -2210,6 +2210,7 @@ with gr.Blocks(
             fn = None,
             # Split by comma and turn into floats and add wavesurfer markers for each (first clear all the markers)
             _js = 'comma_separated => Ji.addUpsamplingMarkers( comma_separated.split(",").map( parseFloat ) )'
+          )
 
           with UI.sample_box.render():
 
