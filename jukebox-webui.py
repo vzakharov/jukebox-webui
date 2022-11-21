@@ -1,4 +1,4 @@
-github_sha = '1429901ab0b4e9f5020357e23bc07fc26cfe6a17'
+github_sha = 'd4d72272296c43b2bfb37620eee873b29babd1c1'
 
 #@title Jukebox Web UI
 
@@ -539,7 +539,7 @@ class UI:
 
   upsample_pad_with_lower_sampled = gr.Checkbox(
     label = 'Pad with lower-sampled audio',
-    value = False
+    value = True
   )
 
   continue_upsampling_button = gr.Button('Continue upsampling', visible = False )
@@ -1119,7 +1119,7 @@ def get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, lev
 
   if pad_with_lower_sampled and level < 2:
 
-    lower_sampled_wav, audio_length = get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level+1, upsample_rendering, True)
+    lower_sampled_wav, audio_length, _ = get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level+1, upsample_rendering, True)
 
     # Get the length of lower_sampled_wav in seconds and compare it to the length of the upsampled wav
     lower_sampled_seconds = lower_sampled_wav.shape[0] / hps.sr
