@@ -2142,19 +2142,19 @@ with gr.Blocks(
 
                   args[1] && window.history.pushState( {}, '', `?${args[1]}` )
 
-                  // Check Ju.blobCache for a key equal to a JSON string of the args
+                  // Check Ji.blobCache for a key equal to a JSON string of the args
                   // If it exists, loadBlob wavesurver from the cache
                   // Otherwise, loadBlob wavesurver from the server
                   // Use just the inputs for the key (args contains both inputs and outputs, so we only need to take the first 7 elements)
                   let key = JSON.stringify( args.slice(0,%d) )
-                  let blob = Ju.blobCache.find( entry => entry.key == key )?.blob
+                  let blob = Ji.blobCache.find( entry => entry.key == key )?.blob
                   if ( blob ) {
                     wavesurfer.loadBlob( blob )
-                    Ju.preloadedBlobSHA = await Ju.blobSHA( blob )
-                    console.log( `Loaded blob for ${key} from cache, SHA: ${Ju.preloadedBlobSHA}` )
-                    delete Ju.preloadedBlobKey
+                    Ji.preloadedBlobSHA = await Ji.blobSHA( blob )
+                    console.log( `Loaded blob for ${key} from cache, SHA: ${Ji.preloadedBlobSHA}` )
+                    delete Ji.preloadedBlobKey
                   } else {
-                    Ju.preloadedBlobKey = key
+                    Ji.preloadedBlobKey = key
                     console.log(`Loading blob from server, to be later cached under key ${key}`)
                   }
 
@@ -2576,7 +2576,7 @@ with gr.Blocks(
             """
               timestamp => {
                 console.log(`Timestamp changed to ${timestamp}; clicking the 'Workspace' tab`)
-                Ju.clickTabWithText('Workspace')
+                Ji.clickTabWithText('Workspace')
                 return timestamp
               }
             """
@@ -2671,12 +2671,12 @@ with gr.Blocks(
           outputs = None,
           fn = lambda triggered_by_button, *args: start_upsampling( *args ) if triggered_by_button else None,
           api_name = 'toggle-upsampling',
-          # Also go to the "Workspace" tab (because that's where we'll display the upsampling status) via the Ju.clickTabWithText helper method in js
+          # Also go to the "Workspace" tab (because that's where we'll display the upsampling status) via the Ji.clickTabWithText helper method in js
           _js = """
             async ( ...args ) => {
               console.log( 'Upsampling toggled, args:', args )
               if ( args[0] ) {
-                Ju.clickTabWithText( 'Workspace' )
+                Ji.clickTabWithText( 'Workspace' )
                 return args
               } else {
                 throw new Error('Upsampling not triggered by button')

@@ -2,7 +2,7 @@ async () => {
 
   // The function is called by the `load` event handler in the python backend (Gradio)
 
-  window.Ju = {}
+  window.Ji = {}
 
   try {
 
@@ -61,19 +61,19 @@ async () => {
     // Also update the time when the audio is playing
     wavesurfer.on('audioprocess', time => {
       shadowSelector('#audio-time').value = getAudioTime(time)
-      Ju.currentTime = time
+      Ji.currentTime = time
     })
 
     // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
-    Ju.parentAudioElement = window.shadowRoot.querySelector('#audio-file')
+    Ji.parentAudioElement = window.shadowRoot.querySelector('#audio-file')
 
-    Ju.blobCache = []
+    Ji.blobCache = []
 
-    Ju.maxCacheSize = 1000
+    Ji.maxCacheSize = 1000
 
-    Ju.addBlobToCache = ( key, blob ) => {
-      let { blobCache, maxCacheSize } = Ju
-      // If there's >= Ju.maxCacheSize elements in the cache, remove the oldest one
+    Ji.addBlobToCache = ( key, blob ) => {
+      let { blobCache, maxCacheSize } = Ji
+      // If there's >= Ji.maxCacheSize elements in the cache, remove the oldest one
       if ( blobCache.length >= maxCacheSize ) {
         blobCache.shift()
       }
@@ -81,7 +81,7 @@ async () => {
       console.log(`Added ${key} to cache, total cache size: ${blobCache.length} (${blobCache.reduce( (acc, { blob }) => acc + blob.size, 0 )/1000000} MB)`)
     }
 
-    Ju.blobSHA = blob => {
+    Ji.blobSHA = blob => {
       return new Promise( resolve => {
         let reader = new FileReader()
         reader.onload = () => {
@@ -102,9 +102,9 @@ async () => {
     let parentObserver = new MutationObserver( () => {
       
       // Check if there is an inner <a> element
-      Ju.audioElements = Ju.parentAudioElement.querySelectorAll('a')
+      Ji.audioElements = Ji.parentAudioElement.querySelectorAll('a')
 
-      if ( Ju.audioElements.length ) {
+      if ( Ji.audioElements.length ) {
 
         // Once we've foun audio elements, we can remove the parent observer and create one for the first audio element instead
         // This element contains the actual audio file (the others contain chunks of it for faster loading), so whenever the first one changes, we need to reload wavesurfer
@@ -114,12 +114,12 @@ async () => {
         parentObserver.disconnect()
         lastAudioHref = null
 
-        Ju.reloadAudio = async () => {
+        Ji.reloadAudio = async () => {
 
           console.log('Audio element updated, checking if href changed...')
-          Ju.audioElements = Ju.parentAudioElement.querySelectorAll('a')
+          Ji.audioElements = Ji.parentAudioElement.querySelectorAll('a')
 
-          let audioHref = Ju.audioElements[0].href
+          let audioHref = Ji.audioElements[0].href
 
           if ( audioHref == lastAudioHref ) {
             console.log('Audio href has not changed, skipping.')
@@ -147,26 +147,26 @@ async () => {
           
 
           console.log(`Checking blob cache for ${filename}`)
-          let cachedBlob = Ju.blobCache.find( ({ key }) => key == filename )
+          let cachedBlob = Ji.blobCache.find( ({ key }) => key == filename )
 
           let blob = cachedBlob?.blob || (
-            Ju.audioElements.length > 1 ?
-              new Blob(await Promise.all( Array.from(Ju.audioElements).slice(1).map( loadBlob ) ), { type: 'audio/mpeg' }) :
-              await loadBlob(Ju.audioElements[0])
+            Ji.audioElements.length > 1 ?
+              new Blob(await Promise.all( Array.from(Ji.audioElements).slice(1).map( loadBlob ) ), { type: 'audio/mpeg' }) :
+              await loadBlob(Ji.audioElements[0])
           )
           
           // compare the preloaded blob's SHA to the one in the cache
-          let blobSHA = await Ju.blobSHA(blob)
-          if ( blobSHA != Ju.preloadedBlobSHA ) {
+          let blobSHA = await Ji.blobSHA(blob)
+          if ( blobSHA != Ji.preloadedBlobSHA ) {
             console.log(`Blob SHA changed to ${blobSHA}, reloading wavesurfer...`)
             wavesurfer.loadBlob(blob)
 
-            Ju.preloadedBlobKey && Ju.addBlobToCache( Ju.preloadedBlobKey, blob )
+            Ji.preloadedBlobKey && Ji.addBlobToCache( Ji.preloadedBlobKey, blob )
             
             wavesurfer.on('ready', () => {
               // Seek to the remembered time, unless it's higher than the new audio length
               let duration = wavesurfer.getDuration()
-              Ju.currentTime < duration && wavesurfer.seekTo(Ju.currentTime / duration)
+              Ji.currentTime < duration && wavesurfer.seekTo(Ji.currentTime / duration)
               
               // Replace the hourglass with a refresh glyph
               if ( refreshButton ) {
@@ -178,7 +178,7 @@ async () => {
             console.log('Blob SHA has not changed, skipping.')
           }
 
-          !cachedBlob && Ju.addBlobToCache( filename, blob )
+          !cachedBlob && Ji.addBlobToCache( filename, blob )
 
           window.shadowRoot.querySelector('#download-button').href = audioHref
 
@@ -187,18 +187,18 @@ async () => {
         }
 
         // Reload the audio at once
-        Ju.reloadAudio()
+        Ji.reloadAudio()
 
         // And also reload it whenever the audio href changes
-        new MutationObserver(Ju.reloadAudio).observe(Ju.audioElements[0], { attributes: true, attributeFilter: ['href'] })
+        new MutationObserver(Ji.reloadAudio).observe(Ji.audioElements[0], { attributes: true, attributeFilter: ['href'] })
 
       }
         
     })
 
-    parentObserver.observe(Ju.parentAudioElement, { childList: true, subtree: true })
+    parentObserver.observe(Ji.parentAudioElement, { childList: true, subtree: true })
 
-    Ju.clickTabWithText = function (buttonText) {
+    Ji.clickTabWithText = function (buttonText) {
       for ( let button of document.querySelector('gradio-app').shadowRoot.querySelectorAll('div.tabs > div > button') ) {
         if ( button.innerText == buttonText ) {
           button.click()
