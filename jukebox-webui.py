@@ -574,10 +574,11 @@ class UI:
     label = 'Total audio length, sec',
     elem_id = 'total-audio-length',
     interactive = False,
+    visible = False
   )
 
   preview_just_the_last_n_sec = gr.Number(
-    label = 'Preview just the last ... seconds (0 to disable)'
+    label = 'Preview just the last ... seconds (0 to disable)',
   )
 
   cut_audio_specs = gr.Textbox(
@@ -1833,52 +1834,58 @@ def cut_z(z, specs, level):
   # +sample_id@start-end -- adds the specified range from the specified sample to the end of the current sample
   # +start-end -- keeps just the specified range from the current sample (i.e. the opposite of start-end)
   # Any whitespaces are ignored
+  # All of these can be combined with a comma to cut out multiple ranges
   specs = specs.replace(' ', '')
-  remove, add = specs.split('+') if '+' in specs else (specs, None)
-  
+
   print(f'z shape before cut: {z.shape}')
 
-  out_z = z[:, :0]
+  for spec in specs.split(','):
 
-  if remove:
+    remove, add = spec.split('+') if '+' in spec else (spec, None)    
 
-    # The removed interval is a string of format 'start-end' or just 'start'. In the latter case, end is assumed to be the end of the sample
-    remove_start, remove_end = remove.split('-') if '-' in remove else (remove, None)
-    # If start or end is empty, it means the interval starts at the beginning or ends at the end
-    remove_start = seconds_to_tokens(float(remove_start), level) if remove_start else 0
-    remove_end = seconds_to_tokens(float(remove_end), level) if remove_end else z.shape[1]
-    print(f'Cutting out {remove} (tokens {remove_start}-{remove_end})')
+    out_z = z[:, :0]
 
-    out_z = t.cat([out_z, z[:, :remove_start]], dim=1)
-    print(f'out_z shape: {out_z.shape}')
+    if remove:
 
-  # For the added interval, both start and end are required (but sample_id is optional, and defaults to the current sample)
-  if add:
-    add_sample_id, add = add.split('@') if '@' in add else (None, add)
-    add_start, add_end = add.split('-')
-    add_start = seconds_to_tokens(float(add_start), level)
-    add_end = seconds_to_tokens(float(add_end), level)
-    print(f'Adding {add} (tokens {add_start}-{add_end}) from { add_sample_id or "current sample" }')
+      # The removed interval is a string of format 'start-end' or just 'start'. In the latter case, end is assumed to be the end of the sample
+      remove_start, remove_end = remove.split('-') if '-' in remove else (remove, None)
+      # If start or end is empty, it means the interval starts at the beginning or ends at the end
+      remove_start = seconds_to_tokens(float(remove_start), level) if remove_start else 0
+      remove_end = seconds_to_tokens(float(remove_end), level) if remove_end else z.shape[1]
+      print(f'Cutting out {remove} (tokens {remove_start}-{remove_end})')
 
-    if add_sample_id:
-      add_z = get_zs(get_project_name_from_sample_id(add_sample_id), add_sample_id)[level]
-      # If no remove was specified, add the entire original sample (before we add the part from the other sample)
-      if not remove:
-        out_z = z
-    else:
-      add_z = z
-      # (In this case we don't add the original sample, because we just want to keep the specified range)
+      out_z = t.cat([out_z, z[:, :remove_start]], dim=1)
+      print(f'out_z shape: {out_z.shape}')
+
+    # For the added interval, both start and end are required (but sample_id is optional, and defaults to the current sample)
+    if add:
+      add_sample_id, add = add.split('@') if '@' in add else (None, add)
+      add_start, add_end = add.split('-')
+      add_start = seconds_to_tokens(float(add_start), level)
+      add_end = seconds_to_tokens(float(add_end), level)
+      print(f'Adding {add} (tokens {add_start}-{add_end}) from { add_sample_id or "current sample" }')
+
+      if add_sample_id:
+        add_z = get_zs(get_project_name_from_sample_id(add_sample_id), add_sample_id)[level]
+        # If no remove was specified, add the entire original sample (before we add the part from the other sample)
+        if not remove:
+          out_z = z
+      else:
+        add_z = z
+        # (In this case we don't add the original sample, because we just want to keep the specified range)
+      
+      out_z = t.cat([out_z, add_z[:, add_start:add_end]], dim=1)
+      print(f'out_z shape: {out_z.shape}')
+
+    if remove:
+      print(f'Adding the rest of the sample (tokens {remove_end}-{z.shape[1]})')
+      out_z = t.cat([out_z, z[:, remove_end:]], dim = 1)
+      print(f'out_z shape: {out_z.shape}')
     
-    out_z = t.cat([out_z, add_z[:, add_start:add_end]], dim=1)
-    print(f'out_z shape: {out_z.shape}')
-
-  if remove:
-    print(f'Adding the rest of the sample (tokens {remove_end}-{z.shape[1]})')
-    out_z = t.cat([out_z, z[:, remove_end:]], dim = 1)
-    print(f'out_z shape: {out_z.shape}')
+    z = out_z
 
   print(f'z shape after cut: {out_z.shape}')
-  return out_z
+  return z
 
 
 def cut_audio(project_name, sample_id, interval):
@@ -2432,14 +2439,11 @@ with gr.Blocks(
                   )
                 )
 
-                UI.preview_just_the_last_n_sec.render().blur(**preview_args)
-
                 UI.cut_audio_specs.render()
 
-                not_applied_warning = gr.Markdown('**Warning:** the changes above will only be applied when you click `Apply` below.', visible = False)
+                not_applied_warning = gr.Markdown('Enter to preview. The changes will only be applied when you click `Apply` below.', visible = False)
 
-                for handler in [ UI.cut_audio_specs.blur, UI.cut_audio_specs.submit ]:
-                  handler(**preview_args)
+                UI.cut_audio_specs.submit(**preview_args)
 
                 # Make the cut out buttons visible or not depending on whether the cut out value is 0
                 UI.cut_audio_specs.change(
@@ -2474,9 +2478,10 @@ with gr.Blocks(
                     - `+sample_id@start-end` — same as above, but the range from the other sample is added *to the end* of the current sample
                     - `+start-end` — *keeps* just the specified range and removes everything else.
 
-                    You can combine several of the above by using a comma (`,`). **KEEP IN MIND** that in this case the ranges are applied sequentially, so the order matters. For example, `0-1,2-3` will first remove the first second and then the second second FROM THE ALREADY MODIFIED SAMPLE, so it will actually remove ranges 0-1 and **3-4** from the original sample. This is intentional, as it allows for a step-by-step approach to editing the audio, where you add new specifiers as you listen to the result of the previous ones.
+                    You can combine several of the above by using a comma (`,`). **KEEP IN MIND** that in this case the ranges are applied sequentially, so the order matters. For example, `0-1,2-3` will first remove 0-1s, and will then remove 2-3s FROM THE ALREADY MODIFIED SAMPLE, so it will actually remove ranges 0-1s and *3-4s* from the original sample. This is intentional, as it allows for a step-by-step approach to editing the audio, where you add new specifiers as you listen to the result of the previous ones.
                   ''')
 
+                UI.preview_just_the_last_n_sec.render().blur(**preview_args)
 
               with gr.Tab('Rename sample'):
 
