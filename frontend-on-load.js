@@ -59,16 +59,24 @@ async () => {
       ]
     })
 
-    Ji.addUpsamplingMarkers = times => (
-      wavesurfer.markers.clear(),
-      times.reverse().forEach( (time, i) => time && wavesurfer.markers.add({
-        time,
-        color: [ 'orange', 'lightgreen' ][i],
-        label: [ 'M', 'U' ][i],
-        tooltip: `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`,
-        // For some reason tooltips don't work at all, but keeping this here in case it gets fixed
-      })
-    ) )
+    Ji.addUpsamplingMarkers = times => {
+      wavesurfer.markers.clear()
+      // delete all .upsampling-marker-tooltip elements
+      document.querySelectorAll('.upsampling-marker-tooltip').forEach( el => el.remove() )
+      times.reverse().forEach( ( time, i ) => {
+        if (!time) return
+        let { el } = wavesurfer.markers.add({
+          time,
+          color: [ 'orange', 'lightgreen' ][i],
+          label: [ 'M', 'U' ][i],
+          // tooltip: `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`,
+          // For some reason tooltips don't work at all, we'll need to write our own
+        })
+
+        let labelEl = el.querySelector('.marker-label')
+        labelEl.title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`
+
+      } )
     
     Ji.trackTime = time => (
       shadowSelector('#audio-time').value = getAudioTime(time),
