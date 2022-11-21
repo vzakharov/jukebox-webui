@@ -589,7 +589,8 @@ class UI:
 
   cut_audio_specs = gr.Textbox(
     label = 'Cut, trim, merge',
-    placeholder = 'See accordion below for syntax'
+    placeholder = 'See accordion below for syntax',
+    elem_id = 'cut-audio-specs',
   )
 
   cut_audio_preview_button = gr.Button( 'Preview', visible = False, variant = 'secondary' )
@@ -917,10 +918,10 @@ def get_first_upsampled_ancestor_zs(project_name, sample_id):
       print(f'No upsampled ancestor found for {sample_id}')
       return None
 
-def get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level=2, upsample_rendering=3, pad_with_lower_sampled=False):
+def get_audio(project_name, sample_id, cut_audio, preview_just_the_last_n_sec, level=2, upsample_rendering=3, pad_with_lower_sampled=False):
 
   print(f'Generating audio for {project_name}/{sample_id} (level {level}, upsample_rendering {upsample_rendering}, pad_with_lower_sampled {pad_with_lower_sampled})')
-  print(f'Will cut audio according to "{cut_out}" & preview just the last {preview_just_the_last_n_sec} seconds')
+  print(f'Will cut audio according to "{cut_audio}" & preview just the last {preview_just_the_last_n_sec} seconds')
 
   # Get current GPU memory usage. If it's above 12GB, empty the cache
   memory = t.cuda.memory_allocated()
@@ -951,8 +952,8 @@ def get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, lev
   get_audio_length = lambda: int( tokens_to_seconds(z.shape[1], level) * 100 ) / 100
   audio_length = get_audio_length()
   
-  if cut_out:
-    z = cut_z(z, cut_out, level)
+  if cut_audio:
+    z = cut_z(z, cut_audio, level)
   
   # Update audio_length
   audio_length = get_audio_length()
@@ -1120,7 +1121,7 @@ def get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, lev
 
   if pad_with_lower_sampled and level < 2:
 
-    lower_sampled_wav, audio_length, _ = get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level+1, upsample_rendering, True)
+    lower_sampled_wav, audio_length, _ = get_audio(project_name, sample_id, cut_audio, preview_just_the_last_n_sec, level+1, upsample_rendering, True)
 
     # Get the length of lower_sampled_wav in seconds and compare it to the length of the upsampled wav
     lower_sampled_seconds = lower_sampled_wav.shape[0] / hps.sr

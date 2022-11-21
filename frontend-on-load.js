@@ -22,6 +22,8 @@ async () => {
     await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/wavesurfer.min.js')
     // import wavesurfer markers plugin
     await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/plugin/wavesurfer.markers.min.js')
+    // regions
+    await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/plugin/wavesurfer.regions.min.js')
 
     window.shadowRoot = document.querySelector('gradio-app').shadowRoot
 
@@ -55,7 +57,14 @@ async () => {
       progressColor: 'steelblue',
       plugins: [
         // markers (empty for now)
-        WaveSurfer.markers.create()
+        WaveSurfer.markers.create(),
+        // regions
+        WaveSurfer.regions.create({
+          regions: [],
+          dragSelection: true,
+          maxRegions: 1,
+          formatTimeCallback: getAudioTime,
+        })
       ]
     })
 
@@ -73,8 +82,13 @@ async () => {
           // For some reason tooltips don't work at all, we'll need to write our own
         }).el.querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`
       } )
-
     }
+
+    // On region update end, update the #cut-audio-specs input, isnerting [start]-[end] into the value
+    wavesurfer.on('region-update-end', ({ start, end }) => {
+      shadowSelector('#cut-audio-specs input').value = `${start}-${end}`
+    })
+
     
     Ji.trackTime = time => (
       shadowSelector('#audio-time').value = getAudioTime(time),
