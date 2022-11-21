@@ -71,7 +71,7 @@ async () => {
           label: [ 'M', 'U' ][i],
           // tooltip: `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`,
           // For some reason tooltips don't work at all, we'll need to write our own
-        }).querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`
+        }).el.querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`
       } )
 
     }
