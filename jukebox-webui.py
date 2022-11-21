@@ -85,7 +85,7 @@ try:
 except:
   
   if use_google_drive:
-    from google.colab import drive
+    from google.colab import drive, runtime
     drive.mount('/content/drive')
 
   if use_optimized_jukebox:
@@ -185,6 +185,7 @@ if not keep_upsampling_after_restart:
     should_refresh_audio = False
 
     stop = False
+    kill_runtime_once_done = False
 
 print('Monkey patching Jukebox methods...')
 
@@ -309,6 +310,12 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       print('Done.')
       Upsampling.should_refresh_audio = True
       Upsampling.window_index += 1
+
+  if level == 0:
+    Upsampling.running = False
+    if Upsampling.kill_runtime_when_done:
+      print('Killing runtime')
+      runtime.unassign()
 
   return Upsampling.zs
 
@@ -586,6 +593,7 @@ class UI:
     placeholder = 'See accordion below for syntax'
   )
 
+  cut_audio_preview_button = gr.Button( 'Preview', visible = False, variant = 'secondary' )
   cut_audio_apply_button = gr.Button( 'Apply', visible = False, variant = 'primary' )
 
   sample_to_upsample = gr.Textbox(
@@ -604,6 +612,11 @@ class UI:
 
   genre_for_upsampling_right_channel = gr.Dropdown(
     label = 'Genre for upsampling (right channel)'
+  )
+
+  kill_runtime_once_done = gr.Checkbox(
+    label = 'Kill runtime once done',
+    value = False
   )
 
   upsample_button = gr.Button('Start upsampling', variant="primary", elem_id='upsample-button')
@@ -1659,9 +1672,11 @@ def seconds_to_tokens(sec, level = 2):
 
   return int(tokens)
 
-def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
+def start_upsampling(project_name, sample_id, artist, lyrics, genre_left, genre_center, genre_right, kill_runtime_once_done):
 
   global hps, top_prior, priors
+
+  genres = [genre_left, genre_center, genre_right]
 
   print(f'Starting upsampling for {sample_id}, artist: {artist}, lyrics: {lyrics}, genres: {genres}')
 
@@ -1672,6 +1687,8 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   Upsampling.status_markdown = "Loading the upsampling models..."
 
   Upsampling.level = 1
+
+  Upsampling.kill_runtime_once_done = kill_runtime_once_done
 
   print(f'Upsampling {sample_id} with genres {genres}')
   filename = f'{base_path}/{project_name}/{sample_id}.z'
@@ -2445,21 +2462,25 @@ with gr.Blocks(
 
                 UI.cut_audio_specs.submit(**preview_args)
 
-                # Make the cut out buttons visible or not depending on whether the cut out value is 0
-                UI.cut_audio_specs.change(
-                  inputs = UI.cut_audio_specs,
-                  outputs = [ UI.cut_audio_apply_button, not_applied_warning ],
-                  fn = lambda cut_audio_specs: [
-                    gr.update( visible = cut_audio_specs != '' ) for _ in range(2)
-                  ]
-                )
+                with gr.Row():
 
-                UI.cut_audio_apply_button.render().click(
-                  inputs = [ UI.project_name, UI.picked_sample, UI.cut_audio_specs ],
-                  outputs = UI.cut_audio_specs,
-                  fn = cut_audio,
-                  api_name = 'cut-audio',
-                )
+                  UI.cut_audio_preview_button.render().click(**preview_args)
+
+                  # Make the cut out buttons visible or not depending on whether the cut out value is 0
+                  UI.cut_audio_specs.change(
+                    inputs = UI.cut_audio_specs,
+                    outputs = [ UI.cut_audio_preview_button, UI.cut_audio_apply_button, not_applied_warning ],
+                    fn = lambda cut_audio_specs: [
+                      gr.update( visible = cut_audio_specs != '' ) for _ in range(3)
+                    ]
+                  )
+
+                  UI.cut_audio_apply_button.render().click(
+                    inputs = [ UI.project_name, UI.picked_sample, UI.cut_audio_specs ],
+                    outputs = UI.cut_audio_specs,
+                    fn = cut_audio,
+                    api_name = 'cut-audio',
+                  )
 
                 with gr.Accordion('How does it work?', open = False):
                   # possible specs:
@@ -2606,6 +2627,8 @@ with gr.Blocks(
             for input in [ UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel ]:
 
               input.render()
+          
+          UI.kill_runtime_once_done.render()
         
         # If upsampling is running, enable the upsampling_refresher -- a "virtual" input that, when changed, will update the upsampling_status_markdown
         # It will do so after waiting for 10 seconds (using js). After finishing, it will update itself again, causing the process to repeat.
@@ -2642,7 +2665,8 @@ with gr.Blocks(
           inputs = [
             UI.upsampling_triggered_by_button,
             UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
-            UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
+            UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel,
+            UI.kill_runtime_once_done            
           ],
           outputs = None,
           fn = lambda triggered_by_button, *args: start_upsampling( *args ) if triggered_by_button else None,
