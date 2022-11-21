@@ -63,8 +63,8 @@ async () => {
       wavesurfer.markers.clear(),
       times.forEach( (time, i) => wavesurfer.markers.add({
         time,
-        label: [ '< Upsampled', '< Midsampled' ][1-i],
-        color: [ 'lightgreen', 'orange' ][1-i],
+        tooltip: `Your audio has been ${[ 'midsampled', 'upsampled' ][1-i]} to this point (${getAudioTime(time)} s)`,
+        color: [ 'orange', 'lightgreen' ][1-i],
       })
     ) )
     

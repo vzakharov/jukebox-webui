@@ -2204,7 +2204,7 @@ with gr.Blocks(
             ''' % len(preview_args['inputs'])
           )
 
-          UI.upsampled_lengths.change(
+          UI.upsampled_lengths.render().change(
             inputs = UI.upsampled_lengths,
             outputs = None,
             fn = None,
