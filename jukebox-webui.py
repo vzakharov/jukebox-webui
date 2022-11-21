@@ -1,4 +1,5 @@
-github_sha = 'd4d72272296c43b2bfb37620eee873b29babd1c1'
+github_sha = '9141e04365141b0adacab806bf9542d8aa69e921'
+# TODO: Don't forget to change to release branch/version before publishing
 
 #@title Jukebox Web UI
 
@@ -527,7 +528,7 @@ class UI:
   upsampling_level = gr.Dropdown(
     label = 'Upsampling level',
     choices = [ 'Raw' ],
-    value = 'Raw'
+    value = 'Raw',
   )
 
   upsample_rendering = gr.Dropdown(
@@ -619,7 +620,7 @@ class UI:
 
   upsample_button = gr.Button('Start upsampling', variant="primary", elem_id='upsample-button')
 
-  upsampling_status_markdown = gr.Markdown('Upsampling progress will be shown here')
+  upsampling_status = gr.Markdown('Upsampling progress will be shown here', visible = False)
 
   upsampling_audio_refresher = gr.Number( value = 0, visible = False )
   # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
@@ -2234,8 +2235,12 @@ with gr.Blocks(
                     print(f'Available level names: {available_level_names}')
 
                     return {
-                      UI.upsampling_accordion: gr.update(
-                        visible = len(levels) > 1 or upsampling_running,
+                      # UI.upsampling_accordion: gr.update(
+                      #   visible = len(levels) > 1 or upsampling_running,
+                      # ),
+                      # (removing the accordion for now)
+                      UI.upsampling_status: gr.update(
+                        visible = upsampling_running,
                       ),
                       UI.upsampling_level: gr.update(
                         choices = available_level_names,
@@ -2246,7 +2251,7 @@ with gr.Blocks(
                   
                   show_or_hide_upsampling_elements_args = dict(
                     inputs = [ UI.project_name, UI.picked_sample, UI.upsampling_running ],
-                    outputs = [ UI.upsampling_accordion, UI.upsampling_level ],
+                    outputs = [ UI.upsampling_status, UI.upsampling_level ],
                     fn = show_or_hide_upsampling_elements,
                   )
 
@@ -2274,8 +2279,6 @@ with gr.Blocks(
                     UI.upsample_pad_with_lower_sampled.render().change(
                       **preview_args,
                     )
-
-              UI.upsampling_status_markdown.render()
 
               # Show the continue upsampling markdown only if the current level's length in tokens is less than the total audio length
               # Also update the upsampling button to say "Continue upsampling" instead of "Upsample"
@@ -2352,7 +2355,7 @@ with gr.Blocks(
                 ] 
               ]
 
-            # UI.generated_audio.render()
+            UI.upsampling_status.render()
 
             UI.mp3_files.render()
 
@@ -2676,9 +2679,9 @@ with gr.Blocks(
         # It will do so after waiting for 10 seconds (using js). After finishing, it will update itself again, causing the process to repeat.
         UI.upsampling_refresher.render().change(
           inputs = [ UI.upsampling_refresher, UI.upsampling_audio_refresher ],
-          outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown, UI.upsampling_audio_refresher ],
+          outputs = [ UI.upsampling_refresher, UI.upsampling_status, UI.upsampling_audio_refresher ],
           fn = lambda refresher, audio_refresher: {
-            UI.upsampling_status_markdown: Upsampling.status_markdown,
+            UI.upsampling_status: Upsampling.status_markdown,
             UI.upsampling_refresher: refresher + 1,
             UI.upsampling_audio_refresher: audio_refresher + 1 if Upsampling.should_refresh_audio else audio_refresher
           },
@@ -2730,9 +2733,9 @@ with gr.Blocks(
         # When it changes regardless of the session, e.g. also at page refresh, update the various relevant UI elements, start the refresher, etc.
         UI.upsampling_running.change(
           inputs = None,
-          outputs = [ UI.upsampling_status_markdown, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher, UI.compose_row ],
+          outputs = [ UI.upsampling_status, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher, UI.compose_row ],
           fn = lambda: {
-            UI.upsampling_status_markdown: 'Upsampling in progress...',
+            UI.upsampling_status: 'Upsampling in progress...',
             UI.upsample_button: gr.update(
               value = 'Stop upsampling',
               variant = 'secondary',
