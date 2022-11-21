@@ -51,6 +51,15 @@ async () => {
       return result
     }
 
+    let regionParams = {
+      regions: [],
+      dragSelection: true,
+      maxRegions: 1,
+      formatTimeCallback: getAudioTime,
+      // Salmon color, but with opacity
+      color: 'rgba(250, 128, 114, 0.3)',
+    }
+
     window.wavesurfer = WaveSurfer.create({
       container: waveformDiv,
       waveColor: 'skyblue',
@@ -59,13 +68,7 @@ async () => {
         // markers (empty for now)
         WaveSurfer.markers.create(),
         // regions
-        WaveSurfer.regions.create({
-          regions: [],
-          dragSelection: true,
-          maxRegions: 1,
-          formatTimeCallback: getAudioTime,
-          color: 'salmon',
-        })
+        WaveSurfer.regions.create(regionParams),
       ]
     })
 
@@ -107,10 +110,14 @@ async () => {
         return
       }
       let [ start, end ] = cutAudioSpecsInput.value.split('-').map( time => parseFloat(time) )
-      wavesurfer.clearRegions()
-      if (!isNaN(start) && !isNaN(end)) {
-        wavesurfer.addRegion({ start, end })
-      }
+      // wavesurfer.regions.list is a hash not an array, so we need to get the only key starting with 'wavesurfer_'
+      let { list } = wavesurfer.regions
+      let region = list[ Object.keys(list).find( key => key.startsWith('wavesurfer_') ) ]
+      ( isNaN(start) || isNaN(end) ) ?
+        region?.remove() :
+        (
+          region ||= wavesurfer.addRegion(regionParams)
+        ).update({ start, end })
     })
 
     // Remove the region on double click
