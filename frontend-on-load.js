@@ -113,7 +113,7 @@ async () => {
       // wavesurfer.regions.list is a hash not an array, so we need to get the only key starting with 'wavesurfer_'
       let { list } = wavesurfer.regions
       let region = list[ Object.keys(list).find( key => key.startsWith('wavesurfer_') ) ]
-      ( isNaN(start) || isNaN(end) ) ?
+      ;( isNaN(start) || isNaN(end) ) ?
         region?.remove() :
         (
           region ||= wavesurfer.addRegion(regionParams)

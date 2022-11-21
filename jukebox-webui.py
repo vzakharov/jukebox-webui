@@ -1,4 +1,4 @@
-github_sha = 'dc21a1611b87a440044d74843d73f9129fb5f334'
+github_sha = 'a1dc42a10a91f04ffcdf01888b8f3d8ccd60c6e3'
 # TODO: Don't forget to change to release branch/version before publishing
 
 dev_mode = True
