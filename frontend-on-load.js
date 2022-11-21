@@ -64,6 +64,7 @@ async () => {
           dragSelection: true,
           maxRegions: 1,
           formatTimeCallback: getAudioTime,
+          color: 'salmon',
         })
       ]
     })
@@ -112,6 +113,8 @@ async () => {
       }
     })
 
+    // Remove the region on double click
+    wavesurfer.on('region-dblclick', () => wavesurfer.clearRegions() )
     
     Ji.trackTime = time => (
       shadowSelector('#audio-time').value = getAudioTime(time),
