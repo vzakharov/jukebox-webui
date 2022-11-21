@@ -85,6 +85,7 @@ async () => {
     }
 
     let cutAudioSpecsInput = shadowSelector('#cut-audio-specs textarea')
+    let updatedAutomatically = false
 
     // On region update end, update the #cut-audio-specs input, isnerting [start]-[end] into the value
     wavesurfer.on('region-update-end', ({ start, end }) => {
@@ -92,6 +93,7 @@ async () => {
       // round to 2 decimal places
       cutAudioSpecsInput.value = [ start, end ].map( time => Math.round( time * 100 ) / 100 ).join('-')
       cutAudioSpecsInput.dispatchEvent(new Event('input'))
+      updatedAutomatically = true
     })
 
     // Whenever that input changes, update the region:
@@ -99,12 +101,14 @@ async () => {
     // - if the input is formatted in any other way rather than [start]-[end], remove the region
     // - if the input is formatted correctly, update the region
     cutAudioSpecsInput.addEventListener('input', () => {
+      if (updatedAutomatically) {
+        updatedAutomatically = false
+        return
+      }
       let [ start, end ] = cutAudioSpecsInput.value.split('-').map( time => parseFloat(time) )
-      let existingRegion = wavesurfer.regions.list[0]
-      if (isNaN(start) || isNaN(end)) {
-        existingRegion?.remove()
-      } else {
-        existingRegion?.update({ start, end }) || wavesurfer.addRegion({ start, end })
+      wavesurfer.clearRegions()
+      if (!isNaN(start) && !isNaN(end)) {
+        wavesurfer.addRegion({ start, end })
       }
     })
 
