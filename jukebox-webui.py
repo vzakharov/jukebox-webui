@@ -313,7 +313,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
 
   if level == 0:
     Upsampling.running = False
-    if Upsampling.kill_runtime_when_done:
+    if Upsampling.kill_runtime_once_done:
       print('Killing runtime')
       runtime.unassign()
 
