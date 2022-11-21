@@ -63,8 +63,8 @@ async () => {
       wavesurfer.markers.clear()
       // delete all .upsampling-marker-tooltip elements
       document.querySelectorAll('.upsampling-marker-tooltip').forEach( el => el.remove() )
-      times.reverse().forEach( ( time, i ) => 
-        time &&
+      times.reverse().forEach( ( time, i ) => {
+        if (!time) return
         wavesurfer.markers.add({
           time,
           color: [ 'orange', 'lightgreen' ][i],
@@ -72,7 +72,7 @@ async () => {
           // tooltip: `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`,
           // For some reason tooltips don't work at all, we'll need to write our own
         }).querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`
-      )
+      } )
 
     }
     
