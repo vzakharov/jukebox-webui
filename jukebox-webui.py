@@ -40,6 +40,7 @@ debug_gradio = True #param{type:'boolean'}
 
 reload_all = False #param{type:'boolean'}
 
+import glob
 import json
 import math
 import subprocess
@@ -543,11 +544,8 @@ class UI:
 
   continue_upsampling_button = gr.Button('Continue upsampling', visible = False )
 
-  # generated_audio = gr.Audio(
-  #   label = 'Generated audio',
-  #   elem_id = 'generated-audio',
-  #   visible = False
-  # )
+  upsampled_lengths = gr.Textbox(visible = False)
+  # (Comma-separated list of audio lengths by upsampling level, e.g. '0.5,1'. If only midsampled audio is available, the list will only contain one element, e.g. '1'.)
 
   mp3_files = gr.File(
     label = 'MP3',
@@ -1146,7 +1144,11 @@ def get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, lev
 
   print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {audio_length} seconds.')
 
-  return wav, audio_length
+  # calculate upsampled_lengths, list of audio lengths by upsampling level. If only midsampled audio is available, the list will only contain one element
+  upsampled_levels = [ level for level in get_levels(zs) if level < 2 ]
+  upsampled_lengths = [ tokens_to_seconds(zs[ level ].shape[1], level) for level in upsampled_levels ]
+  
+  return wav, audio_length, upsampled_lengths
 
 # def get_audio_being_upsampled():
 
@@ -1510,30 +1512,59 @@ def get_sample(project_name, sample_id, cut_out, preview_just_the_last_n_sec, le
   # Add a hash (6 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
   filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:6]}'
 
-  print(f'Checking if {filename}.wav exist...')
+  print(f'Checking if {filename} is cached...')
 
-  # If the filenames do not exist, render it
-  if not os.path.isfile(f'{filename}.wav') or not os.path.isfile(f'{filename}.mp3'):
+  # Make sure all 3 of wav, mp3 and yaml exist
+  all_files_exist = True
+  for ext in [ 'wav', 'mp3', 'yaml' ]:
+    if not os.path.isfile(f'{filename}.{ext}'):
+      all_files_exist = False
+      break
+  if not all_files_exist:
 
     print('Nope, rendering...')
-    wav, total_audio_length = get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level, upsample_rendering, pad_with_lower_sampled)
+    wav, total_audio_length, upsampled_lengths = get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level, upsample_rendering, pad_with_lower_sampled)
 
     if not os.path.exists(os.path.dirname(filename)):
       os.makedirs(os.path.dirname(filename))
 
     librosa.output.write_wav(f'{filename}.wav', np.asfortranarray(wav), hps.sr)
 
+    # Add metadata (total audio length, upsampled lengths) to a yaml with the same name as the wav file
+    with open(f'{filename}.yaml', 'w') as f:
+      yaml.dump({
+        'total_audio_length': total_audio_length,
+        'upsampled_lengths': upsampled_lengths
+      }, f)
+
     # Convert to mp3
     subprocess.run(['ffmpeg', '-y', '-i', f'{filename}.wav', '-acodec', 'libmp3lame', '-ab', '320k', f'{filename}.mp3'])
 
+    # If there are more than 30 files in the rendered folder (i.e. more than 10 samples), delete the ones older than 1 day
+    file_count_limit = 30
+    files = glob.glob(f'{base_path}/{project_name}/rendered/*')
+    if len(files) > file_count_limit:
+      removed_count = 0
+      now = datetime.now()
+      for f in files:
+        try:
+          if os.stat(f).st_mtime < now - 86400:
+            os.remove(f)
+            removed_count += 1
+        except Exception as e:
+          print(f'Could not remove {f}: {e}')
+      print(f'Deleted {removed_count} old files of {len(files)-file_count_limit} intended to be deleted')
+        
   else:
     print('Yep, using it.')
     wav = None
 
-    # We still need to load the zs to know the total audio length
-    level_for_audio_length = level if not pad_with_lower_sampled else 2
-    z = get_zs(project_name, sample_id)[level_for_audio_length]
-    total_audio_length = tokens_to_seconds(z.shape[1], level_for_audio_length)
+    # Load metadata
+    with open(f'{filename}.yaml', 'r') as f:
+      metadata = yaml.load(f, Loader=yaml.FullLoader)
+      total_audio_length = metadata['total_audio_length']
+      upsampled_lengths = metadata['upsampled_lengths']
+      print(f'(Also loaded metadata: {metadata})')
 
   mp3_files = [f'{filename}.mp3']
 
@@ -1568,6 +1599,7 @@ def get_sample(project_name, sample_id, cut_out, preview_just_the_last_n_sec, le
     UI.sample_box: gr.update(
       visible = True
     ),
+    UI.upsampled_lengths: ','.join([str(length) for length in upsampled_lengths])
   }
 
 def refresh_siblings(project_name, sample_id):
@@ -2125,7 +2157,8 @@ with gr.Blocks(
             ],
             outputs = [ 
               UI.sample_box, UI.mp3_files, #UI.generated_audio,
-              UI.total_audio_length, UI.go_to_children_button, UI.go_to_parent_button,
+              UI.total_audio_length, UI.upsampled_lengths,
+              UI.go_to_children_button, UI.go_to_parent_button,
             ],
             fn = get_sample,
           )
@@ -2170,6 +2203,13 @@ with gr.Blocks(
               }
             ''' % len(preview_args['inputs'])
           )
+
+          UI.upsampled_lengths.change(
+            inputs = UI.upsampled_lengths,
+            outputs = None,
+            fn = None,
+            # Split by comma and turn into floats and add wavesurfer markers for each (first clear all the markers)
+            _js = 'comma_separated => Ji.addUpsamplingMarkers( comma_separated.split(",").map( parseFloat ) )'
 
           with UI.sample_box.render():
 
@@ -2517,6 +2557,7 @@ with gr.Blocks(
                   fn = rename_sample,
                   api_name = 'rename-sample'
                 )
+        
         UI.generation_progress.render()
 
 

@@ -18,8 +18,10 @@ async () => {
       } )
     }
 
+    // import wavesurfer
     await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/wavesurfer.min.js')
-    await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/plugin/wavesurfer.timeline.min.js')
+    // import wavesurfer markers plugin
+    await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/plugin/wavesurfer.markers.min.js')
 
     window.shadowRoot = document.querySelector('gradio-app').shadowRoot
 
@@ -50,8 +52,21 @@ async () => {
     window.wavesurfer = WaveSurfer.create({
       container: waveformDiv,
       waveColor: 'skyblue',
-      progressColor: 'steelblue'
+      progressColor: 'steelblue',
+      plugins: [
+        // markers (empty for now)
+        WaveSurfer.markers.create()
+      ]
     })
+
+    Ji.addUpsamplingMarkers = times => (
+      wavesurfer.markers.clear(),
+      times.forEach( (time, i) => wavesurfer.markers.add({
+        time,
+        label: [ '< Upsampled', '< Midsampled' ][1-i],
+        color: [ 'lightgreen', 'orange' ][1-i],
+      })
+    ) )
     
     Ji.trackTime = time => (
       shadowSelector('#audio-time').value = getAudioTime(time),
