@@ -61,10 +61,12 @@ async () => {
 
     Ji.addUpsamplingMarkers = times => (
       wavesurfer.markers.clear(),
-      times.reverse().forEach( (time, i) => wavesurfer.markers.add({
+      times.reverse().forEach( (time, i) => time && wavesurfer.markers.add({
         time,
-        tooltip: `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`,
         color: [ 'orange', 'lightgreen' ][i],
+        label: [ 'M', 'U' ][i],
+        tooltip: `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`,
+        // For some reason tooltips don't work at all, but keeping this here in case it gets fixed
       })
     ) )
     
