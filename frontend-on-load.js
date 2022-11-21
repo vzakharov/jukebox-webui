@@ -100,10 +100,11 @@ async () => {
     // - if the input is formatted correctly, update the region
     cutAudioSpecsInput.addEventListener('input', () => {
       let [ start, end ] = cutAudioSpecsInput.value.split('-').map( time => parseFloat(time) )
+      let existingRegion = wavesurfer.regions.list[0]
       if (isNaN(start) || isNaN(end)) {
-        wavesurfer.regions.clear()
+        existingRegion?.remove()
       } else {
-        wavesurfer.regions.list[0]?.update({ start, end })
+        existingRegion?.update({ start, end }) || wavesurfer.addRegion({ start, end })
       }
     })
 
