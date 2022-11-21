@@ -1,5 +1,8 @@
-github_sha = '9141e04365141b0adacab806bf9542d8aa69e921'
+github_sha = 'dc21a1611b87a440044d74843d73f9129fb5f334'
 # TODO: Don't forget to change to release branch/version before publishing
+
+dev_mode = True
+# TODO: Don't forget to set to False before publishing
 
 #@title Jukebox Web UI
 
@@ -2507,6 +2510,14 @@ with gr.Blocks(
 
                 UI.cut_audio_specs.submit(**preview_args)
 
+                # # Virtual event handler to accept the cut audio specs via API
+                # gr.Button('Apply cut audio specs', visible = False).click(
+                #   inputs = gr.Textbox(visible=False),
+                #   outputs = UI.cut_audio_specs,
+                #   fn = lambda x: x,
+                #   api_name = 'apply-cut-audio-specs',
+                # )
+
                 with gr.Row():
 
                   UI.cut_audio_preview_button.render().click(**preview_args)
@@ -2734,7 +2745,7 @@ with gr.Blocks(
         # When it changes regardless of the session, e.g. also at page refresh, update the various relevant UI elements, start the refresher, etc.
         UI.upsampling_running.change(
           inputs = None,
-          outputs = [ UI.upsampling_status, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher, UI.compose_row ],
+          outputs = [ UI.upsampling_status, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher ],
           fn = lambda: {
             UI.upsampling_status: 'Upsampling in progress...',
             UI.upsample_button: gr.update(
@@ -2746,21 +2757,19 @@ with gr.Blocks(
             ),
             # Random refresher value (int) to trigger the refresher
             UI.upsampling_refresher: random.randint( 0, 1000000 ),
-            # Hide the compose row
-            UI.compose_row: HIDE,
+            # # Hide the compose row
+            # UI.compose_row: HIDE,
           }
         )
 
       with gr.Tab('Panic'):
 
-        with gr.Accordion('?', open = False):
+        with gr.Accordion('What is this?', open = False):
 
           gr.Markdown('''
-            Sometimes the app will crash due to insufficient GPU memory. If this happens, you can try using the button below to empty the cache.
+            Sometimes the app will crash due to insufficient GPU memory. If this happens, you can try using the button below to empty the cache. Usually around 12 GB of GPU RAM is needed to safely run the app.
 
             If that doesn’t work, you’ll have to restart the runtime (`Runtime` > `Restart and run all` in Colab). That’ll take a couple of minutes, but the memory will be new as a daisy.
-
-            Usually around 12 GB of GPU RAM is needed to safely run the app.
           ''')
 
         memory_usage = gr.Textbox(
@@ -2780,6 +2789,7 @@ with gr.Blocks(
             inputs = None,
             outputs = memory_usage,
             fn = get_gpu_memory_usage,
+            api_name = 'get-gpu-memory-usage',
           )
 
           gr.Button('Empty cache', variant='primary').click(
@@ -2789,15 +2799,16 @@ with gr.Blocks(
               empty_cache(),
               get_gpu_memory_usage(),
             ][-1],
+            api_name = 'empty-cache',
           )
 
-        with gr.Accordion('Run any code', open = False):
+        with gr.Accordion('Run any code', open = False, visible = dev_mode):
 
           gr.Markdown('''
             The following input box allows you to execute arbitrary Python code. ⚠️ DON’T USE THIS FEATURE IF YOU DON’T KNOW WHAT YOU’RE DOING! ⚠️
           ''')
 
-          eval_code = gr.Textbox(
+          eval_server_code = gr.Textbox(
             label = 'Python code',
             placeholder = 'Shift+Enter for a new line, Enter to run',
             value = '',
@@ -2813,13 +2824,16 @@ with gr.Blocks(
           )
 
           eval_args = dict(
-            inputs = eval_code,
+            inputs = eval_server_code,
             outputs = eval_output,
             fn = lambda code: eval(code),
           )
 
           eval_button.click(**eval_args)
-          eval_code.submit(**eval_args)
+          eval_server_code.submit(
+            **eval_args,
+            api_name = 'eval-code',
+          )
 
   # TODO: Don't forget to remove this line before publishing the app
   frontend_on_load_url = f'https://cdn.jsdelivr.net/gh/vzakharov/jukebox-webui@{github_sha}/frontend-on-load.js'
