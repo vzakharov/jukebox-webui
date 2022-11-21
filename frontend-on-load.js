@@ -53,16 +53,19 @@ async () => {
       progressColor: 'steelblue'
     })
     
-    // Add a seek event listener to the wavesurfer object, modifying the #audio-time input
-    wavesurfer.on('seek', progress => {
-      shadowSelector('#audio-time').value = getAudioTime(progress * wavesurfer.getDuration())
-    })
+    Ji.trackTime = time => (
+      shadowSelector('#audio-time').value = getAudioTime(time),
+      Ji.currentTime = time
+    )
 
     // Also update the time when the audio is playing
-    wavesurfer.on('audioprocess', time => {
-      shadowSelector('#audio-time').value = getAudioTime(time)
-      Ji.currentTime = time
-    })
+    wavesurfer.on('audioprocess', Ji.trackTime)
+    // Add a seek event listener to the wavesurfer object, modifying the #audio-time input
+    wavesurfer.on('seek', progress => Ji.trackTime(progress * wavesurfer.getDuration()))
+
+    // When wavesurfer starts/stops playing, update Ji.playing
+    wavesurfer.on('play', () => Ji.playing = true)
+    wavesurfer.on('pause', () => Ji.playing = false)
 
     // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
     Ji.parentAudioElement = window.shadowRoot.querySelector('#audio-file')
@@ -164,14 +167,19 @@ async () => {
             Ji.preloadedBlobKey && Ji.addBlobToCache( Ji.preloadedBlobKey, blob )
             
             wavesurfer.on('ready', () => {
+
               // Seek to the remembered time, unless it's higher than the new audio length
               let duration = wavesurfer.getDuration()
               Ji.currentTime < duration && wavesurfer.seekTo(Ji.currentTime / duration)
+
+              // Start playing if Ji.playing is true
+              Ji.playing && wavesurfer.play()
               
               // Replace the hourglass with a refresh glyph
               if ( refreshButton ) {
                 refreshButton.innerText = '↻'
               }
+
             })
 
           } else {
