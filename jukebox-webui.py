@@ -1,4 +1,4 @@
-github_sha = 'a1dc42a10a91f04ffcdf01888b8f3d8ccd60c6e3'
+github_sha = 'b4e1b1a78c6a0454b6e6eaf3b2c8d8a52469cd1a'
 # TODO: Don't forget to change to release branch/version before publishing
 
 dev_mode = True
@@ -1550,10 +1550,9 @@ def get_sample(project_name, sample_id, cut_out, preview_just_the_last_n_sec, le
     files = glob.glob(f'{base_path}/{project_name}/rendered/*')
     if len(files) > file_count_limit:
       removed_count = 0
-      now = datetime.now()
       for f in files:
         try:
-          if os.stat(f).st_mtime < now - 86400:
+          if datetime.now() - datetime.fromtimestamp(os.path.getmtime(f)) > timedelta(days=1):
             os.remove(f)
             removed_count += 1
         except Exception as e:
@@ -2264,15 +2263,15 @@ with gr.Blocks(
 
                 with gr.Column(visible = False) as upsampling_manipulation_column:
 
-                  # Show the column only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
-                  UI.upsampling_level.change(
-                    inputs = [ UI.upsampling_level, UI.upsampling_running ],
-                    outputs = [ upsampling_manipulation_column, UI.compose_row ],
-                    fn = lambda upsampling_level, upsampling_running: [
-                      gr.update( visible = upsampling_level != 'Raw' ),
-                      gr.update( visible = upsampling_level == 'Raw' and not upsampling_running ),
-                    ]
-                  )
+                  # # Show the column only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
+                  # UI.upsampling_level.change(
+                  #   inputs = [ UI.upsampling_level, UI.upsampling_running ],
+                  #   outputs = [ upsampling_manipulation_column, UI.compose_row ],
+                  #   fn = lambda upsampling_level, upsampling_running: [
+                  #     gr.update( visible = upsampling_level != 'Raw' ),
+                  #     gr.update( visible = upsampling_level == 'Raw' and not upsampling_running ),
+                  #   ]
+                  # )
 
                   with gr.Row():
 
