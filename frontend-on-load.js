@@ -122,6 +122,8 @@ async () => {
 
     // Remove the region on double click
     wavesurfer.on('region-dblclick', () => wavesurfer.clearRegions() )
+    // Also remove on a click outside the region (to be able to create a new one)
+    wavesurfer.on('click', () => wavesurfer.clearRegions() )
     
     Ji.trackTime = time => (
       shadowSelector('#audio-time').value = getAudioTime(time),
