@@ -28,7 +28,7 @@ async () => {
     window.shadowRoot = document.querySelector('gradio-app').shadowRoot
 
     // The wavesurfer element is hidden inside a shadow DOM hosted by <gradio-app>, so we need to get it from there
-    let shadowSelector = selector => window.shadowRoot.querySelector(selector)
+    window.shadowSelector = selector => window.shadowRoot.querySelector(selector)
 
     let waveformDiv = shadowSelector('#audio-waveform')
     console.log(`Found waveform div:`, waveformDiv)
@@ -86,7 +86,10 @@ async () => {
 
     // On region update end, update the #cut-audio-specs input, isnerting [start]-[end] into the value
     wavesurfer.on('region-update-end', ({ start, end }) => {
-      shadowSelector('#cut-audio-specs input').value = `${start}-${end}`
+      // We need to update value in such a way that any of the app's trigger events are fired
+      let input = shadowSelector('#cut-audio-specs textarea')
+      input.value = `${start}-${end}`
+      input.dispatchEvent(new Event('input'))
     })
 
     
