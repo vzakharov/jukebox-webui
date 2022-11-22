@@ -90,7 +90,7 @@ async () => {
           time,
           color: [ 'orange', 'lightgreen' ][i],
           label: [ 'M', 'U' ][i],
-        }).el.querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${time} s)`
+        }).el.querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point.`
       } )
     }
 
