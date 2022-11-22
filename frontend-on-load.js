@@ -111,14 +111,25 @@ async () => {
     // - if the input is formatted in any other way rather than [start]-[end], remove the region
     // - if the input is formatted correctly, update the region
     cutAudioSpecsInput.addEventListener('input', () => {
+
       if (updatedAutomatically) {
         updatedAutomatically = false
         return
       }
-      let [ start, end ] = cutAudioSpecsInput.value.split('-').map( time => actualToWavesurferTime(parseFloat(time)) )
+
       // wavesurfer.regions.list is a hash not an array, so we need to get the only key starting with 'wavesurfer_'
       let { list } = wavesurfer.regions
       let region = list[ Object.keys(list).find( key => key.startsWith('wavesurfer_') ) ]
+      let { value } = cutAudioSpecsInput
+
+      // Check with regex if the input is formatted correctly
+      if ( !value.match(/^\d+(\.\d+)?-\d+(\.\d+)?$/) ) {
+        // If not, remove the region
+        region?.remove()
+        return
+      }
+
+      let [ start, end ] = cutAudioSpecsInput.value.split('-').map( time => actualToWavesurferTime(parseFloat(time)) )
       ;( isNaN(start) || isNaN(end) ) ?
         region?.remove() :
         (
