@@ -1,4 +1,4 @@
-GITHUB_SHA = '7a8e6ab11fbe40f63a6f8bd68a1f583ace63d683'
+GITHUB_SHA = '710dd94900fa8fb40262be234518608e0298f4c6'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -963,8 +963,12 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
     seconds_to_cut_from_start = 0
 
   def decode(z):
-    wav = vqvae.decode([ z ], start_level=level, end_level=level+1).cpu().numpy()
-    # the decoded wav is of shape (n_samples, sample_length, 1)
+    if z.shape[1] > 0:
+      wav = vqvae.decode([ z ], start_level=level, end_level=level+1).cpu().numpy()
+      # the decoded wav is of shape (n_samples, sample_length, 1). We will convert it later to (n_samples, 1 or 2 depending on stereo_rendering)
+    else:
+      # If the sample is empty, we need to create an empty wav of the right shape
+      wav = np.zeros((z.shape[0], 0, 1))
     return wav
   
   # If z is longer than 30 seconds, there will likely be not enough RAM to decode it in one go
@@ -1095,7 +1099,7 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
         stereo = np.zeros((wav.shape[1] + 2 * delay_quants, 2))
         # First let's convert the wav to [n_quants, n_samples] by getting rid of the last dimension and transposing the rest
         wav = wav[:, :, 0].T
-        print(f'Converted wav to shape {wav.shape}')
+        # print(f'Converted wav to shape {wav.shape}')
         # Take sample 0 for left channel (delayed once), 1 for both channels (non-delayed), and sample 2 for right channel (delayed twice)
         if delay_quants:
           stereo[ delay_quants: -delay_quants, 0 ] = wav[ :, 0 ]
@@ -1108,7 +1112,7 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
         # Now we have max amplitude of 2, so we need to divide by 2
         stereo /= 2
 
-        print(f'Converted to stereo with delay {stereo_delay_ms} ms, current shape: {stereo.shape}, max/min amplitudes: {np.max(stereo)}/{np.min(stereo)}')
+        # print(f'Converted to stereo with delay {stereo_delay_ms} ms, current shape: {stereo.shape}, max/min amplitudes: {np.max(stereo)}/{np.min(stereo)}')
 
         return stereo
       
