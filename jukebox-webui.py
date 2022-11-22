@@ -858,13 +858,13 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   }
 
 
-def get_zs(project_name, sample_id):
+def get_zs(project_name, sample_id, seek_upsampled = False):
   global base_path
 
   filename = f'{base_path}/{project_name}/{sample_id}.z'
   zs = t.load(filename)
-  if not is_upsampled(zs):
-    zs[:-1] = get_first_upsampled_ancestor_zs(project_name, sample_id)[:-1]
+  if not is_upsampled(zs) and seek_upsampled:
+    zs[:-1] = get_first_upsampled_ancestor_zs(project_name, sample_id)[:-1  ]
   print(f'Loaded {filename}')
   return zs
 
@@ -938,10 +938,7 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
 
   global base_path, hps
 
-  filename = f'{base_path}/{project_name}/{sample_id}'
-
-  print(f'Loading {filename}.z')
-  zs = t.load(f'{filename}.z')
+  zs = get_zs(project_name, sample_id, seek_upsampled=True)
 
   # If no level is specified, use 2 (and then go downwards if combine_levels is True)
   if level is None:
@@ -1136,7 +1133,7 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
         # If the wav is mono, we need to convert it to stereo by using the same values for both channels
         # (Note that this is most always the case, since the original audio is always mono, and this function is likely to be called for the original level, but we're abstracting it just in case)
         if sub_wav.ndim == 1:
-          lower_sampled_wav = np.stack([ sub_wav, sub_wav ], axis=1)
+          sub_wav = np.stack([ sub_wav, sub_wav ], axis=1)
 
       if combined_wav is None:
         combined_wav = sub_wav
