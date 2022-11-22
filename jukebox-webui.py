@@ -1,4 +1,4 @@
-GITHUB_SHA = '710dd94900fa8fb40262be234518608e0298f4c6'
+GITHUB_SHA = '0d0b7492a751f12fc8d870bfe4600a4535c9936c'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -1486,7 +1486,7 @@ def get_project(project_name, routed_sample_id):
     **settings_out_dict
   }
 
-def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
+def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, force_reload):
 
   global hps
 
@@ -1516,17 +1516,18 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
   print(f'Checking if {filename} is cached...')
 
   # Make sure all 3 of wav, mp3 and yaml exist
-  all_files_exist = True
-  for ext in [ 'wav', 'mp3', 'yaml' ]:
-    if not os.path.isfile(f'{filename}.{ext}'):
-      all_files_exist = False
-      break
-  if not all_files_exist:
+  if not force_reload:
+    for ext in [ 'wav', 'mp3', 'yaml' ]:
+      if not os.path.isfile(f'{filename}.{ext}'):
+        force_reload = True
+        break
+
+  if force_reload:
 
     print('Nope, rendering...')
 
     # First, let's delete any old files that have the same name but a different hash (because these are now obsolete)
-    for f in glob.glob(f'{filename_without_hash}*'):
+    for f in glob.glob(f'{filename_without_hash}.*'):
       print(f'(Deleting now-obsolete cached file {f})')
       os.remove(f)
 
@@ -1557,6 +1558,7 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
     files = glob.glob(f'{base_path}/{project_name}/rendered/*')
     if len(files) > file_count_limit:
       removed_count = 0
+      failed_count = 0
       for f in files:
         try:
           if datetime.now() - datetime.fromtimestamp(os.path.getmtime(f)) > timedelta(days=1):
@@ -1564,7 +1566,8 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
             removed_count += 1
         except Exception as e:
           print(f'Could not remove {f}: {e}')
-      print(f'Deleted {removed_count} old files of {len(files)-file_count_limit} intended to be deleted')
+          failed_count += 1
+      print(f'Deleted {removed_count} of {removed_count + failed_count} old files')
         
   else:
     print('Yep, using it.')
@@ -1912,7 +1915,7 @@ def cut_z(z, specs, level):
 
       # Hidden spec: if either start or end start with a '<', the corresponding value is taken from the end of the sample (i.e. we just negate the value, i.e. replace '<' with '-')
       # ("<" because "-" is already used for specifying the interval. It also looks like a backwards arrow which is a good visual cue for this)
-      remove_start, remove_end = [ s.replace('<', '-') for s in (remove_start, remove_end) ]      
+      remove_start, remove_end = [ s and s.replace('<', '-') for s in (remove_start, remove_end) ]
 
       # If start or end is empty, it means the interval starts at the beginning or ends at the end
       remove_start = seconds_to_tokens(float(remove_start), level) if remove_start else 0
@@ -2181,12 +2184,12 @@ with gr.Blocks(
             api_name = 'get-siblings'        
           )
 
-          preview_args = dict(
+          get_preview_args = lambda force_reload: dict(
             inputs = [
               UI.project_name, UI.picked_sample, UI.cut_audio_specs, UI.preview_just_the_last_n_sec,
-              UI.upsample_rendering, UI.combine_upsampling_levels
+              UI.upsample_rendering, UI.combine_upsampling_levels, gr.State(force_reload)
             ],
-            outputs = [ 
+            outputs = [
               UI.sample_box, UI.mp3_files, #UI.generated_audio,
               UI.total_audio_length, UI.upsampled_lengths,
               UI.go_to_children_button, UI.go_to_parent_button,
@@ -2194,8 +2197,11 @@ with gr.Blocks(
             fn = get_sample,
           )
 
+          default_preview_args = get_preview_args(False)
+
+
           UI.picked_sample.change(
-            **preview_args,
+            **default_preview_args,
             api_name = 'get-sample',
             _js =
             # Set the search string to ?[sample_id] for easier navigation
@@ -2232,7 +2238,7 @@ with gr.Blocks(
 
 
               }
-            ''' % len(preview_args['inputs'])
+            ''' % len(default_preview_args['inputs'])
           )
 
           UI.upsampled_lengths.render().change(
@@ -2252,7 +2258,7 @@ with gr.Blocks(
                 with gr.Column():
 
                   UI.upsampling_level.render().change(
-                    **preview_args,
+                    **default_preview_args,
                   )
 
                   # Only show the upsampling elements if there are upsampled versions of the picked sample
@@ -2303,11 +2309,11 @@ with gr.Blocks(
                   with gr.Row():
 
                     UI.upsample_rendering.render().change(
-                      **preview_args,
+                      **default_preview_args,
                     )
 
                     UI.combine_upsampling_levels.render().change(
-                      **preview_args,
+                      **default_preview_args,
                     )
 
               # Show the continue upsampling markdown only if the current level's length in tokens is less than the total audio length
@@ -2374,7 +2380,7 @@ with gr.Blocks(
 
               [ 
                 UI.upsampling_audio_refresher.change( **action ) for action in [ 
-                  preview_args, 
+                  default_preview_args, 
                   show_or_hide_upsampling_elements_args,
                   dict(
                     inputs = None,
@@ -2393,7 +2399,7 @@ with gr.Blocks(
             internal_refresh_button = gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False)
             
             internal_refresh_button.click(
-              **preview_args,
+              **get_preview_args(force_reload = True),
             )
 
             internal_refresh_button.click(
@@ -2532,11 +2538,11 @@ with gr.Blocks(
 
                 UI.cut_audio_specs.render()
 
-                UI.cut_audio_specs.submit(**preview_args)
+                UI.cut_audio_specs.submit(**default_preview_args)
 
                 with gr.Row():
 
-                  UI.cut_audio_preview_button.render().click(**preview_args)
+                  UI.cut_audio_preview_button.render().click(**default_preview_args)
 
                   # Make the cut out buttons visible or not depending on whether the cut out value is 0
                   UI.cut_audio_specs.change(
@@ -2574,7 +2580,7 @@ with gr.Blocks(
                     You can combine several of the above by using a comma (`,`). **KEEP IN MIND** that in this case the ranges are applied sequentially, so the order matters. For example, `0-1,2-3` will first remove 0-1s, and will then remove 2-3s FROM THE ALREADY MODIFIED SAMPLE, so it will actually remove ranges 0-1s and *3-4s* from the original sample. This is intentional, as it allows for a step-by-step approach to editing the audio, where you add new specifiers as you listen to the result of the previous ones.
                   ''')
 
-                UI.preview_just_the_last_n_sec.render().blur(**preview_args)
+                UI.preview_just_the_last_n_sec.render().blur(**default_preview_args)
 
               with gr.Tab('Rename sample'):
 

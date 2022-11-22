@@ -85,7 +85,7 @@ async () => {
       document.querySelectorAll('.upsampling-marker-tooltip').forEach( el => el.remove() )
       times.reverse().forEach( ( time, i ) => {
         time = actualToWavesurferTime(time)
-        if ( time < 0 ) return
+        if ( time <= 0 ) return
         wavesurfer.markers.add({
           time,
           color: [ 'orange', 'lightgreen' ][i],
