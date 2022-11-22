@@ -863,6 +863,8 @@ def get_zs(project_name, sample_id):
 
   filename = f'{base_path}/{project_name}/{sample_id}.z'
   zs = t.load(filename)
+  if not is_upsampled(zs):
+    zs[:-1] = get_first_upsampled_ancestor_zs(project_name, sample_id)[:-1]
   print(f'Loaded {filename}')
   return zs
 
@@ -2536,9 +2538,7 @@ with gr.Blocks(
                   )
                 )
 
-                UI.cut_audio_specs.render()
-
-                UI.cut_audio_specs.submit(**default_preview_args)
+                UI.cut_audio_specs.render().submit(**default_preview_args)
 
                 with gr.Row():
 
