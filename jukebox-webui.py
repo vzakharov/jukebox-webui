@@ -1,4 +1,4 @@
-GITHUB_SHA = 'b4e1b1a78c6a0454b6e6eaf3b2c8d8a52469cd1a'
+GITHUB_SHA = '7a8e6ab11fbe40f63a6f8bd68a1f583ace63d683'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -2528,17 +2528,7 @@ with gr.Blocks(
 
                 UI.cut_audio_specs.render()
 
-                not_applied_warning = gr.Markdown('Enter to preview. The changes will only be applied when you click `Apply` below.', visible = False)
-
                 UI.cut_audio_specs.submit(**preview_args)
-
-                # # Virtual event handler to accept the cut audio specs via API
-                # gr.Button('Apply cut audio specs', visible = False).click(
-                #   inputs = gr.Textbox(visible=False),
-                #   outputs = UI.cut_audio_specs,
-                #   fn = lambda x: x,
-                #   api_name = 'apply-cut-audio-specs',
-                # )
 
                 with gr.Row():
 
@@ -2547,7 +2537,7 @@ with gr.Blocks(
                   # Make the cut out buttons visible or not depending on whether the cut out value is 0
                   UI.cut_audio_specs.change(
                     inputs = UI.cut_audio_specs,
-                    outputs = [ UI.cut_audio_preview_button, UI.cut_audio_apply_button, not_applied_warning ],
+                    outputs = [ UI.cut_audio_preview_button, UI.cut_audio_apply_button ],
                     fn = lambda cut_audio_specs: [
                       gr.update( visible = cut_audio_specs != '' ) for _ in range(3)
                     ]

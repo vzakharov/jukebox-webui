@@ -90,9 +90,7 @@ async () => {
           time,
           color: [ 'orange', 'lightgreen' ][i],
           label: [ 'M', 'U' ][i],
-          // tooltip: `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`,
-          // For some reason tooltips don't work at all, we'll need to write our own
-        }).el.querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${wavesurferToActualTime(time)} s)`
+        }).el.querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${time} s)`
       } )
     }
 
