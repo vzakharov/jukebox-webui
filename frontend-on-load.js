@@ -40,8 +40,8 @@ async () => {
       // Take total duration from #total-audio-length's input
       let totalDuration = parseFloat(shadowSelector('#total-audio-length input').value)
       // console.log('Total duration: ', totalDuration)
-      // Take preview duration from wavesurfer
-      let previewDuration = wavesurfer.getDuration()
+      // Take preview duration from #preview-last-n-sec's input
+      let previewDuration = parseFloat(shadowSelector('#preview-last-n-sec input').value)
       // console.log('Preview duration: ', previewDuration)
       let unshownDuration = totalDuration - previewDuration
       // console.log('Unshown duration: ', unshownDuration)
