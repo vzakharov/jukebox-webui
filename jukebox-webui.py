@@ -865,7 +865,8 @@ def get_zs(project_name, sample_id, seek_upsampled = False):
   zs = t.load(filename)
   if not is_upsampled(zs) and seek_upsampled:
     upsampled_ancestor = get_first_upsampled_ancestor_zs(project_name, sample_id)
-    zs[:-1] = upsampled_ancestor[:-1]
+    if upsampled_ancestor:
+      zs = upsampled_ancestor
   print(f'Loaded {filename}')
   return zs
 
