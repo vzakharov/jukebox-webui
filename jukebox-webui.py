@@ -956,9 +956,11 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
   audio_length = int( tokens_to_seconds(z.shape[1], level) * 100 ) / 100
   
   if preview_sec:
-    if preview_sec < 0:
-      preview_sec = audio_length - abs(preview_sec)
-    z = cut_z(z, f'-{preview_sec}', level)
+    seconds_to_cut_from_start = audio_length - abs(preview_sec) if preview_sec < 0 else preview_sec
+    # For negative values, we need to replace "-" with "<" because "-" is used to indicate a range
+    z = cut_z(z, f'-{seconds_to_cut_from_start}', level)
+  else:
+    seconds_to_cut_from_start = 0
 
   def decode(z):
     wav = vqvae.decode([ z ], start_level=level, end_level=level+1).cpu().numpy()
@@ -1121,8 +1123,8 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
     for sub_level in available_levels:
 
       if sub_level < level:
-        sub_wav = get_audio(project_name, sample_id, cut_audio, preview_sec, sub_level, stereo_rendering, combine_levels=False)[0]
-        upsampled_lengths[sub_level] = sub_wav.shape[0] / hps.sr
+        sub_wav = get_audio(project_name, sample_id, cut_audio, seconds_to_cut_from_start, sub_level, stereo_rendering, combine_levels=False)[0]
+        upsampled_lengths[sub_level] = sub_wav.shape[0] / hps.sr + seconds_to_cut_from_start
       else:
         sub_wav = wav
         # If the wav is mono, we need to convert it to stereo by using the same values for both channels

@@ -35,27 +35,34 @@ async () => {
 
     let timelineDiv = shadowSelector('#audio-timeline')
     console.log(`Found timeline div:`, timelineDiv)
-    
-    let getAudioTime = time => {
+
+    let getUnshownDuration = () => {
+      // Take total duration from #total-audio-length's input
+      let totalDuration = parseFloat(shadowSelector('#total-audio-length input').value)
+      // console.log('Total duration: ', totalDuration)
+      // Take preview duration from wavesurfer
       let previewDuration = wavesurfer.getDuration()
       // console.log('Preview duration: ', previewDuration)
-      // Take total duration from #total-audio-length's input, unless #trim-to-n-sec is set, in which case use that
-      let trimToNSec = parseFloat(shadowSelector('#trim-to-n-sec input')?.value || 0)
-      // console.log('Trim to n sec: ', trimToNSec)
-      let totalDuration = trimToNSec || parseFloat(shadowSelector('#total-audio-length input').value)
-      // console.log('Total duration: ', totalDuration)
-      let additionalDuration = totalDuration - previewDuration
-      // console.log('Additional duration: ', additionalDuration)
-      let result = Math.round( ( time + additionalDuration ) * 100 ) / 100          
-      // console.log('Result: ', result)
-      return result
+      let unshownDuration = totalDuration - previewDuration
+      // console.log('Unshown duration: ', unshownDuration)
+      return unshownDuration
+    }
+
+    let wavesurferToActualTime = wavesurferTime => {
+      // We need this function because the preview audio can be shorter than the full audio, in which case we need to add the additional (non-shown) duration to the time
+      return Math.round( ( wavesurferTime + getUnshownDuration() ) * 100 ) / 100
+    }
+
+    let actualToWavesurferTime = actualTime => {
+      // We need this function to know where to e.g. place certain markers in the preview audio
+      return Math.round( ( actualTime - getUnshownDuration() ) * 100 ) / 100
     }
 
     let regionParams = {
       regions: [],
       dragSelection: true,
       maxRegions: 1,
-      formatTimeCallback: getAudioTime,
+      formatTimeCallback: wavesurferToActualTime,
       // Salmon color, but with opacity
       color: 'rgba(250, 128, 114, 0.3)',
     }
@@ -77,14 +84,15 @@ async () => {
       // delete all .upsampling-marker-tooltip elements
       document.querySelectorAll('.upsampling-marker-tooltip').forEach( el => el.remove() )
       times.reverse().forEach( ( time, i ) => {
-        if (!time) return
+        time = actualToWavesurferTime(time)
+        if ( time < 0 ) return
         wavesurfer.markers.add({
           time,
           color: [ 'orange', 'lightgreen' ][i],
           label: [ 'M', 'U' ][i],
           // tooltip: `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`,
           // For some reason tooltips don't work at all, we'll need to write our own
-        }).el.querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${getAudioTime(time)} s)`
+        }).el.querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point (${wavesurferToActualTime(time)} s)`
       } )
     }
 
@@ -124,7 +132,7 @@ async () => {
     wavesurfer.on('region-dblclick', () => wavesurfer.clearRegions() )
     
     Ji.trackTime = time => (
-      shadowSelector('#audio-time').value = getAudioTime(time),
+      shadowSelector('#audio-time').value = wavesurferToActualTime(time),
       Ji.currentTime = time
     )
 
