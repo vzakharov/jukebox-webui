@@ -1,4 +1,4 @@
-GITHUB_SHA = '0d0b7492a751f12fc8d870bfe4600a4535c9936c'
+GITHUB_SHA = 'b6e5431ae7a4fa447b4fdde4624cd304a2a7ba58'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -1970,7 +1970,7 @@ def cut_z(z, specs, level):
   return z
 
 def cut_zs(zs, specs):
-  return [ cut_z(zs[level], specs, level) for level in get_levels(zs) ]
+  return [ cut_z(zs[level], specs, level) for level in range(len(zs)) ]
 
 def cut_audio(project_name, sample_id, interval):
   zs = get_zs(project_name, sample_id)
@@ -2008,7 +2008,7 @@ with gr.Blocks(
 
 
   """,
-  title = f'Jukebox Web UI v{ GITHUB_SHA }{ " (dev mode)" if DEV_MODE else "" }',
+  title = f'Jukebox Web UI { GITHUB_SHA }{ " (dev mode)" if DEV_MODE else "" }',
 ) as app:
 
   UI.browser_timezone.render()
