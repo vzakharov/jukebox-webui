@@ -1,5 +1,3 @@
-VERSION = '0.3'
-
 GITHUB_SHA = 'b4e1b1a78c6a0454b6e6eaf3b2c8d8a52469cd1a'
 # TODO: Don't forget to change to release branch/version before publishing
 
@@ -2001,7 +1999,7 @@ with gr.Blocks(
 
 
   """,
-  title = f'Jukebox Web UI v{ VERSION }{ " (dev mode)" if DEV_MODE else "" }',
+  title = f'Jukebox Web UI v{ GITHUB_SHA }{ " (dev mode)" if DEV_MODE else "" }',
 ) as app:
 
   UI.browser_timezone.render()
