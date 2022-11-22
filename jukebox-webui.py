@@ -1,7 +1,9 @@
-github_sha = 'b4e1b1a78c6a0454b6e6eaf3b2c8d8a52469cd1a'
+VERSION = '0.3'
+
+GITHUB_SHA = 'b4e1b1a78c6a0454b6e6eaf3b2c8d8a52469cd1a'
 # TODO: Don't forget to change to release branch/version before publishing
 
-dev_mode = True
+DEV_MODE = True
 # TODO: Don't forget to set to False before publishing
 
 #@title Jukebox Web UI
@@ -541,8 +543,8 @@ class UI:
     value = 'Pseudo-stereo with delay',
   )
 
-  upsample_pad_with_lower_sampled = gr.Checkbox(
-    label = 'Pad with lower-sampled audio',
+  combine_upsampling_levels = gr.Checkbox(
+    label = 'Combine levels',
     value = True
   )
 
@@ -921,10 +923,10 @@ def get_first_upsampled_ancestor_zs(project_name, sample_id):
       print(f'No upsampled ancestor found for {sample_id}')
       return None
 
-def get_audio(project_name, sample_id, cut_audio, preview_just_the_last_n_sec, level=2, upsample_rendering=3, pad_with_lower_sampled=False):
+def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stereo_rendering=3, combine_levels=True):
 
-  print(f'Generating audio for {project_name}/{sample_id} (level {level}, upsample_rendering {upsample_rendering}, pad_with_lower_sampled {pad_with_lower_sampled})')
-  print(f'Will cut audio according to "{cut_audio}" & preview just the last {preview_just_the_last_n_sec} seconds')
+  print(f'Generating audio for {project_name}/{sample_id} (level {level}, stereo rendering {stereo_rendering}, combine levels {combine_levels})')
+  print(f'Cut: {cut_audio}, preview: {preview_sec}')
 
   # Get current GPU memory usage. If it's above 12GB, empty the cache
   memory = t.cuda.memory_allocated()
@@ -941,34 +943,24 @@ def get_audio(project_name, sample_id, cut_audio, preview_just_the_last_n_sec, l
   print(f'Loading {filename}.z')
   zs = t.load(f'{filename}.z')
 
-  # Make sure that the level exists for the zs, if not use the lowest available level
-  levels = get_levels(zs)
-  if level not in levels:
-    lowest_level = min(levels)
-    print(f'Level {level} does not exist for {sample_id}, using {lowest_level} instead')
-    level = lowest_level
+  # If no level is specified, use 2 (and then go downwards if combine_levels is True)
+  if level is None:
+    level = 2
 
   z = zs[level]
   # z is of shape torch.Size([1, n_tokens])
   # print(f'Loaded {filename}.z at level {level}, shape: {z.shape}')
 
-  get_audio_length = lambda: int( tokens_to_seconds(z.shape[1], level) * 100 ) / 100
-  audio_length = get_audio_length()
-  
   if cut_audio:
     z = cut_z(z, cut_audio, level)
   
   # Update audio_length
-  audio_length = get_audio_length()
+  audio_length = int( tokens_to_seconds(z.shape[1], level) * 100 ) / 100
   
-  if preview_just_the_last_n_sec:
-    preview_tokens = seconds_to_tokens(preview_just_the_last_n_sec, level)
-    # print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds ({preview_tokens} tokens)')
-    preview_tokens += ( len(z) / seconds_to_tokens(1, level) ) % 1
-    z = z[ :, int( -1 * preview_tokens ): ]
-    # print(f'Trimmed to shape: {z.shape}')
-
-  # (We don't update audio_length for the preview, because it's just a preview)
+  if preview_sec:
+    if preview_sec < 0:
+      preview_sec = audio_length - abs(preview_sec)
+    z = cut_z(z, f'-{preview_sec}', level)
 
   def decode(z):
     wav = vqvae.decode([ z ], start_level=level, end_level=level+1).cpu().numpy()
@@ -1087,9 +1079,9 @@ def get_audio(project_name, sample_id, cut_audio, preview_just_the_last_n_sec, l
   else:
 
     # upsample_rendering of 0, 1 or 2 means we just need to pick one of the samples
-    if upsample_rendering < 3:
+    if stereo_rendering < 3:
 
-      wav = wav[upsample_rendering, :, 0]
+      wav = wav[stereo_rendering, :, 0]
     
     # upsample_rendering of 3 means we need to convert the audio to stereo, putting sample 0 to the left, 1 to the center, and 2 to the right
     # 4 means we also want to add a delay of 20 ms for the left and 40 ms for the right channel
@@ -1120,39 +1112,40 @@ def get_audio(project_name, sample_id, cut_audio, preview_just_the_last_n_sec, l
 
         return stereo
       
-      wav = to_stereo(wav, stereo_delay_ms=20 if upsample_rendering == 4 else 0)
+      wav = to_stereo(wav, stereo_delay_ms=20 if stereo_rendering == 4 else 0)
 
-  if pad_with_lower_sampled and level < 2:
+  upsampled_lengths = [ 0, 0 ]
+  if combine_levels:
 
-    lower_sampled_wav, audio_length, _ = get_audio(project_name, sample_id, cut_audio, preview_just_the_last_n_sec, level+1, upsample_rendering, True)
+    available_levels = get_levels(zs)
+    combined_wav = None
 
-    # Get the length of lower_sampled_wav in seconds and compare it to the length of the upsampled wav
-    lower_sampled_seconds = lower_sampled_wav.shape[0] / hps.sr
-    upsampled_seconds = wav.shape[0] / hps.sr
-    pad_seconds = lower_sampled_seconds - upsampled_seconds
-    print(f'Level {level} wav is {upsampled_seconds} seconds long, level {level+1} wav is {lower_sampled_seconds} seconds long.')
-    if pad_seconds < 0:
-      print(f'Level {level} wav is longer than level {level+1} wav, not padding.')
+    for sub_level in available_levels:
 
-    else:
-      print(f'Level {level} wav is {pad_seconds} seconds shorter than level {level+1} wav, padding with {pad_seconds} seconds of level {level+1} wav.')
+      if sub_level < level:
+        sub_wav = get_audio(project_name, sample_id, cut_audio, preview_sec, sub_level, stereo_rendering, combine_levels=False)[0]
+        upsampled_lengths[sub_level] = sub_wav.shape[0] / hps.sr
+      else:
+        sub_wav = wav
+        # If the wav is mono, we need to convert it to stereo by using the same values for both channels
+        # (Note that this is most always the case, since the original audio is always mono, and this function is likely to be called for the original level, but we're abstracting it just in case)
+        if sub_wav.ndim == 1:
+          lower_sampled_wav = np.stack([ sub_wav, sub_wav ], axis=1)
 
-      # If level is 1, then level 2 audio is mono, so we need to convert it to stereo by using the same values for both channels
-      if level == 1:
-        lower_sampled_wav = np.stack([ lower_sampled_wav, lower_sampled_wav ], axis=1)
-        print(f'Converted level 2 wav to stereo, shape now: {lower_sampled_wav.shape}')
-      
-      # Now we can pad our wav with the lower_sampled_wav, i.e. add the respective (end) part of the lower_sampled_wav to the end of the wav
-      wav = np.concatenate([ wav, lower_sampled_wav[ -int(pad_seconds * hps.sr): ] ], axis=0)
+      if combined_wav is None:
+        combined_wav = sub_wav
+        print(f'Created wav of length {combined_wav.shape[0]} for level {sub_level}')
+      else:
+        n_to_add = sub_wav.shape[0] - combined_wav.shape[0]
+        # (This might be confusing why we are subtracting the shape of combined wav from the "sub" wav, but it's because the higher level "sub" wav is the one that is being upsampled, so it's the one that needs to be longer. The entire terminology with levels going backwards while the quality goes up is confusing, but we work with what we have)
+        if n_to_add > 0:
+          print(f'Adding {n_to_add} samples for level {sub_level}')
+          combined_wav = np.concatenate([ combined_wav, sub_wav[ -n_to_add: ] ], axis=0)
 
-      print(f'Added lower_sampled_wav to wav, shape now: {wav.shape}')
+    wav = combined_wav
 
   print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {audio_length} seconds.')
 
-  # calculate upsampled_lengths, list of audio lengths by upsampling level. If only midsampled audio is available, the list will only contain one element
-  upsampled_levels = [ level for level in get_levels(zs) if level < 2 ]
-  upsampled_lengths = [ tokens_to_seconds(zs[ level ].shape[1], level) for level in upsampled_levels ]
-  
   return wav, audio_length, upsampled_lengths
 
 # def get_audio_being_upsampled():
@@ -1489,33 +1482,32 @@ def get_project(project_name, routed_sample_id):
     **settings_out_dict
   }
 
-def get_sample(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level_name, upsample_rendering, pad_with_lower_sampled):
+def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
 
   global hps
 
-  level_names = UI.UPSAMPLING_LEVEL_NAMES
-  level = 2 - level_names.index(level_name)
+  print(f'Loading sample {sample_id}')
 
-  print(f'Loading sample {sample_id} for level {level} ({level_name})')
-
-  filename = f'{base_path}/{project_name}/rendered/{sample_id} L{level}'
+  filename = f'{base_path}/{project_name}/rendered/{sample_id}'
 
   # Add cutout/preview suffixes
   if cut_out:
     filename += f' cut {cut_out}'
-  if preview_just_the_last_n_sec:
-    filename += f' preview {preview_just_the_last_n_sec}'
+  if last_n_sec:
+    filename += f' last {last_n_sec}'
   
-  # Add lowercase of upsample rendering option
-  if upsample_rendering and level_name != 'Raw':
-    suffixes = [ 'left', 'center', 'right', 'stereo', 'stereo-delay' ]
-    filename += f' {suffixes[upsample_rendering]}'
+  # # Add lowercase of upsample rendering option
+  # if upsample_rendering and level_name != 'Raw':
+  #   suffixes = [ 'left', 'center', 'right', 'stereo', 'stereo-delay' ]
+  #   filename += f' {suffixes[upsample_rendering]}'
   
-  if pad_with_lower_sampled and level_name != 'Raw':
-    filename += ' padded'
+  # if pad_with_lower_sampled and level_name != 'Raw':
+  #   filename += ' padded'
+  # (Note: This is old code that won't run if uncommented, but keeping it here just in case)
   
-  # Add a hash (6 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
-  filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:6]}'
+  # Add a hash (8 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
+  filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:8]}'
+  filename_without_hash = filename[:-9]
 
   print(f'Checking if {filename} is cached...')
 
@@ -1528,7 +1520,18 @@ def get_sample(project_name, sample_id, cut_out, preview_just_the_last_n_sec, le
   if not all_files_exist:
 
     print('Nope, rendering...')
-    wav, total_audio_length, upsampled_lengths = get_audio(project_name, sample_id, cut_out, preview_just_the_last_n_sec, level, upsample_rendering, pad_with_lower_sampled)
+
+    # First, let's delete any old files that have the same name but a different hash (because these are now obsolete)
+    for f in glob.glob(f'{filename_without_hash}*'):
+      print(f'(Deleting now-obsolete cached file {f})')
+      os.remove(f)
+
+    if last_n_sec:
+      last_n_sec = -last_n_sec
+    # (Because get_audio, called below, accepts "preview_sec", whose positive value means "preview the first n seconds", but we want to preview the last n seconds)
+
+    wav, total_audio_length, upsampled_lengths = get_audio(project_name, sample_id, cut_out, last_n_sec, None, upsample_rendering, combine_levels)
+    # (level is None, which means "the highest level that is available", i.e. 2)
 
     if not os.path.exists(os.path.dirname(filename)):
       os.makedirs(os.path.dirname(filename))
@@ -1902,8 +1905,20 @@ def cut_z(z, specs, level):
 
       # The removed interval is a string of format 'start-end' or just 'start'. In the latter case, end is assumed to be the end of the sample
       remove_start, remove_end = remove.split('-') if '-' in remove else (remove, None)
+
+      # Hidden spec: if either start or end start with a '<', the corresponding value is taken from the end of the sample (i.e. we just negate the value, i.e. replace '<' with '-')
+      # ("<" because "-" is already used for specifying the interval. It also looks like a backwards arrow which is a good visual cue for this)
+      remove_start, remove_end = [ s.replace('<', '-') for s in (remove_start, remove_end) ]      
+
       # If start or end is empty, it means the interval starts at the beginning or ends at the end
       remove_start = seconds_to_tokens(float(remove_start), level) if remove_start else 0
+
+      # If remove_start is more than the length of the sample, we just return an empty sample
+      # (We don't need to see the add part, because it's not going to be added to anything. The only exception is if no remove part is specified, but in that case this part of the code is not executed anyway)
+      if remove_start >= z.shape[1]:
+        print(f'Warning: remove_start ({remove_start}) is more than the length of the sample ({z.shape[1]}) for level {level}. Returning an empty sample.')
+        break
+
       remove_end = seconds_to_tokens(float(remove_end), level) if remove_end else z.shape[1]
       print(f'Cutting out {remove} (tokens {remove_start}-{remove_end})')
 
@@ -1931,6 +1946,13 @@ def cut_z(z, specs, level):
       print(f'out_z shape: {out_z.shape}')
 
     if remove:
+      # If we added anything, and its end was after the end of the original sample, we break
+      # This is needed for cases when we add a part that hasn't been upsampled yet, so it would be added for the low-quality level, but not for the high-quality level (at least partially)
+      # In this case, we don't want to add the rest of the original sample, because then we would have a "hole" in the high-quality level, which will make further upsampling impossible
+      if add and add_end > z.shape[1]:
+        print(f'Warning: add_end ({add_end}) is more than the length of the sample ({z.shape[1]}) for level {level}. Breaking before adding the rest of the original sample.')
+        break
+
       print(f'Adding the rest of the sample (tokens {remove_end}-{z.shape[1]})')
       out_z = t.cat([out_z, z[:, remove_end:]], dim = 1)
       print(f'out_z shape: {out_z.shape}')
@@ -1940,12 +1962,13 @@ def cut_z(z, specs, level):
   print(f'z shape after cut: {out_z.shape}')
   return z
 
+def cut_zs(zs, specs):
+  return [ cut_z(zs[level], specs, level) for level in get_levels(zs) ]
 
 def cut_audio(project_name, sample_id, interval):
   zs = get_zs(project_name, sample_id)
   backup_zs(zs, project_name, sample_id)
-  for level in get_levels(zs):
-    zs[level] = cut_z(zs[level], interval, level)
+  zs = cut_zs(zs, interval)
   save_zs(zs, project_name, sample_id)
   return ''
 
@@ -1978,7 +2001,7 @@ with gr.Blocks(
 
 
   """,
-  title = 'Jukebox Web UI v0.3',
+  title = f'Jukebox Web UI v{ VERSION }{ " (dev mode)" if DEV_MODE else "" }',
 ) as app:
 
   UI.browser_timezone.render()
@@ -2157,7 +2180,7 @@ with gr.Blocks(
           preview_args = dict(
             inputs = [
               UI.project_name, UI.picked_sample, UI.cut_audio_specs, UI.preview_just_the_last_n_sec,
-              UI.upsampling_level, UI.upsample_rendering, UI.upsample_pad_with_lower_sampled
+              UI.upsample_rendering, UI.combine_upsampling_levels
             ],
             outputs = [ 
               UI.sample_box, UI.mp3_files, #UI.generated_audio,
@@ -2279,7 +2302,7 @@ with gr.Blocks(
                       **preview_args,
                     )
 
-                    UI.upsample_pad_with_lower_sampled.render().change(
+                    UI.combine_upsampling_levels.render().change(
                       **preview_args,
                     )
 
@@ -2801,7 +2824,7 @@ with gr.Blocks(
             api_name = 'empty-cache',
           )
 
-        with gr.Accordion('Run any code', open = False, visible = dev_mode):
+        with gr.Accordion('Run any code', open = False, visible = DEV_MODE):
 
           gr.Markdown('''
             The following input box allows you to execute arbitrary Python code. ⚠️ DON’T USE THIS FEATURE IF YOU DON’T KNOW WHAT YOU’RE DOING! ⚠️
@@ -2835,7 +2858,7 @@ with gr.Blocks(
           )
 
   # TODO: Don't forget to remove this line before publishing the app
-  frontend_on_load_url = f'https://cdn.jsdelivr.net/gh/vzakharov/jukebox-webui@{github_sha}/frontend-on-load.js'
+  frontend_on_load_url = f'https://cdn.jsdelivr.net/gh/vzakharov/jukebox-webui@{GITHUB_SHA}/frontend-on-load.js'
   with urllib.request.urlopen(frontend_on_load_url) as response:
     frontend_on_load_js = response.read().decode('utf-8')
 
