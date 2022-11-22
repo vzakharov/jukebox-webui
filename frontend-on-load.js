@@ -103,7 +103,7 @@ async () => {
     wavesurfer.on('region-update-end', ({ start, end }) => {
       // We need to update value in such a way that any of the app's trigger events are fired
       // round to 2 decimal places
-      cutAudioSpecsInput.value = [ start, end ].map( time => Math.round( time * 100 ) / 100 ).join('-')
+      cutAudioSpecsInput.value = [ start, end ].map( time => Math.round( wavesurferToActualTime(time) * 100 ) / 100 ).join('-')
       cutAudioSpecsInput.dispatchEvent(new Event('input'))
       updatedAutomatically = true
     })
@@ -117,7 +117,7 @@ async () => {
         updatedAutomatically = false
         return
       }
-      let [ start, end ] = cutAudioSpecsInput.value.split('-').map( time => parseFloat(time) )
+      let [ start, end ] = cutAudioSpecsInput.value.split('-').map( time => actualToWavesurferTime(parseFloat(time)) )
       // wavesurfer.regions.list is a hash not an array, so we need to get the only key starting with 'wavesurfer_'
       let { list } = wavesurfer.regions
       let region = list[ Object.keys(list).find( key => key.startsWith('wavesurfer_') ) ]
