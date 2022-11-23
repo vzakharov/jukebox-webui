@@ -226,9 +226,11 @@ async () => {
           // Replace the #reload-button inner text with an clock, blinking with different times at 0.5s intervals
           let refreshButton = shadowRoot.querySelector('#refresh-button')
           if ( refreshButton ) {
-            emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
-            refreshButton.innerText = emojis[0]
-            Ji.clockInterval = setInterval( () => emojis.push( refreshButton.innerText = emojis.shift() ), 500 )
+            let emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
+            let flip = () => emojis.push( refreshButton.innerText = emojis.shift() )      
+            Ji.clockInterval && clearInterval(Ji.clockInterval)
+            Ji.clockInterval = setInterval( flip, 500 )
+            flip()
           }
 
           let loadBlob = async element => {
