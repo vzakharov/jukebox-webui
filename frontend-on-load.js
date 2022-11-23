@@ -199,40 +199,52 @@ async () => {
       })
     }        
 
-    Ji.reloadAudio = async () => {
+    Ji.reloadAudio = async ( filename ) => {
 
-      console.log('Audio element updated, checking if href changed...')
-      Ji.audioElements = Ji.currentChunksContainer.querySelectorAll('a')
+      let hasToBeAlreadyCached = !!filename
 
-      let audioHref = Ji.audioElements[0].href
+      if ( !filename ) {
 
-      if ( audioHref == lastAudioHref ) {
-        console.log('Audio href has not changed, skipping.')
-        return
+        console.log('No filename provided, checking if the href changed')
+        Ji.audioElements = Ji.currentChunksContainer.querySelectorAll('a')
+
+        let audioHref = Ji.audioElements[0].href
+
+        if ( audioHref == lastAudioHref ) {
+          console.log('The audio is already loaded, not reloading')
+          return
+        }
+
+        console.log(`The audio is not loaded, reloading from ${audioHref}`)
+
+        // Replace the #reload-button inner text with an clock, blinking with different times at 0.5s intervals
+        let refreshButton = shadowRoot.querySelector('#refresh-button')
+        if ( refreshButton ) {
+          let emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
+          let flip = () => emojis.push( refreshButton.innerText = emojis.shift() )      
+          clearInterval(Ji.clockInterval)
+          Ji.clockInterval = setInterval( flip, 500 )
+          flip()
+        }
+
+        // Remove path & extension
+        filename = audioHref.replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
+        // and the last 8 characters (the hash)
+          .slice(0, -8)
+
       }
-
-      console.log(`Audio href changed to ${audioHref}, reloading wavesurfer...`)
-
-      // Replace the #reload-button inner text with an clock, blinking with different times at 0.5s intervals
-      let refreshButton = shadowRoot.querySelector('#refresh-button')
-      if ( refreshButton ) {
-        let emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
-        let flip = () => emojis.push( refreshButton.innerText = emojis.shift() )      
-        clearInterval(Ji.clockInterval)
-        Ji.clockInterval = setInterval( flip, 500 )
-        flip()
-      }
-
-      // Remove path & extension
-      let filename = audioHref.replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
-      // and the last 8 characters (the hash)
-        .slice(0, -8)
 
       console.log(`Checking blob cache for ${filename}`)
       let cachedBlob = Ji.blobCache.find( ({ key }) => key == filename )
 
-      let blob = cachedBlob?.blob ||
-        new Blob( Ji.mainBlobPromise = await Promise.all( Array.from(Ji.audioElements).map( Ji.fetchBlob ) ), { type: 'audio/mpeg' } )
+      let blob = cachedBlob?.blob
+      
+      if ( !blob && hasToBeAlreadyCached ) {
+        console.log(`Blob for ${filename} not found in cache, skipping.`)
+        return
+      }
+
+      blob ||= new Blob( Ji.mainBlobPromise = await Promise.all( Array.from(Ji.audioElements).map( Ji.fetchBlob ) ), { type: 'audio/mpeg' } )
       
       // compare the preloaded blob's SHA to the one in the cache
       let blobSHA = await Ji.blobSHA(blob)

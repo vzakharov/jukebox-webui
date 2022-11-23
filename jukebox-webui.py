@@ -1486,32 +1486,37 @@ def get_project(project_name, routed_sample_id):
     **settings_out_dict
   }
 
+def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
+    
+    filename = f'{base_path}/{project_name}/rendered/{sample_id}'
+
+    # Add cutout/preview suffixes
+    if cut_out:
+      filename += f' cut {cut_out}'
+    if last_n_sec:
+      filename += f' last {last_n_sec}'
+    
+    # Add lowercase of upsample rendering option
+    if upsample_rendering:
+      filename += f' r{upsample_rendering}'
+    
+    if combine_levels:
+      filename += f' combined'
+    
+    return filename
+
 def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_rendering=4, combine_levels=True, force_reload=False):
 
   global hps
 
   print(f'Loading sample {sample_id}')
 
-  filename = f'{base_path}/{project_name}/rendered/{sample_id}'
+  filename = get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, include_hash=True)
+  filename_without_hash = filename
 
-  # Add cutout/preview suffixes
-  if cut_out:
-    filename += f' cut {cut_out}'
-  if last_n_sec:
-    filename += f' last {last_n_sec}'
-  
-  # # Add lowercase of upsample rendering option
-  # if upsample_rendering and level_name != 'Raw':
-  #   suffixes = [ 'left', 'center', 'right', 'stereo', 'stereo-delay' ]
-  #   filename += f' {suffixes[upsample_rendering]}'
-  
-  # if pad_with_lower_sampled and level_name != 'Raw':
-  #   filename += ' padded'
-  # (Note: This is old code that won't run if uncommented, but keeping it here just in case)
-  
   # Add a hash (8 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
   filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:8]}'
-  filename_without_hash = filename[:-9]
+
 
   print(f'Checking if {filename} is cached...')
 
@@ -2225,6 +2230,14 @@ with gr.Blocks(
 
           default_preview_args = get_preview_args(False)
 
+          # Virtual input & handler to create an API method for get_sample_filename
+          gr.State().change(
+            inputs = preview_inputs,
+            outputs = gr.State(),
+            fn = get_sample_filename,
+            api_name = 'get-sample-filename'
+          )
+
           UI.picked_sample.change(
             **default_preview_args,
             api_name = 'get-sample',
@@ -2237,21 +2250,24 @@ with gr.Blocks(
 
                   args[1] && window.history.pushState( {}, '', `?${args[1]}` )
 
-                  // Check Ji.blobCache for a key equal to a JSON string of the args
-                  // If it exists, loadBlob wavesurver from the cache
-                  // Otherwise, loadBlob wavesurver from the server
-                  // Use just the inputs for the key (args contains both inputs and outputs, so we only need to take the first 7 elements)
-                  let key = JSON.stringify( args.slice(0,%d) )
-                  let blob = Ji.blobCache.find( entry => entry.key == key )?.blob
-                  if ( blob ) {
-                    wavesurfer.loadBlob( blob )
-                    Ji.preloadedBlobSHA = await Ji.blobSHA( blob )
-                    console.log( `Loaded blob for ${key} from cache, SHA: ${Ji.preloadedBlobSHA}` )
-                    delete Ji.preloadedBlobKey
-                  } else {
-                    Ji.preloadedBlobKey = key
-                    console.log(`Loading blob from server, to be later cached under key ${key}`)
-                  }
+                  // Now we'll try to reload the audio from cache. To do that, we need to first fetch the sample filename according to the preview settings
+                  // This means we need to make an API call to `[current url]/run/get-sample-filename` with the body of { data: args.slice([len(preview_inputs)]) }
+
+                  const response = await fetch( `${window.location.href}/run/get-sample-filename`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify( { data: args.slice(0, %d) } )
+                  } )
+
+                  // the response format (in json body) is { data: [ filename ] }
+                  const { data: [ filename ] } = await response.json()
+
+                  console.log( `The filename for ${args[1]} taking into account the current preview settings is ${filename}, trying to load from cache...` )
+
+                  // Now we can try to load the audio from cache
+                  Ji.reloadAudio( filename )
 
                 } catch (e) {
                   console.error(e)
@@ -2263,7 +2279,7 @@ with gr.Blocks(
 
 
               }
-            ''' % len(default_preview_args['inputs'])
+            '''
           )
            
           # When the picked sample is updated, update all the others too (UI.sibling_chunks) by calling get_sample for each sibling
