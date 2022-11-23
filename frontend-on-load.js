@@ -231,15 +231,15 @@ async () => {
 
           console.log(`Audio href changed to ${audioHref}, reloading wavesurfer...`)
 
-          // // Replace the #reload-button inner text with an clock, blinking with different times at 0.5s intervals
-          // let refreshButton = shadowRoot.querySelector('#refresh-button')
-          // if ( refreshButton ) {
-          //   let emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
-          //   let flip = () => emojis.push( refreshButton.innerText = emojis.shift() )      
-          //   clearInterval(Ji.clockInterval)
-          //   Ji.clockInterval = setInterval( flip, 500 )
-          //   flip()
-          // }
+          // Replace the #reload-button inner text with an clock, blinking with different times at 0.5s intervals
+          let refreshButton = shadowRoot.querySelector('#refresh-button')
+          if ( refreshButton ) {
+            let emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
+            let flip = () => emojis.push( refreshButton.innerText = emojis.shift() )      
+            clearInterval(Ji.clockInterval)
+            Ji.clockInterval = setInterval( flip, 500 )
+            flip()
+          }
 
           // Remove path & extension
           let filename = audioHref.replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
