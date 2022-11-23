@@ -79,10 +79,12 @@ async () => {
       ]
     })
 
-    Ji.addUpsamplingMarkers = times => {
+    Ji.addUpsamplingMarkers = ( times = Ji.upsamplingTimes ) => {
+      Ji.upsamplingTimes = times
       wavesurfer.markers.clear()
       // delete all .upsampling-marker-tooltip elements
       document.querySelectorAll('.upsampling-marker-tooltip').forEach( el => el.remove() )
+      if ( !times ) return
       times.reverse().forEach( ( time, i ) => {
         time = actualToWavesurferTime(time)
         if ( time <= 0 ) return
@@ -93,6 +95,9 @@ async () => {
         }).el.querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point.`
       } )
     }
+
+    // Also add markers on every wavesurfer reload
+    wavesurfer.on('ready', Ji.addUpsamplingMarkers)
 
     let cutAudioSpecsInput = shadowSelector('#cut-audio-specs textarea')
     let updatedAutomatically = false
