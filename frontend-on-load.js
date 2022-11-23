@@ -168,9 +168,9 @@ async () => {
       let { blobCache, maxCacheSize } = Ji
       // If there's >= Ji.maxCacheSize elements in the cache, remove the oldest one
       if ( blobCache.length >= maxCacheSize ) {
-        blobCache.shift()
+        blobCache.pop()
       }
-      blobCache.push({ key, blob })
+      blobCache.unshift({ key, blob })
       console.log(`Added ${key} to cache, total cache size: ${blobCache.length} (${blobCache.reduce( (acc, { blob }) => acc + blob.size, 0 )/1000000} MB)`)
     }
 
@@ -199,89 +199,73 @@ async () => {
       })
     }        
 
-    Ji.reloadAudio = async ( filename ) => {
+    Ji.reloadAudio = async () => {
 
-      let hasToBeAlreadyCached = !!filename
+      Ji.audioElements = Ji.currentChunksContainer.querySelectorAll('a')
 
-      if ( !filename ) {
+      let audioHref = Ji.audioElements[0].href
 
-        console.log('No filename provided, checking if the href changed')
-        Ji.audioElements = Ji.currentChunksContainer.querySelectorAll('a')
+      if ( audioHref == Ji.lastAudioHref ) {
+        console.log('The audio is already loaded, not reloading')
+        return
+      }
 
-        let audioHref = Ji.audioElements[0].href
+      // Remove path & extension
+      filename = audioHref.replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
+      // and the last 8 characters (the hash)
+        .slice(0, -8)
+      // and %20\d+-\d+ in the end, indicating a chunk (if any)
+        .replace(/%20\d+-\d+$/, '')
 
-        if ( audioHref == lastAudioHref ) {
-          console.log('The audio is already loaded, not reloading')
-          return
-        }
+      if ( filename == Ji.lastLoadedBlobKey ) {
+        console.log(`The blob for ${filename} is already loaded, not reloading`)
+        return
+      }
 
-        console.log(`The audio is not loaded, reloading from ${audioHref}`)
+      console.log(`The audio is not loaded, reloading from ${audioHref}`)
 
-        // Replace the #reload-button inner text with an clock, blinking with different times at 0.5s intervals
-        let refreshButton = shadowRoot.querySelector('#refresh-button')
-        if ( refreshButton ) {
-          let emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
-          let flip = () => emojis.push( refreshButton.innerText = emojis.shift() )      
-          clearInterval(Ji.clockInterval)
-          Ji.clockInterval = setInterval( flip, 500 )
-          flip()
-        }
-
-        // Remove path & extension
-        filename = audioHref.replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
-        // and the last 8 characters (the hash)
-          .slice(0, -8)
-
+      // Replace the #reload-button inner text with an clock, blinking with different times at 0.5s intervals
+      let refreshButton = shadowRoot.querySelector('#refresh-button')
+      if ( refreshButton ) {
+        let emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
+        let flip = () => emojis.push( refreshButton.innerText = emojis.shift() )      
+        clearInterval(Ji.clockInterval)
+        Ji.clockInterval = setInterval( flip, 500 )
+        flip()
       }
 
       console.log(`Checking blob cache for ${filename}`)
       let cachedBlob = Ji.blobCache.find( ({ key }) => key == filename )
 
-      let blob = cachedBlob?.blob
+      // If not cached, combine a blob from all the chunks in audioElements
+      let blob = cachedBlob?.blob || new Blob( Ji.mainBlobPromise = await Promise.all( Array.from(Ji.audioElements).map( Ji.fetchBlob ) ), { type: 'audio/mpeg' } )
       
-      if ( !blob && hasToBeAlreadyCached ) {
-        console.log(`Blob for ${filename} not found in cache, skipping.`)
-        return
-      }
+      wavesurfer.loadBlob(blob)
 
-      blob ||= new Blob( Ji.mainBlobPromise = await Promise.all( Array.from(Ji.audioElements).map( Ji.fetchBlob ) ), { type: 'audio/mpeg' } )
-      
-      // compare the preloaded blob's SHA to the one in the cache
-      let blobSHA = await Ji.blobSHA(blob)
-      if ( blobSHA != Ji.preloadedBlobSHA ) {
-        console.log(`Blob SHA changed to ${blobSHA}, reloading wavesurfer...`)
-        wavesurfer.loadBlob(blob)
+      wavesurfer.on('ready', () => {
 
-        Ji.preloadedBlobKey && Ji.addBlobToCache( Ji.preloadedBlobKey, blob )
+        // Stop the clock blinking
+        clearInterval(Ji.clockInterval)
+
+        // Seek to the remembered time, unless it's higher than the new audio length
+        let duration = wavesurfer.getDuration()
+        Ji.currentTime < duration && wavesurfer.seekTo(Ji.currentTime / duration)
+
+        // Start playing if Ji.playing is true
+        Ji.playing && wavesurfer.play()
         
-        wavesurfer.on('ready', () => {
+        // Replace the clock with a refresh glyph
+        if ( refreshButton ) {
+          refreshButton.innerText = '↻'
+        }
 
-          // Stop the clock blinking
-          clearInterval(Ji.clockInterval)
-
-          // Seek to the remembered time, unless it's higher than the new audio length
-          let duration = wavesurfer.getDuration()
-          Ji.currentTime < duration && wavesurfer.seekTo(Ji.currentTime / duration)
-
-          // Start playing if Ji.playing is true
-          Ji.playing && wavesurfer.play()
-          
-          // Replace the clock with a refresh glyph
-          if ( refreshButton ) {
-            refreshButton.innerText = '↻'
-          }
-
-        })
-
-      } else {
-        console.log('Blob SHA has not changed, skipping.')
-      }
+      })
 
       !cachedBlob && Ji.addBlobToCache( filename, blob )
 
       window.shadowRoot.querySelector('#download-button').href = audioHref
 
-      lastAudioHref = audioHref
+      Ji.lastAudioHref = audioHref
       
     }
 
@@ -301,7 +285,7 @@ async () => {
         console.log('Found audio elements, removing parent observer')
 
         currentChunksObserver.disconnect()
-        lastAudioHref = null
+        Ji.lastAudioHref = null
 
         // Reload the audio at once
         Ji.reloadAudio()

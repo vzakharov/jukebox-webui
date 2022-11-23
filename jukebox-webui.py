@@ -1,4 +1,4 @@
-GITHUB_SHA = 'd11ae26400a795b494f59a797ece4271ac27c446'
+GITHUB_SHA = 'ae2545480eeafe0fc80fd8c4838cca14602b3501'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -1511,7 +1511,7 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
 
   print(f'Loading sample {sample_id}')
 
-  filename = get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, include_hash=True)
+  filename = get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels)
   filename_without_hash = filename
 
   # Add a hash (8 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
@@ -2231,9 +2231,9 @@ with gr.Blocks(
           default_preview_args = get_preview_args(False)
 
           # Virtual input & handler to create an API method for get_sample_filename
-          gr.State().change(
+          gr.Textbox(visible=False).change(
             inputs = preview_inputs,
-            outputs = gr.State(),
+            outputs = gr.Textbox(visible=False),
             fn = get_sample_filename,
             api_name = 'get-sample-filename'
           )
@@ -2248,26 +2248,19 @@ with gr.Blocks(
 
                 try {
 
-                  args[1] && window.history.pushState( {}, '', `?${args[1]}` )
+                  let sample_id = args[1]
 
-                  // Now we'll try to reload the audio from cache. To do that, we need to first fetch the sample filename according to the preview settings
-                  // This means we need to make an API call to `[current url]/run/get-sample-filename` with the body of { data: args.slice([len(preview_inputs)]) }
+                  sample_id && window.history.pushState( {}, '', `?${args[1]}` )
 
-                  const response = await fetch( `${window.location.href}/run/get-sample-filename`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify( { data: args.slice(0, %d) } )
-                  } )
-
-                  // the response format (in json body) is { data: [ filename ] }
-                  const { data: [ filename ] } = await response.json()
-
-                  console.log( `The filename for ${args[1]} taking into account the current preview settings is ${filename}, trying to load from cache...` )
-
-                  // Now we can try to load the audio from cache
-                  Ji.reloadAudio( filename )
+                  // Now we'll try to reload the audio from cache. To do that, we'll find the first cached blob (Ji.blobCache) whose key starts with the sample_id followed by %20 (meaning space)
+                  // (Although different version of the same sample might have been cached, the first one will be the one that was added last, so it's the most recent one)
+                  let cached_blob = Ji.blobCache.find( ({ key }) => key.startsWith( `${sample_id}%20` ) )
+                  if ( cached_blob ) {
+                    console.log( 'Found cached blob', cached_blob )
+                    let { key, blob } = cached_blob
+                    wavesurfer.loadBlob( blob )
+                    Ji.lastLoadedBlobKey = key
+                  }
 
                 } catch (e) {
                   console.error(e)
