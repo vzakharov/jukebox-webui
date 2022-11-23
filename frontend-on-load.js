@@ -223,10 +223,11 @@ async () => {
 
           console.log(`Audio href changed to ${audioHref}, reloading wavesurfer...`)
 
-          // Replace the #reload-button inner text with an hourglass
+          // Replace the #reload-button inner text with an hourglass, blinking with full/empty emoji every 0.5 seconds
           let refreshButton = shadowRoot.querySelector('#refresh-button')
           if ( refreshButton ) {
             refreshButton.innerText = '⏳'
+            Ji.hourglassInterval = setInterval( () => refreshButton.innerText = refreshButton.innerText == '⏳' ? '⌛' : '⏳', 500 )
           }
 
           let loadBlob = async element => {
@@ -259,6 +260,9 @@ async () => {
             Ji.preloadedBlobKey && Ji.addBlobToCache( Ji.preloadedBlobKey, blob )
             
             wavesurfer.on('ready', () => {
+
+              // Stop the hourglass blinking
+              clearInterval(Ji.hourglassInterval)
 
               // Seek to the remembered time, unless it's higher than the new audio length
               let duration = wavesurfer.getDuration()
