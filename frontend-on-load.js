@@ -60,7 +60,7 @@ async () => {
 
     let regionParams = {
       regions: [],
-      dragSelection: true,
+      dragSelection: false,
       maxRegions: 1,
       formatTimeCallback: wavesurferToActualTime,
       // Salmon color, but with opacity
@@ -135,15 +135,16 @@ async () => {
       }
 
       let [ start, end ] = cutAudioSpecsInput.value.split('-').map( time => actualToWavesurferTime(parseFloat(time)) )
-      ;( isNaN(start) || isNaN(end) ) ?
-        region?.remove() :
-        (
-          region ||= wavesurfer.addRegion(regionParams)
-        ).update({ start, end })
+      region ||= wavesurfer.addRegion(regionParams)
+      region.update({ start, end })
     })
 
     // Remove the region on double click
     wavesurfer.on('region-dblclick', () => wavesurfer.clearRegions() )
+
+    // Enable drags election when #cut-audio-specs input is focused, disable when blurred
+    cutAudioSpecsInput.addEventListener('focus', () => wavesurfer.regions.enableDragSelection() )
+    cutAudioSpecsInput.addEventListener('blur', () => wavesurfer.regions.disableDragSelection() )
     
     Ji.trackTime = time => (
       shadowSelector('#audio-time').value = wavesurferToActualTime(time),
