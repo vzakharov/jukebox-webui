@@ -175,7 +175,7 @@ async () => {
     }
 
     Ji.fetchBlob = async element => {
-      console.log(`Fetching blob for ${filename}`)
+      console.log(`Fetching blob for ${element.href}`)
       let response = await fetch(element.href)
       let blob = await response.blob()
       console.log(`Loaded blob:`, blob)
