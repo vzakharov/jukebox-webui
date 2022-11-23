@@ -1,4 +1,4 @@
-GITHUB_SHA = '5aca05d7d24ae5165a31e4c7d145e123aad5737e'
+GITHUB_SHA = 'fa68c6ce17bc430a329cfa9f685a7d26e60f8f3c'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -179,7 +179,6 @@ if not keep_upsampling_after_restart:
     windows = []
     window_index = 0
     window_start_time = None
-    elapsed_time = None
     # Set time per window by default to 6 minutes (will be updated later) in timedelta format
     time_per_window = timedelta(minutes=6)
     windows_remaining = None
@@ -279,7 +278,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
         Upsampling.running = False
 
         if sample_id_to_restart_upsampling_with is not None:
-          print(f'Upsampling will be restarted for sample {sample_id_to_restart_upsampling}')
+          print(f'Upsampling will be restarted for sample {sample_id_to_restart_upsampling_with}')
           restart_upsampling(sample_id_to_restart_upsampling_with)
 
         break
@@ -290,24 +289,15 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       Upsampling.eta = datetime.now() + Upsampling.time_remaining
       
       Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{ UI.UPSAMPLING_LEVEL_NAMES[2-level] }** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
-
-      # # If this is level 1, add that level 0 will take ~4x longer
-      # if level == 1:
-      #   estimated_level_0_time = ( Upsampling.elapsed_time + Upsampling.time_remaining ) * 4
-      #   Upsampling.status_markdown += f'\n(Final ETA: { as_local_hh_mm(Upsampling.eta + estimated_level_0_time) })'
           
       # Print the status with an hourglass emoji in front of it
       print(f'\n\n⏳ {Upsampling.status_markdown}\n\n')
       
       Upsampling.zs = sample_single_window(Upsampling.zs, labels, sampling_kwargs, level, prior, start, hps)
 
-      # Estimate time remaining
-      Upsampling.elapsed_time = datetime.now() - start_time
-      Upsampling.time_per_window = datetime.now() - Upsampling.window_start_time
-
-      # If this is the first window, divide the time per window by 2 because the first window is twice bigger
-      if start == 0:
-        Upsampling.time_per_window /= 2
+      # Only update time_per_window we've sampled at least 2 windows (as the first window can take either a long or short time due to its size)
+      if Upsampling.window_index > 1:
+        Upsampling.time_per_window = datetime.now() - Upsampling.window_start_time
 
       path = f'{base_path}/{Upsampling.project}/{Upsampling.sample_id}.z'
       print(f'Saving upsampled z to {path}')
@@ -551,9 +541,15 @@ class UI:
   upsampled_lengths = gr.Textbox(visible = False)
   # (Comma-separated list of audio lengths by upsampling level, e.g. '0.5,1'. If only midsampled audio is available, the list will only contain one element, e.g. '1'.)
 
-  mp3_files = gr.File(
-    label = 'MP3',
-    elem_id = 'audio-file',
+  current_chunks = gr.File(
+    elem_id = 'current-chunks',
+    type = 'binary',
+    visible = False,
+    file_count = 'multiple'
+  )
+
+  sibling_chunks = gr.File(
+    elem_id = 'sibling-chunks',
     type = 'binary',
     visible = False,
     file_count = 'multiple'
@@ -588,8 +584,7 @@ class UI:
 
   preview_just_the_last_n_sec = gr.Number(
     label = 'Preview the last ... seconds',
-    elem_id = 'preview-last-n-sec',
-    placeholder = 'Leave empty to preview the whole audio',
+    elem_id = 'preview-last-n-sec'
   )
 
   cut_audio_specs = gr.Textbox(
@@ -1583,7 +1578,7 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
       upsampled_lengths = metadata['upsampled_lengths']
       print(f'(Also loaded metadata: {metadata})')
 
-  mp3_files = [f'{filename}.mp3']
+  chunk_filenames = [f'{filename}.mp3']
 
   # If the mp3 size is > certain sie, we'll need to send it back in chunks, so we divide the mp3 into as many chunks as needed
   file_size = os.path.getsize(f'{filename}.mp3')
@@ -1600,12 +1595,12 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
       with open(chunk_filename, 'wb') as f:
         f.write(file_content[i:i+file_limit])
         print(f'Wrote bytes {i}-{i+file_limit} to {chunk_filename}')
-      mp3_files.append(chunk_filename)
+      chunk_filenames.append(chunk_filename)
   
-  print(f'Files to send: {mp3_files}')
+  print(f'Files to send: {chunk_filenames}')
 
   return {
-    UI.mp3_files: mp3_files,
+    UI.current_chunks: chunk_filenames,
     UI.total_audio_length: total_audio_length,
     UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
@@ -1721,7 +1716,7 @@ def seconds_to_tokens(sec, level = 2):
 
   return int(tokens)
 
-def start_upsampling(project_name, sample_id, artist, lyrics, genre_left, genre_center, genre_right, kill_runtime_once_done):
+def start_upsampling(project_name, sample_id, artist, lyrics, genre_left, genre_center, genre_right, kill_runtime_once_done=False):
 
   global hps, top_prior, priors
 
@@ -1839,7 +1834,7 @@ def start_upsampling(project_name, sample_id, artist, lyrics, genre_left, genre_
   Upsampling.hps.name = f'{base_path}/{project_name}'
 
   Upsampling.priors = [*upsamplers, None]
-  Upsampling.zs = upsample(Upsampling.zs, labels, Upsampling.params, Upsampling.priors, Upsampling.hps)
+  Upsampling.zs = upsample(Upsampling.zs, Upsampling.labels, Upsampling.params, Upsampling.priors, Upsampling.hps)
 
 def request_to_stop_upsampling():
   if Upsampling.running:
@@ -1861,6 +1856,8 @@ def restart_upsampling(sample_id, even_if_no_labels = False, even_if_not_ancesto
 
   global sample_id_to_restart_upsampling_with
 
+  get_custom_parents(Upsampling.project, force_reload = True)
+
   if Upsampling.running:
     print('Upsampling is already running; stopping & waiting for it to finish to restart')
     request_to_stop_upsampling()
@@ -1874,7 +1871,6 @@ def restart_upsampling(sample_id, even_if_no_labels = False, even_if_not_ancesto
     load_top_prior()
     # (We deleted the top_prior object in start_upsampling, so we need to reload it to recalculate the labels)
 
-  get_custom_parents(Upsampling.project, force_reload = True)
   assert even_if_not_ancestor or is_ancestor(Upsampling.project, Upsampling.sample_id, sample_id), 'Cannot restart upsampling with a sample that is not a descendant of the currently upsampled sample. If you really want to do this, set even_if_not_ancestor to True.'
 
   start_upsampling(Upsampling.project, sample_id, Upsampling.metas[0]['artist'], Upsampling.metas[0]['lyrics'], *[ meta['genre'] for meta in Upsampling.metas ])
@@ -2187,13 +2183,17 @@ with gr.Blocks(
             api_name = 'get-siblings'        
           )
 
+          preview_inputs = [
+              UI.project_name, UI.picked_sample, UI.cut_audio_specs, UI.preview_just_the_last_n_sec,
+              UI.upsample_rendering, UI.combine_upsampling_levels
+          ]
+
           get_preview_args = lambda force_reload: dict(
             inputs = [
-              UI.project_name, UI.picked_sample, UI.cut_audio_specs, UI.preview_just_the_last_n_sec,
-              UI.upsample_rendering, UI.combine_upsampling_levels, gr.State(force_reload)
+              *preview_inputs, gr.State(force_reload)
             ],
             outputs = [
-              UI.sample_box, UI.mp3_files, #UI.generated_audio,
+              UI.sample_box, UI.current_chunks, #UI.generated_audio,
               UI.total_audio_length, UI.upsampled_lengths,
               UI.go_to_children_button, UI.go_to_parent_button,
             ],
@@ -2201,7 +2201,6 @@ with gr.Blocks(
           )
 
           default_preview_args = get_preview_args(False)
-
 
           UI.picked_sample.change(
             **default_preview_args,
@@ -2243,6 +2242,12 @@ with gr.Blocks(
               }
             ''' % len(default_preview_args['inputs'])
           )
+
+          # # When the current chunks (i.e. audio chunks of the picked sample) change, update all the others too (UI.sibling_chunks) by calling get_sample for each sibling
+          # UI.current_chunks.render().change(
+          #   inputs = [ *preview_inputs ],
+          #   outputs = UI.sibling_chunks,
+
 
           UI.upsampled_lengths.render().change(
             inputs = UI.upsampled_lengths,
@@ -2395,8 +2400,8 @@ with gr.Blocks(
               ]
 
             UI.upsampling_status.render()
-
-            UI.mp3_files.render()
+            
+            UI.current_chunks.render()
 
             # Refresh button
             internal_refresh_button = gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False)

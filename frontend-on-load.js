@@ -228,7 +228,7 @@ async () => {
           if ( refreshButton ) {
             let emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
             let flip = () => emojis.push( refreshButton.innerText = emojis.shift() )      
-            Ji.clockInterval && clearInterval(Ji.clockInterval)
+            clearInterval(Ji.clockInterval)
             Ji.clockInterval = setInterval( flip, 500 )
             flip()
           }
