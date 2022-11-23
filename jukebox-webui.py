@@ -1,4 +1,4 @@
-GITHUB_SHA = 'b6e5431ae7a4fa447b4fdde4624cd304a2a7ba58'
+GITHUB_SHA = '5aca05d7d24ae5165a31e4c7d145e123aad5737e'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -587,7 +587,9 @@ class UI:
   )
 
   preview_just_the_last_n_sec = gr.Number(
-    label = 'Preview just the last ... seconds (0 to disable)',
+    label = 'Preview the last ... seconds',
+    elem_id = 'preview-last-n-sec',
+    placeholder = 'Leave empty to preview the whole audio',
   )
 
   cut_audio_specs = gr.Textbox(
@@ -866,7 +868,7 @@ def get_zs(project_name, sample_id, seek_upsampled = False):
   if not is_upsampled(zs) and seek_upsampled:
     upsampled_ancestor = get_first_upsampled_ancestor_zs(project_name, sample_id)
     if upsampled_ancestor:
-      zs = upsampled_ancestor
+      zs[:-1] = upsampled_ancestor[:-1]
   print(f'Loaded {filename}')
   return zs
 
@@ -2324,10 +2326,10 @@ with gr.Blocks(
                 if not upsampling_running:
                   zs = get_zs(project_name, sample_id)
                   levels = get_levels(zs)
-                  print(f'Levels: {levels}, z: {zs}')
+                  # print(f'Levels: {levels}, z: {zs}')
                   # We'll show if there's no level 0 in levels or if the length of level 0 (in seconds) is less than the length of level 2 (in seconds)
                   must_show = 0 not in levels or tokens_to_seconds(len(zs[0]), 0) < tokens_to_seconds(len(zs[2]), 2)
-                  print(f'Must show: {must_show}')
+                  # print(f'Must show: {must_show}')
                   
                 else:
                   must_show = True
