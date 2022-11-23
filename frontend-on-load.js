@@ -159,12 +159,10 @@ async () => {
     wavesurfer.on('play', () => Ji.playing = true)
     wavesurfer.on('pause', () => Ji.playing = false)
 
-    // Put an observer on #current-chunks (also in the shadow DOM) to reload the audio from its inner <a> element
-    Ji.parentAudioElement = window.shadowRoot.querySelector('#current-chunks')
-
     Ji.blobCache = []
 
     Ji.maxCacheSize = 1000
+
 
     Ji.addBlobToCache = ( key, blob ) => {
       let { blobCache, maxCacheSize } = Ji
@@ -176,12 +174,20 @@ async () => {
       console.log(`Added ${key} to cache, total cache size: ${blobCache.length} (${blobCache.reduce( (acc, { blob }) => acc + blob.size, 0 )/1000000} MB)`)
     }
 
+    Ji.fetchBlob = async element => {
+      console.log(`Fetching blob for ${filename}`)
+      let response = await fetch(element.href)
+      let blob = await response.blob()
+      console.log(`Loaded blob:`, blob)
+      return blob
+    }
+
     Ji.blobSHA = blob => {
       return new Promise( resolve => {
         let reader = new FileReader()
         reader.onload = () => {
           let arrayBuffer = reader.result
-          // use javascrit's built in crypto library to create a sha1 hash of the arrayBuffer
+          // use javascript's built in crypto library to create a sha1 hash of the arrayBuffer
           crypto.subtle.digest('SHA-1', arrayBuffer).then( hashBuffer => {
             // convert the hashBuffer to a hex string
             let hashArray = Array.from(new Uint8Array(hashBuffer))
@@ -193,11 +199,13 @@ async () => {
       })
     }        
 
+    // Put an observer on #current-chunks (also in the shadow DOM) to reload the audio from its inner <a> element
+    Ji.currentChunksContainer = window.shadowRoot.querySelector('#current-chunks')
 
-    let parentObserver = new MutationObserver( () => {
+    let currentChunksObserver = new MutationObserver( () => {
       
       // Check if there is an inner <a> element
-      Ji.audioElements = Ji.parentAudioElement.querySelectorAll('a')
+      Ji.audioElements = Ji.currentChunksContainer.querySelectorAll('a')
 
       if ( Ji.audioElements.length ) {
 
@@ -206,13 +214,13 @@ async () => {
         
         console.log('Found audio elements, removing parent observer')
 
-        parentObserver.disconnect()
+        currentChunksObserver.disconnect()
         lastAudioHref = null
 
         Ji.reloadAudio = async () => {
 
           console.log('Audio element updated, checking if href changed...')
-          Ji.audioElements = Ji.parentAudioElement.querySelectorAll('a')
+          Ji.audioElements = Ji.currentChunksContainer.querySelectorAll('a')
 
           let audioHref = Ji.audioElements[0].href
 
@@ -223,36 +231,26 @@ async () => {
 
           console.log(`Audio href changed to ${audioHref}, reloading wavesurfer...`)
 
-          // Replace the #reload-button inner text with an clock, blinking with different times at 0.5s intervals
-          let refreshButton = shadowRoot.querySelector('#refresh-button')
-          if ( refreshButton ) {
-            let emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
-            let flip = () => emojis.push( refreshButton.innerText = emojis.shift() )      
-            clearInterval(Ji.clockInterval)
-            Ji.clockInterval = setInterval( flip, 500 )
-            flip()
-          }
-
-          let loadBlob = async element => {
-            console.log(`Fetching blob for ${filename}`)
-            let response = await fetch(element.href)
-            let blob = await response.blob()
-            console.log(`Loaded blob:`, blob)
-            return blob
-          }
+          // // Replace the #reload-button inner text with an clock, blinking with different times at 0.5s intervals
+          // let refreshButton = shadowRoot.querySelector('#refresh-button')
+          // if ( refreshButton ) {
+          //   let emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
+          //   let flip = () => emojis.push( refreshButton.innerText = emojis.shift() )      
+          //   clearInterval(Ji.clockInterval)
+          //   Ji.clockInterval = setInterval( flip, 500 )
+          //   flip()
+          // }
 
           // Remove path & extension
           let filename = audioHref.replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
-          
+          // and the last 8 characters (the hash)
+            .slice(0, -8)
 
           console.log(`Checking blob cache for ${filename}`)
           let cachedBlob = Ji.blobCache.find( ({ key }) => key == filename )
 
-          let blob = cachedBlob?.blob || (
-            Ji.audioElements.length > 1 ?
-              new Blob(await Promise.all( Array.from(Ji.audioElements).slice(1).map( loadBlob ) ), { type: 'audio/mpeg' }) :
-              await loadBlob(Ji.audioElements[0])
-          )
+          let blob = cachedBlob?.blob ||
+            new Blob(await Promise.all( Array.from(Ji.audioElements).map( Ji.fetchBlob ) ), { type: 'audio/mpeg' })
           
           // compare the preloaded blob's SHA to the one in the cache
           let blobSHA = await Ji.blobSHA(blob)
@@ -295,6 +293,7 @@ async () => {
 
         // Reload the audio at once
         Ji.reloadAudio()
+        
 
         // And also reload it whenever the audio href changes
         new MutationObserver(Ji.reloadAudio).observe(Ji.audioElements[0], { attributes: true, attributeFilter: ['href'] })
@@ -303,7 +302,65 @@ async () => {
         
     })
 
-    parentObserver.observe(Ji.parentAudioElement, { childList: true, subtree: true })
+    currentChunksObserver.observe(Ji.currentChunksContainer, { childList: true, subtree: true })
+
+    // Put an observer on #sibling-chunks to cache the audio from its inner <a> elements
+    Ji.siblingChunksContainer = window.shadowRoot.querySelector('#sibling-chunks')
+
+    let siblingChunksObserver = new MutationObserver( () => {
+
+      // Check if there is an inner <a> element
+      let audioElements = Ji.siblingChunksContainer.querySelectorAll('a')
+
+      if ( audioElements.length ) {
+        
+        // Once we've found audio elements, we can remove the parent observer and create one for the first audio element instead
+        console.log('Found sibling audio elements, removing parent observer')
+
+        siblingChunksObserver.disconnect()
+        
+        let cacheSiblingChunks = async () => {
+
+          console.log('Sibling chunk container updated, caching blobs...')
+          let audioElements = Ji.siblingChunksContainer.querySelectorAll('a')
+
+          let blobPromisesByFilename = {}
+
+          for ( let audioElement of audioElements ) {
+
+            // Remove path & extension
+            let filename = audioElement.href.replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
+            // and the last 8 characters (the hash)
+              .slice(0, -8)
+
+            // If cached, skip
+            if ( Ji.blobCache.find( ({ key }) => key == filename ) )
+              continue
+
+            ( blobPromisesByFilename[filename] ||= [] ).push( Ji.fetchBlob(audioElement) )
+
+          }
+
+          // Combine all the blobs for each filename (await Promise.all for faster loading)
+          await Promise.all( Object.entries(blobPromisesByFilename).map( async ([filename, blobPromises]) => {
+            let blob = new Blob(await Promise.all(blobPromises), { type: 'audio/mpeg' })
+            Ji.addBlobToCache( filename, blob )
+            console.log(`Cached blob for ${filename}`)
+          } ) )
+
+        }
+
+        // Cache the audio at once
+        cacheSiblingChunks()
+
+        // And also cache it whenever the audio href changes
+        new MutationObserver(cacheSiblingChunks).observe(audioElements[0], { attributes: true, attributeFilter: ['href'] })
+
+      }
+
+    })
+
+    siblingChunksObserver.observe(Ji.siblingChunksContainer, { childList: true, subtree: true })
 
     Ji.clickTabWithText = function (buttonText) {
       for ( let button of document.querySelector('gradio-app').shadowRoot.querySelectorAll('div.tabs > div > button') ) {

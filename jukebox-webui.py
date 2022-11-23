@@ -1578,8 +1578,8 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
       upsampled_lengths = metadata['upsampled_lengths']
       print(f'(Also loaded metadata: {metadata})')
 
-  chunk_filenames = [f'{filename}.mp3']
-
+  chunk_filenames = []
+  
   # If the mp3 size is > certain sie, we'll need to send it back in chunks, so we divide the mp3 into as many chunks as needed
   file_size = os.path.getsize(f'{filename}.mp3')
   file_limit = 300000
@@ -1596,6 +1596,8 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
         f.write(file_content[i:i+file_limit])
         print(f'Wrote bytes {i}-{i+file_limit} to {chunk_filename}')
       chunk_filenames.append(chunk_filename)
+  else:
+    chunk_filenames = [f'{filename}.mp3']
   
   print(f'Files to send: {chunk_filenames}')
 
@@ -1612,6 +1614,17 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
       visible = True
     ),
     UI.upsampled_lengths: ','.join([str(length) for length in upsampled_lengths])
+  }
+
+def get_sibling_samples(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
+  sibling_files = []
+  for sibling_id in get_siblings(project_name, sample_id):
+    sibling_files.append(
+      *get_sample(project_name, sibling_id, cut_out, last_n_sec, upsample_rendering, combine_levels)[UI.current_chunks]
+    )
+    print(f'Added sibling files: {sibling_files}')
+  return {
+    UI.sibling_chunks: sibling_files
   }
 
 def refresh_siblings(project_name, sample_id):
@@ -2243,11 +2256,13 @@ with gr.Blocks(
             ''' % len(default_preview_args['inputs'])
           )
 
-          # # When the current chunks (i.e. audio chunks of the picked sample) change, update all the others too (UI.sibling_chunks) by calling get_sample for each sibling
-          # UI.current_chunks.render().change(
-          #   inputs = [ *preview_inputs ],
-          #   outputs = UI.sibling_chunks,
-
+          # When the current chunks (i.e. audio chunks of the picked sample) change, update all the others too (UI.sibling_chunks) by calling get_sample for each sibling          
+          UI.current_chunks.render().change(
+            inputs = [ *preview_inputs ],
+            outputs = UI.sibling_chunks,
+            fn = get_sibling_samples,
+            api_name = 'get-sibling-samples',
+          )
 
           UI.upsampled_lengths.render().change(
             inputs = UI.upsampled_lengths,
