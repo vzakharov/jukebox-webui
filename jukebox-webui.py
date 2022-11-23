@@ -1,4 +1,4 @@
-GITHUB_SHA = 'fa68c6ce17bc430a329cfa9f685a7d26e60f8f3c'
+GITHUB_SHA = '8fff8b45a72704a39e00948a30f37cd78d9785ae'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -1484,7 +1484,7 @@ def get_project(project_name, routed_sample_id):
     **settings_out_dict
   }
 
-def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, force_reload):
+def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, force_reload=False):
 
   global hps
 
@@ -1579,7 +1579,7 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
       print(f'(Also loaded metadata: {metadata})')
 
   chunk_filenames = []
-  
+
   # If the mp3 size is > certain sie, we'll need to send it back in chunks, so we divide the mp3 into as many chunks as needed
   file_size = os.path.getsize(f'{filename}.mp3')
   file_limit = 300000
@@ -1619,8 +1619,10 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
 def get_sibling_samples(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
   sibling_files = []
   for sibling_id in get_siblings(project_name, sample_id):
+    if sibling_id == sample_id:
+      continue
     sibling_files.append(
-      *get_sample(project_name, sibling_id, cut_out, last_n_sec, upsample_rendering, combine_levels)[UI.current_chunks]
+      get_sample(project_name, sibling_id, cut_out, last_n_sec, upsample_rendering, combine_levels)[UI.current_chunks]
     )
     print(f'Added sibling files: {sibling_files}')
   return {
@@ -2264,6 +2266,8 @@ with gr.Blocks(
             api_name = 'get-sibling-samples',
           )
 
+          UI.sibling_chunks.render()
+
           UI.upsampled_lengths.render().change(
             inputs = UI.upsampled_lengths,
             outputs = None,
@@ -2416,8 +2420,6 @@ with gr.Blocks(
 
             UI.upsampling_status.render()
             
-            UI.current_chunks.render()
-
             # Refresh button
             internal_refresh_button = gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False)
             

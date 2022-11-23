@@ -250,7 +250,7 @@ async () => {
           let cachedBlob = Ji.blobCache.find( ({ key }) => key == filename )
 
           let blob = cachedBlob?.blob ||
-            new Blob(await Promise.all( Array.from(Ji.audioElements).map( Ji.fetchBlob ) ), { type: 'audio/mpeg' })
+            new Blob( Ji.mainBlobPromise = await Promise.all( Array.from(Ji.audioElements).map( Ji.fetchBlob ) ), { type: 'audio/mpeg' } )
           
           // compare the preloaded blob's SHA to the one in the cache
           let blobSHA = await Ji.blobSHA(blob)
@@ -340,6 +340,9 @@ async () => {
             ( blobPromisesByFilename[filename] ||= [] ).push( Ji.fetchBlob(audioElement) )
 
           }
+
+          await Ji.mainBlobPromise
+          // (We need to wait for the main blob to be loaded, so that the others don't slow down the loading of the main blob)
 
           // Combine all the blobs for each filename (await Promise.all for faster loading)
           await Promise.all( Object.entries(blobPromisesByFilename).map( async ([filename, blobPromises]) => {
