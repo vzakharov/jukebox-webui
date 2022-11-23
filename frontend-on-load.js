@@ -41,7 +41,7 @@ async () => {
       let totalDuration = parseFloat(shadowSelector('#total-audio-length input').value)
       // console.log('Total duration: ', totalDuration)
       // Take preview duration from #preview-last-n-sec's input
-      let previewDuration = parseFloat(shadowSelector('#preview-last-n-sec input').value)
+      let previewDuration = parseFloat( shadowSelector('#preview-last-n-sec input')?.value || totalDuration )
       // console.log('Preview duration: ', previewDuration)
       let unshownDuration = totalDuration - previewDuration
       // console.log('Unshown duration: ', unshownDuration)
@@ -64,7 +64,7 @@ async () => {
       maxRegions: 1,
       formatTimeCallback: wavesurferToActualTime,
       // Salmon color, but with opacity
-      color: 'rgba(250, 128, 114, 0.3)',
+      color: 'rgba(250, 128, 114, 0.2)',
     }
 
     window.wavesurfer = WaveSurfer.create({
@@ -91,7 +91,6 @@ async () => {
         wavesurfer.markers.add({
           time,
           color: [ 'orange', 'lightgreen' ][i],
-          label: [ 'M', 'U' ][i],
         }).el.querySelector('.marker-label').title = `Your audio has been ${[ 'midsampled', 'upsampled' ][i]} to this point.`
       } )
     }
@@ -160,8 +159,8 @@ async () => {
     wavesurfer.on('play', () => Ji.playing = true)
     wavesurfer.on('pause', () => Ji.playing = false)
 
-    // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
-    Ji.parentAudioElement = window.shadowRoot.querySelector('#audio-file')
+    // Put an observer on #current-chunks (also in the shadow DOM) to reload the audio from its inner <a> element
+    Ji.parentAudioElement = window.shadowRoot.querySelector('#current-chunks')
 
     Ji.blobCache = []
 
