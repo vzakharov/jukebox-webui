@@ -36,7 +36,7 @@ async () => {
     let timelineDiv = shadowSelector('#audio-timeline')
     console.log(`Found timeline div:`, timelineDiv)
 
-    let getUnshownDuration = () => {
+    Ji.getUnshownDuration = () => {
       // Take total duration from #total-audio-length's input
       let totalDuration = parseFloat(shadowSelector('#total-audio-length input').value)
       // console.log('Total duration: ', totalDuration)
@@ -48,21 +48,21 @@ async () => {
       return unshownDuration
     }
 
-    let wavesurferToActualTime = wavesurferTime => {
+    Ji.wavesurferToActualTime = wavesurferTime => {
       // We need this function because the preview audio can be shorter than the full audio, in which case we need to add the additional (non-shown) duration to the time
-      return Math.round( ( wavesurferTime + getUnshownDuration() ) * 100 ) / 100
+      return Math.round( ( wavesurferTime + Ji.getUnshownDuration() ) * 100 ) / 100
     }
 
-    let actualToWavesurferTime = actualTime => {
+    Ji.actualToWavesurferTime = actualTime => {
       // We need this function to know where to e.g. place certain markers in the preview audio
-      return Math.round( ( actualTime - getUnshownDuration() ) * 100 ) / 100
+      return Math.round( ( actualTime - Ji.getUnshownDuration() ) * 100 ) / 100
     }
 
     let regionParams = {
       regions: [],
       dragSelection: false,
       maxRegions: 1,
-      formatTimeCallback: wavesurferToActualTime,
+      formatTimeCallback: Ji.wavesurferToActualTime,
       // Salmon color, but with opacity
       color: 'rgba(250, 128, 114, 0.2)',
     }
@@ -86,7 +86,7 @@ async () => {
       document.querySelectorAll('.upsampling-marker-tooltip').forEach( el => el.remove() )
       if ( !times ) return
       times.reverse().forEach( ( time, i ) => {
-        time = actualToWavesurferTime(time)
+        time = Ji.actualToWavesurferTime(time)
         if ( time <= 0 ) return
         wavesurfer.markers.add({
           time,
@@ -105,7 +105,7 @@ async () => {
     wavesurfer.on('region-update-end', ({ start, end }) => {
       // We need to update value in such a way that any of the app's trigger events are fired
       // round to 2 decimal places
-      cutAudioSpecsInput.value = [ start, end ].map( time => Math.round( wavesurferToActualTime(time) * 100 ) / 100 ).join('-')
+      cutAudioSpecsInput.value = [ start, end ].map( time => Math.round( Ji.wavesurferToActualTime(time) * 100 ) / 100 ).join('-')
       cutAudioSpecsInput.dispatchEvent(new Event('input'))
       updatedAutomatically = true
     })
@@ -133,7 +133,7 @@ async () => {
         return
       }
 
-      let [ start, end ] = cutAudioSpecsInput.value.split('-').map( time => actualToWavesurferTime(parseFloat(time)) )
+      let [ start, end ] = cutAudioSpecsInput.value.split('-').map( time => Ji.actualToWavesurferTime(parseFloat(time)) )
       region ||= wavesurfer.addRegion(regionParams)
       region.update({ start, end })
     })
@@ -146,7 +146,7 @@ async () => {
     cutAudioSpecsInput.addEventListener('blur', () => wavesurfer.regions.disableDragSelection() )
     
     Ji.trackTime = time => (
-      shadowSelector('#audio-time').value = wavesurferToActualTime(time),
+      shadowSelector('#audio-time').value = Ji.wavesurferToActualTime(time),
       Ji.currentTime = time
     )
 
