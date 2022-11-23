@@ -85,7 +85,7 @@ async () => {
       // delete all .upsampling-marker-tooltip elements
       document.querySelectorAll('.upsampling-marker-tooltip').forEach( el => el.remove() )
       if ( !times ) return
-      times.reverse().forEach( ( time, i ) => {
+      times.slice().reverse().forEach( ( time, i ) => {
         time = Ji.actualToWavesurferTime(time)
         if ( time <= 0 ) return
         wavesurfer.markers.add({
