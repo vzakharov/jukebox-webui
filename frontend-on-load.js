@@ -342,7 +342,7 @@ async () => {
           }
 
           await Ji.mainBlobPromise
-          // (We need to wait for the main blob to be loaded, so that the others don't slow down the loading of the main blob)
+          // (We need to wait for the main blob to be loaded, so that the others don't slow down the loading of the main one)
 
           // Combine all the blobs for each filename (await Promise.all for faster loading)
           await Promise.all( Object.entries(blobPromisesByFilename).map( async ([filename, blobPromises]) => {

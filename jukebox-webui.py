@@ -1,4 +1,4 @@
-GITHUB_SHA = '8fff8b45a72704a39e00948a30f37cd78d9785ae'
+GITHUB_SHA = 'd11ae26400a795b494f59a797ece4271ac27c446'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -506,6 +506,8 @@ class UI:
   picked_sample = gr.Radio(
     label = 'Variations',
   )
+
+  picked_sample_updated = gr.Number( 0, visible = False )
 
   sample_box = gr.Box(
     visible = False
@@ -1484,7 +1486,7 @@ def get_project(project_name, routed_sample_id):
     **settings_out_dict
   }
 
-def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, force_reload=False):
+def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_rendering=4, combine_levels=True, force_reload=False):
 
   global hps
 
@@ -1613,18 +1615,23 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
     UI.sample_box: gr.update(
       visible = True
     ),
-    UI.upsampled_lengths: ','.join([str(length) for length in upsampled_lengths])
+    UI.upsampled_lengths: ','.join([str(length) for length in upsampled_lengths]),
+    # Random number for picked sample updated flag
+    UI.picked_sample_updated: random.random(),
   }
 
 def get_sibling_samples(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
+  print(f'Updating sibling samples for {sample_id}...')
   sibling_files = []
   for sibling_id in get_siblings(project_name, sample_id):
     if sibling_id == sample_id:
       continue
-    sibling_files.append(
-      get_sample(project_name, sibling_id, cut_out, last_n_sec, upsample_rendering, combine_levels)[UI.current_chunks]
-    )
-    print(f'Added sibling files: {sibling_files}')
+    sibling_sample = get_sample(project_name, sibling_id, cut_out, last_n_sec, upsample_rendering, combine_levels)
+    sibling_sample_files = sibling_sample[UI.current_chunks]
+    # breakpoint()
+    print(f'Adding sibling {sibling_id} with files {sibling_sample_files}')
+    sibling_files.extend(sibling_sample_files)
+    print(f'Totally {len(sibling_files)} sibling files')
   return {
     UI.sibling_chunks: sibling_files
   }
@@ -2211,6 +2218,7 @@ with gr.Blocks(
               UI.sample_box, UI.current_chunks, #UI.generated_audio,
               UI.total_audio_length, UI.upsampled_lengths,
               UI.go_to_children_button, UI.go_to_parent_button,
+              UI.picked_sample_updated
             ],
             fn = get_sample,
           )
@@ -2257,15 +2265,16 @@ with gr.Blocks(
               }
             ''' % len(default_preview_args['inputs'])
           )
-
-          # When the current chunks (i.e. audio chunks of the picked sample) change, update all the others too (UI.sibling_chunks) by calling get_sample for each sibling          
-          UI.current_chunks.render().change(
+           
+          # When the picked sample is updated, update all the others too (UI.sibling_chunks) by calling get_sample for each sibling
+          UI.picked_sample_updated.render().change(
             inputs = [ *preview_inputs ],
             outputs = UI.sibling_chunks,
             fn = get_sibling_samples,
             api_name = 'get-sibling-samples',
           )
 
+          UI.current_chunks.render()
           UI.sibling_chunks.render()
 
           UI.upsampled_lengths.render().change(
@@ -2871,7 +2880,9 @@ with gr.Blocks(
           eval_args = dict(
             inputs = eval_server_code,
             outputs = eval_output,
-            fn = lambda code: eval(code),
+            fn = lambda code: {
+              eval_output: eval( code )
+            }
           )
 
           eval_button.click(**eval_args)
