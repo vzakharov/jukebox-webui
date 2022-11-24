@@ -1,7 +1,7 @@
-GITHUB_SHA = '8ee64fb65534a17edcb19d882ca04ab855ddb585'
+GITHUB_SHA = 'v0.4.0'
 # TODO: Don't forget to change to release branch/version before publishing
 
-DEV_MODE = True
+DEV_MODE = False
 # TODO: Don't forget to set to False before publishing
 
 #@title Jukebox Web UI
