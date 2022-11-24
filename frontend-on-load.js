@@ -354,9 +354,10 @@ async () => {
 
             let chunkPromise = new Promise( async resolve => {
               // Wait for totalDelay (which is increased by rateLimit each time)
-              totalDelay += rateLimit
-              console.log(`Waiting ${totalDelay}ms before fetching ${filename}`)
+              // totalDelay += rateLimit
+              let delay = totalDelay += rateLimit
               await new Promise( resolve => setTimeout(resolve, totalDelay) )
+              console.log(`Fetching ${filename} after ${delay}ms`)
               let blob = await Ji.fetchBlob(audioElement)
               console.log(`Fetched ${filename}:`, blob)
               resolve(blob)
