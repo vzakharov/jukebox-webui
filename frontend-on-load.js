@@ -242,9 +242,10 @@ async () => {
       console.log(`Checking blob cache for ${filename}`)
       let cachedBlob = Ji.blobCache.find( ({ key }) => key == filename )
 
-      if ( cachedBlob && cachedBlob.blob instanceof Promise ) {
+      if ( cachedBlob && cachedBlob instanceof Promise ) {
         console.log(`Blob for ${filename} is a promise, waiting for it to resolve`)
-        
+        cachedBlob = await cachedBlob
+      }        
 
       // If cached blob is a promise, wait for it to resolve
       // If not cached, combine a blob from all the chunks in audioElements
