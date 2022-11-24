@@ -182,8 +182,8 @@ async () => {
       Ji.playing && wavesurfer.play()
       
       // Replace the clock with a refresh glyph
-      if ( refreshButton ) {
-        refreshButton.innerText = '↻'
+      if ( Ji.refreshButton ) {
+        Ji.refreshButton.innerText = '↻'
       }
 
       // Remove the gray filter
