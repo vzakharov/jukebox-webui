@@ -186,8 +186,10 @@ async () => {
         Ji.refreshButton.innerText = '↻'
       }
 
-      // Remove the gray filter
-      Ji.grayOutWavesurfer(false)
+      // Remove the gray filter, unless it was preloaded, in which case we'll do this once we make sure the loaded audio is the same as the preloaded one
+      if ( !Ji.preloadedAudio ) {
+        Ji.grayOutWavesurfer(false)
+      }
 
     })
 
@@ -258,6 +260,7 @@ async () => {
 
       if ( filename == Ji.lastLoadedBlobKey ) {
         console.log(`The blob for ${filename} is already loaded, not reloading`)
+        Ji.grayOutWavesurfer(false)
         return
       }
 

@@ -1,4 +1,4 @@
-GITHUB_SHA = '368cf03554473deddee39c30a1ba007c43c55881'
+GITHUB_SHA = 'a82ddc1cb65cf1b4c92e38fbf1f5f260de93280a'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -1492,8 +1492,8 @@ def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_r
 
     # Add cutout/preview suffixes, replacing dots with underscores (to avoid confusion with file extensions)
 
-    def replace_dots_with_underscores(s):
-      return s.replace('.', '_')
+    def replace_dots_with_underscores(number):
+      return str(number).replace('.', '_')
 
     if cut_out:
       filename += f' cut {replace_dots_with_underscores(cut_out)}'
@@ -2270,6 +2270,7 @@ with gr.Blocks(
                     let { key, blob } = cached_blob
                     wavesurfer.loadBlob( blob )
                     Ji.lastLoadedBlobKey = key
+                    Ji.preloadedAudio = true
                   }
 
                 } catch (e) {
