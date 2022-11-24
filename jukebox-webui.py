@@ -2257,7 +2257,7 @@ with gr.Blocks(
 
                   // Now we'll try to reload the audio from cache. To do that, we'll find the first cached blob (Ji.blobCache) whose key starts with the sample_id either followed by space or end of string.
                   // (Although different version of the same sample might have been cached, the first one will be the one that was added last, so it's the most recent one)
-                  let cached_blob = Ji.blobCache.find( ({ key }) => rf'^{sample_id}($| )'.test(key) )
+                  let cached_blob = Ji.blobCache.find( ({ key }) => key.match( new RegExp(`^${sample_id}( |$)`) ) )
                   if ( cached_blob ) {
                     console.log( 'Found cached blob', cached_blob )
                     let { key, blob } = cached_blob
