@@ -1,6 +1,12 @@
+GITHUB_SHA = '8ee64fb65534a17edcb19d882ca04ab855ddb585'
+# TODO: Don't forget to change to release branch/version before publishing
+
+DEV_MODE = True
+# TODO: Don't forget to set to False before publishing
+
 #@title Jukebox Web UI
 
-#@markdown This Notebook allows you to creating music with OpenAI’s Jukebox model using a simple, web-based UI that uses your Colab Notebook as a backend.
+#@markdown This Notebook allows you to create music with OpenAI’s Jukebox model using a simple, web-based UI that uses your Colab Notebook as a backend.
 #@markdown I strongly suggest that you refer to the [getting started page](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md) before running it.
 #@markdown ***
 
@@ -24,6 +30,10 @@ base_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
 models_path = '/content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
 #@markdown This is where your models will be stored. This app is capable of loading the model from an arbitrary path, so storing it on Google Drive will save you the hassle (and time) of having to download or copy it every time you start the instance. The models will be downloaded automatically if they don’t exist, so you don’t need to download them manually.
 
+#@markdown ### *Optimized Jukebox* (experimental)
+use_optimized_jukebox = False #@param{type:'boolean'}
+#@markdown The optimized version by craftmine1000 uses less memory and can run on the free Colab tier. It also has a few other improvements too. It’s not as well-tested as the original one, though, so only set it if you have a good reason to.
+
 share_gradio = True #param{type:'boolean'}
 # ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
 
@@ -34,6 +44,9 @@ debug_gradio = True #param{type:'boolean'}
 
 reload_all = False #param{type:'boolean'}
 
+import glob
+import json
+import math
 import subprocess
 
 def print_gpu_and_memory():
@@ -44,11 +57,31 @@ def print_gpu_and_memory():
 
 # If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
 
+
+# Print the IP address of the current Colab instance
+import socket
+
 try:
+  old_colab_instance_ip = colab_instance_ip
+except NameError:
+  old_colab_instance_ip = None
+
+colab_instance_ip = socket.gethostbyname(socket.gethostname())
+print(f'🌐 IP address: {colab_instance_ip}')
+
+if colab_instance_ip == old_colab_instance_ip:
+  print('(Same as during the previous run)')
+else:
+  print('(New IP)')
+
+
+try:
+
   print_gpu_and_memory()
   empty_cache()
   print('Cache cleared.')
   print_gpu_and_memory()
+
   assert not reload_all
   repeated_run
   # ^ If this doesn't give an error, it means we're in Colab and re-running the notebook (because repeated_run is defined in the first run)
@@ -57,10 +90,14 @@ try:
 except:
   
   if use_google_drive:
-    from google.colab import drive
+    from google.colab import drive, runtime
     drive.mount('/content/drive')
 
-  !pip install git+https://github.com/openai/jukebox.git
+  if use_optimized_jukebox:
+    !pip install git+https://github.com/craftmine1000/jukebox-saveopt.git
+  else:
+    !pip install git+https://github.com/openai/jukebox.git
+    
   !pip install gradio
 
   repeated_run = True
@@ -119,30 +156,40 @@ except:
 
 browser_timezone = None
 
-class Upsampling:
+try:
+  keep_upsampling_after_restart
+except NameError:
+  keep_upsampling_after_restart = False
 
-  running = False
-  zs = None
-  project = None
-  sample_id = None
-  level = None
-  metas = None
-  labels = None
-  priors = None
-  params = None
+if not keep_upsampling_after_restart:
 
-  windows = []
-  window_index = 0
-  window_start_time = None
-  elapsed_time = None
-  # Set time per window by default to 6 minutes (will be updated later) in timedelta format
-  time_per_window = timedelta(minutes=6)
-  windows_remaining = None
-  time_remaining = None
-  eta = None
+  class Upsampling:
 
-  status_markdown = None
-  should_refresh_audio = False
+    project = None
+    sample_id = None
+
+    running = False
+    zs = None
+    level = None
+    metas = None
+    labels = None
+    priors = None
+    params = None
+
+    windows = []
+    window_index = 0
+    window_start_time = None
+    # Set time per window by default to 6 minutes (will be updated later) in timedelta format
+    time_per_window = timedelta(minutes=6)
+    windows_remaining = None
+    time_remaining = None
+    eta = None
+
+    status_markdown = None
+    should_refresh_audio = False
+
+    stop = False
+    kill_runtime_once_done = False
 
 print('Monkey patching Jukebox methods...')
 
@@ -191,19 +238,7 @@ def monkey_patched_load_audio(file, sr, offset, duration, mono=False):
 jukebox.utils.audio_utils.load_audio = monkey_patched_load_audio
 print('load_audio monkey patched.')
 
-
-# Monkey patch sample_level, saving the current upsampled z to respective file
-# The original code is as follows:
-# def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
-#   print_once(f"Sampling level {level}")
-#   if total_length >= prior.n_ctx:
-#       for start in get_starts(total_length, prior.n_ctx, hop_length):
-#           zs = sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps)
-#   else:
-#       zs = sample_partial_window(zs, labels, sampling_kwargs, level, prior, total_length, hps)
-#   return zs
-#
-# Rewritten:
+sample_id_to_restart_upsampling_with = None
 
 def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
 
@@ -236,30 +271,33 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
     Upsampling.window_index = 0
     for start in Upsampling.windows:
 
+      if Upsampling.stop:
+        print(f'Upsampling stopped for level {level}')
+        if Upsampling.level == 0:
+          Upsampling.stop = False
+        Upsampling.running = False
+
+        if sample_id_to_restart_upsampling_with is not None:
+          print(f'Upsampling will be restarted for sample {sample_id_to_restart_upsampling_with}')
+          restart_upsampling(sample_id_to_restart_upsampling_with)
+
+        break
+
       Upsampling.window_start_time = datetime.now()
       Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
       Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
       Upsampling.eta = datetime.now() + Upsampling.time_remaining
       
-      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** at **level { level }**\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
-
-      # # If this is level 1, add that level 0 will take ~4x longer
-      # if level == 1:
-      #   estimated_level_0_time = ( Upsampling.elapsed_time + Upsampling.time_remaining ) * 4
-      #   Upsampling.status_markdown += f'\n(Final ETA: { as_local_hh_mm(Upsampling.eta + estimated_level_0_time) })'
+      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{ UI.UPSAMPLING_LEVEL_NAMES[2-level] }** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
           
       # Print the status with an hourglass emoji in front of it
       print(f'\n\n⏳ {Upsampling.status_markdown}\n\n')
       
       Upsampling.zs = sample_single_window(Upsampling.zs, labels, sampling_kwargs, level, prior, start, hps)
 
-      # Estimate time remaining
-      Upsampling.elapsed_time = datetime.now() - start_time
-      Upsampling.time_per_window = datetime.now() - Upsampling.window_start_time
-
-      # If this is the first window, divide the time per window by 2 because the first window is twice bigger
-      if start == 0:
-        Upsampling.time_per_window /= 2
+      # Only update time_per_window we've sampled at least 2 windows (as the first window can take either a long or short time due to its size)
+      if Upsampling.window_index > 1:
+        Upsampling.time_per_window = datetime.now() - Upsampling.window_start_time
 
       path = f'{base_path}/{Upsampling.project}/{Upsampling.sample_id}.z'
       print(f'Saving upsampled z to {path}')
@@ -267,6 +305,12 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       print('Done.')
       Upsampling.should_refresh_audio = True
       Upsampling.window_index += 1
+
+  if level == 0:
+    Upsampling.running = False
+    if Upsampling.kill_runtime_once_done:
+      print('Killing runtime')
+      runtime.unassign()
 
   return Upsampling.zs
 
@@ -294,24 +338,26 @@ if Upsampling.running:
   ''')
 else:
 
-  try:
-    vqvae, priors, top_prior
+  if not keep_upsampling_after_restart:
 
-    assert total_duration == calculated_duration and not reload_prior and not reload_all
-    print('Model already loaded.')
-  except:
+    try:
+      vqvae, priors, top_prior
 
-    print(f'Loading vqvae and top_prior for duration {total_duration}...')
+      assert total_duration == calculated_duration and not reload_prior and not reload_all
+      print('Model already loaded.')
+    except:
 
-    vqvae, *priors = MODELS['5b_lyrics']
+      print(f'Loading vqvae and top_prior for duration {total_duration}...')
 
-    vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
+      vqvae, *priors = MODELS['5b_lyrics']
 
-    load_top_prior()
+      vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
 
-    calculated_duration = total_duration
+      load_top_prior()
 
-    empty_cache
+      calculated_duration = total_duration
+
+      empty_cache
 
 
 # If the base folder doesn't exist, create it
@@ -394,10 +440,14 @@ class UI:
     step = 1
   )
 
+  max_n_samples = gr.Number(
+    visible = False
+  )
+
   temperature = gr.Slider(
     label = 'Temperature',
-    minimum = 0.96,
-    maximum = 1.01,
+    minimum = 0.9,
+    maximum = 1.1,
     step = 0.005
   )
 
@@ -442,13 +492,22 @@ class UI:
   )
 
   show_leafs_only = gr.Checkbox(
-    label = 'Do not show intermediate samples',
+    label = 'Hide branch samples',
+  )
+
+  branch_sample_count = gr.Number(
+    label = '# branch samples',
+  )
+  leaf_sample_count = gr.Number(
+    label = '# leaf samples',
   )
 
 
   picked_sample = gr.Radio(
     label = 'Variations',
   )
+
+  picked_sample_updated = gr.Number( 0, visible = False )
 
   sample_box = gr.Box(
     visible = False
@@ -464,7 +523,7 @@ class UI:
   upsampling_level = gr.Dropdown(
     label = 'Upsampling level',
     choices = [ 'Raw' ],
-    value = 'Raw'
+    value = 'Raw',
   )
 
   upsample_rendering = gr.Dropdown(
@@ -474,19 +533,28 @@ class UI:
     value = 'Pseudo-stereo with delay',
   )
 
+  combine_upsampling_levels = gr.Checkbox(
+    label = 'Combine levels',
+    value = True
+  )
+
   continue_upsampling_button = gr.Button('Continue upsampling', visible = False )
 
-  # generated_audio = gr.Audio(
-  #   label = 'Generated audio',
-  #   elem_id = 'generated-audio',
-  #   visible = False
-  # )
+  upsampled_lengths = gr.Textbox(visible = False)
+  # (Comma-separated list of audio lengths by upsampling level, e.g. '0.5,1'. If only midsampled audio is available, the list will only contain one element, e.g. '1'.)
 
-  mp3_file = gr.File(
-    label = 'MP3',
-    elem_id = 'audio-file',
+  current_chunks = gr.File(
+    elem_id = 'current-chunks',
     type = 'binary',
-    visible = False
+    visible = False,
+    file_count = 'multiple'
+  )
+
+  sibling_chunks = gr.File(
+    elem_id = 'sibling-chunks',
+    type = 'binary',
+    visible = False,
+    file_count = 'multiple'
   )
   
   audio_waveform = gr.HTML(
@@ -513,18 +581,22 @@ class UI:
     label = 'Total audio length, sec',
     elem_id = 'total-audio-length',
     interactive = False,
+    visible = False
   )
 
   preview_just_the_last_n_sec = gr.Number(
-    label = 'Preview just the last ... seconds (0 to disable)'
+    label = 'Preview the last ... seconds',
+    elem_id = 'preview-last-n-sec'
   )
 
-  trim_to_n_sec = gr.Number(
-    label = 'Trim to ... seconds (0 to disable)',
-    elem_id = 'trim-to-n-sec'
+  cut_audio_specs = gr.Textbox(
+    label = 'Cut, trim, merge',
+    placeholder = 'See accordion below for syntax',
+    elem_id = 'cut-audio-specs',
   )
 
-  trim_button = gr.Button( 'Trim', visible = False )
+  cut_audio_preview_button = gr.Button( 'Preview', visible = False, variant = 'secondary' )
+  cut_audio_apply_button = gr.Button( 'Apply', visible = False, variant = 'primary' )
 
   sample_to_upsample = gr.Textbox(
     label = 'Sample to upsample',
@@ -544,9 +616,14 @@ class UI:
     label = 'Genre for upsampling (right channel)'
   )
 
+  kill_runtime_once_done = gr.Checkbox(
+    label = 'Kill runtime once done',
+    value = False
+  )
+
   upsample_button = gr.Button('Start upsampling', variant="primary", elem_id='upsample-button')
 
-  upsampling_status_markdown = gr.Markdown('Upsampling progress will be shown here')
+  upsampling_status = gr.Markdown('Upsampling progress will be shown here', visible = False)
 
   upsampling_audio_refresher = gr.Number( value = 0, visible = False )
   # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
@@ -766,9 +843,9 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
 
     # zs is a list of 3 tensors, each of shape (n_samples, n_tokens)
     # To write the z for a single sample, we need to take a subarray of each tensor
-    zs = [ z[i:i+1] for z in zs ]
+    this_sample_zs = [ z[i:i+1] for z in zs ]
 
-    t.save(zs, f'{filename}.z')
+    t.save(this_sample_zs, f'{filename}.z')
     print(f'Wrote {filename}.z')
 
   return {
@@ -780,10 +857,34 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   }
 
 
-def get_zs(project_name, sample_id):
+def get_zs(project_name, sample_id, seek_upsampled = False):
   global base_path
 
-  return t.load(f'{base_path}/{project_name}/{sample_id}.z')
+  filename = f'{base_path}/{project_name}/{sample_id}.z'
+  zs = t.load(filename)
+  if not is_upsampled(zs) and seek_upsampled:
+    upsampled_ancestor = get_first_upsampled_ancestor_zs(project_name, sample_id)
+    if upsampled_ancestor:
+      zs[:-1] = upsampled_ancestor[:-1]
+  print(f'Loaded {filename}')
+  return zs
+
+def save_zs(zs, project_name, sample_id):
+  global base_path
+
+  filename = f'{base_path}/{project_name}/{sample_id}.z'
+  t.save(zs, filename)
+  print(f'Wrote {filename}')
+
+def backup_zs(zs, project_name, sample_id):
+  global base_path
+
+  timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+  filename = f'{base_path}/{project_name}/bak/{sample_id}_{timestamp}.z'
+  if not os.path.exists(os.path.dirname(filename)):
+    os.makedirs(os.path.dirname(filename))
+  t.save(zs, filename)
+  print(f'Backed up {filename}')
 
 def get_levels(zs):
 
@@ -811,7 +912,7 @@ def is_upsampled(zs):
 
 def get_first_upsampled_ancestor_zs(project_name, sample_id):
   zs = get_zs(project_name, sample_id)
-  print(f'Looing for the first upsampled ancestor of {sample_id}')
+  # print(f'Looking for the first upsampled ancestor of {sample_id}')
   if is_upsampled(zs):
     print(f'Found upsampled ancestor: {sample_id}')
     return zs
@@ -823,9 +924,10 @@ def get_first_upsampled_ancestor_zs(project_name, sample_id):
       print(f'No upsampled ancestor found for {sample_id}')
       return None
 
-def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level=2, upsample_rendering=3):
+def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stereo_rendering=3, combine_levels=True):
 
-  print(f'Generating audio for {project_name}/{sample_id} (level {level}, upsample_rendering {upsample_rendering}, trim_to_n_sec {trim_to_n_sec}, preview_just_the_last_n_sec {preview_just_the_last_n_sec})')
+  print(f'Generating audio for {project_name}/{sample_id} (level {level}, stereo rendering {stereo_rendering}, combine levels {combine_levels})')
+  print(f'Cut: {cut_audio}, preview: {preview_sec}')
 
   # Get current GPU memory usage. If it's above 12GB, empty the cache
   memory = t.cuda.memory_allocated()
@@ -837,32 +939,36 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
 
   global base_path, hps
 
-  filename = f'{base_path}/{project_name}/{sample_id}'
+  zs = get_zs(project_name, sample_id, seek_upsampled=True)
 
-  print(f'Loading {filename}.z')
-  zs = t.load(f'{filename}.z')
+  # If no level is specified, use 2 (and then go downwards if combine_levels is True)
+  if level is None:
+    level = 2
+
   z = zs[level]
   # z is of shape torch.Size([1, n_tokens])
   # print(f'Loaded {filename}.z at level {level}, shape: {z.shape}')
 
-  total_audio_length = int( tokens_to_seconds(z.shape[1], level) * 100 ) / 100
-
-  if trim_to_n_sec:
-    trim_to_tokens = seconds_to_tokens(trim_to_n_sec, level)
-    # print(f'Trimming to {trim_to_n_sec} seconds ({trim_to_tokens} tokens)')
-    z = z[ :, :trim_to_tokens ]
-    # print(f'Trimmed to shape: {z.shape}')
+  if cut_audio:
+    z = cut_z(z, cut_audio, level)
   
-  if preview_just_the_last_n_sec:
-    preview_tokens = seconds_to_tokens(preview_just_the_last_n_sec, level)
-    # print(f'Trimming audio to last {preview_just_the_last_n_sec} seconds ({preview_tokens} tokens)')
-    preview_tokens += ( len(z) / seconds_to_tokens(1, level) ) % 1
-    z = z[ :, int( -1 * preview_tokens ): ]
-    # print(f'Trimmed to shape: {z.shape}')
+  # Update audio_length
+  audio_length = int( tokens_to_seconds(z.shape[1], level) * 100 ) / 100
+  
+  if preview_sec:
+    seconds_to_cut_from_start = audio_length - abs(preview_sec) if preview_sec < 0 else preview_sec
+    # For negative values, we need to replace "-" with "<" because "-" is used to indicate a range
+    z = cut_z(z, f'-{seconds_to_cut_from_start}', level)
+  else:
+    seconds_to_cut_from_start = 0
 
   def decode(z):
-    wav = vqvae.decode([ z ], start_level=level, end_level=level+1).cpu().numpy()
-    # the decoded wav is of shape (n_samples, sample_length, 1)
+    if z.shape[1] > 0:
+      wav = vqvae.decode([ z ], start_level=level, end_level=level+1).cpu().numpy()
+      # the decoded wav is of shape (n_samples, sample_length, 1). We will convert it later to (n_samples, 1 or 2 depending on stereo_rendering)
+    else:
+      # If the sample is empty, we need to create an empty wav of the right shape
+      wav = np.zeros((z.shape[0], 0, 1))
     return wav
   
   # If z is longer than 30 seconds, there will likely be not enough RAM to decode it in one go
@@ -908,13 +1014,13 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
 
         # Fade in the left overlap and add it to the existing wav if it's not empty (i.e. if this is not the first chunk)
         left_overlap = fade(left_overlap, 'in')
-        print(f'Faded in left overlap')
+        # print(f'Faded in left overlap')
         # # Show as plot
         # plt.plot(left_overlap[0, :, 0])
         # plt.show()
 
         wav[ :, -left_overlap.shape[1]: ] += left_overlap
-        print(f'Added left overlap to existing wav:')
+        # print(f'Added left overlap to existing wav:')
         # # Plot the resulting (faded-in + previous fade-out) overlap
         # plt.plot(wav[0, -left_overlap.shape[1]:, 0])
         # plt.show()
@@ -963,8 +1069,8 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
       
       else:
 
-        pass
-        # print(f'Last chunk, not adding right overlap')
+        print(f'Last chunk, not adding right overlap')
+        break
       
       print(f'Decoded {i+chunk_size} tokens out of {z.shape[1]}, wav shape: {wav.shape}')
 
@@ -977,9 +1083,9 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
   else:
 
     # upsample_rendering of 0, 1 or 2 means we just need to pick one of the samples
-    if upsample_rendering < 3:
+    if stereo_rendering < 3:
 
-      wav = wav[upsample_rendering, :, 0]
+      wav = wav[stereo_rendering, :, 0]
     
     # upsample_rendering of 3 means we need to convert the audio to stereo, putting sample 0 to the left, 1 to the center, and 2 to the right
     # 4 means we also want to add a delay of 20 ms for the left and 40 ms for the right channel
@@ -993,7 +1099,7 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
         stereo = np.zeros((wav.shape[1] + 2 * delay_quants, 2))
         # First let's convert the wav to [n_quants, n_samples] by getting rid of the last dimension and transposing the rest
         wav = wav[:, :, 0].T
-        print(f'Converted wav to shape {wav.shape}')
+        # print(f'Converted wav to shape {wav.shape}')
         # Take sample 0 for left channel (delayed once), 1 for both channels (non-delayed), and sample 2 for right channel (delayed twice)
         if delay_quants:
           stereo[ delay_quants: -delay_quants, 0 ] = wav[ :, 0 ]
@@ -1006,15 +1112,45 @@ def get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_se
         # Now we have max amplitude of 2, so we need to divide by 2
         stereo /= 2
 
-        print(f'Converted to stereo with delay {stereo_delay_ms} ms, current shape: {stereo.shape}, max/min amplitudes: {np.max(stereo)}/{np.min(stereo)}')
+        # print(f'Converted to stereo with delay {stereo_delay_ms} ms, current shape: {stereo.shape}, max/min amplitudes: {np.max(stereo)}/{np.min(stereo)}')
 
         return stereo
       
-      wav = to_stereo(wav, stereo_delay_ms=20 if upsample_rendering == 4 else 0)
+      wav = to_stereo(wav, stereo_delay_ms=20 if stereo_rendering == 4 else 0)
 
-  print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {total_audio_length} seconds.')
+  upsampled_lengths = [ 0, 0 ]
+  if combine_levels:
 
-  return wav, total_audio_length
+    available_levels = get_levels(zs)
+    combined_wav = None
+
+    for sub_level in available_levels:
+
+      if sub_level < level:
+        sub_wav = get_audio(project_name, sample_id, cut_audio, seconds_to_cut_from_start, sub_level, stereo_rendering, combine_levels=False)[0]
+        upsampled_lengths[sub_level] = sub_wav.shape[0] / hps.sr + seconds_to_cut_from_start
+      else:
+        sub_wav = wav
+        # If the wav is mono, we need to convert it to stereo by using the same values for both channels
+        # (Note that this is most always the case, since the original audio is always mono, and this function is likely to be called for the original level, but we're abstracting it just in case)
+        if sub_wav.ndim == 1:
+          sub_wav = np.stack([ sub_wav, sub_wav ], axis=1)
+
+      if combined_wav is None:
+        combined_wav = sub_wav
+        print(f'Created wav of length {combined_wav.shape[0]} for level {sub_level}')
+      else:
+        n_to_add = sub_wav.shape[0] - combined_wav.shape[0]
+        # (This might be confusing why we are subtracting the shape of combined wav from the "sub" wav, but it's because the higher level "sub" wav is the one that is being upsampled, so it's the one that needs to be longer. The entire terminology with levels going backwards while the quality goes up is confusing, but we work with what we have)
+        if n_to_add > 0:
+          print(f'Adding {n_to_add} samples for level {sub_level}')
+          combined_wav = np.concatenate([ combined_wav, sub_wav[ -n_to_add: ] ], axis=0)
+
+    wav = combined_wav
+
+  print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {audio_length} seconds.')
+
+  return wav, audio_length, upsampled_lengths
 
 # def get_audio_being_upsampled():
 
@@ -1058,11 +1194,11 @@ def get_children(project_name, parent_sample_id, include_custom=True):
 
   return child_ids
 
-def get_custom_parents(project_name):
+def get_custom_parents(project_name, force_reload=False):
 
   global base_path, custom_parents
   
-  if not custom_parents or custom_parents['project_name'] != project_name:
+  if not custom_parents or custom_parents['project_name'] != project_name or force_reload:
     print('Loading custom parents...')
     custom_parents = {}
     filename = f'{base_path}/{project_name}/{project_name}-parents.yaml'
@@ -1215,13 +1351,13 @@ def get_parent(project_name, sample_id):
 def get_prefix(project_name, parent_sample_id):
   return f'{parent_sample_id or project_name}-'
 
-def get_samples(project_name, show_leafs_only):
+def get_samples(project_name, leafs_only):
 
   choices = []
   for filename in os.listdir(f'{base_path}/{project_name}'):
     if re.match(r'.*\.zs?$', filename):
       id = filename.split('.')[0]
-      if show_leafs_only and len( get_children(project_name, id) ) > 0:
+      if leafs_only and len( get_children(project_name, id) ) > 0:
         continue
       choices += [ id ]
   
@@ -1230,7 +1366,7 @@ def get_samples(project_name, show_leafs_only):
   
   return choices
 
-def get_projects():
+def get_projects(include_new = True):
   
   global base_path
 
@@ -1245,8 +1381,17 @@ def get_projects():
 
   print(f'Found {len(project_names)} projects: {project_names}')
 
-  # Add "CREATE NEW" option in the beginning
-  return ['CREATE NEW'] + project_names
+  if include_new:
+    project_names = ['CREATE NEW', *project_names]
+
+  return project_names
+
+def get_project_name_from_sample_id(sample_id):
+  projects = get_projects(include_new = False)
+  # Find a project that matches the sample id, which is [project name]-[rest of sample id]
+  for project_name in projects:
+    if sample_id.startswith(f'{project_name}-'):
+      return project_name
 
 def get_siblings(project_name, sample_id):
 
@@ -1283,7 +1428,9 @@ def get_project(project_name, routed_sample_id):
 
     print(f'Loading settings for {project_name}...')
 
-    settings_path = f'{base_path}/{project_name}/{project_name}.yaml'
+    project_path = f'{base_path}/{project_name}'
+    hps.name = project_path
+    settings_path = f'{project_path}/{project_name}.yaml'
     if os.path.isfile(settings_path):
       with open(settings_path, 'r') as f:
         loaded_settings = yaml.load(f, Loader=yaml.FullLoader)
@@ -1339,57 +1486,134 @@ def get_project(project_name, routed_sample_id):
     **settings_out_dict
   }
 
-def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_sec, level_name, upsample_rendering):
+def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
+    
+    filename = f'{base_path}/{project_name}/rendered/{sample_id} '
+
+    # Add cutout/preview suffixes, replacing dots with underscores (to avoid confusion with file extensions)
+
+    def replace_dots_with_underscores(number):
+      return str(number).replace('.', '_')
+
+    if cut_out:
+      filename += f'cut {replace_dots_with_underscores(cut_out)} '
+    if last_n_sec:
+      filename += f'last {replace_dots_with_underscores(last_n_sec)} '
+    
+    # Add lowercase of upsample rendering option
+    if upsample_rendering:
+      filename += f'r{upsample_rendering} '
+    
+    if combine_levels:
+      filename += f'combined '
+    
+    return filename
+
+def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_rendering=4, combine_levels=True, force_reload=False):
 
   global hps
 
-  level_names = UI.UPSAMPLING_LEVEL_NAMES
-  level = 2 - level_names.index(level_name)
+  print(f'Loading sample {sample_id}')
 
-  print(f'Loading sample {sample_id} for level {level} ({level_name})')
+  filename = get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels)
+  filename_without_hash = filename
 
-  filename = f'{base_path}/{project_name}/rendered/{sample_id} L{level}'
+  # Add a hash (8 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
+  filename += f'{hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:8]} '
 
-  # Add trimmed/preview suffixes
-  if trim_to_n_sec:
-    filename += f' trim {trim_to_n_sec}'
-  if preview_just_the_last_n_sec:
-    filename += f' preview {preview_just_the_last_n_sec}'
-  
-  # Add lowercase of upsample rendering option
-  if upsample_rendering and level_name != 'Raw':
-    suffixes = [ 'left', 'center', 'right', 'stereo', 'stereo-delay' ]
-    filename += f' {suffixes[upsample_rendering]}'
-  
-  # Add a hash (6 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
-  filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:6]}'
 
-  print(f'Checking if {filename}.wav/.mp3 exist...')
+  print(f'Checking if {filename} is cached...')
 
-  # If the filenames do not exist, render it
-  if not os.path.isfile(f'{filename}.wav') or not os.path.isfile(f'{filename}.mp3'):
+  # Make sure all 3 of wav, mp3 and yaml exist
+  if not force_reload:
+    for ext in [ 'wav', 'mp3', 'yaml' ]:
+      if not os.path.isfile(f'{filename}.{ext}'):
+        force_reload = True
+        break
 
-    wav, total_audio_length = get_audio(project_name, sample_id, trim_to_n_sec, preview_just_the_last_n_sec, level, upsample_rendering)
+  if force_reload:
+
+    print('Nope, rendering...')
+
+    # First, let's delete any old files that have the same name but a different hash (because these are now obsolete)
+    for f in glob.glob(f'{filename_without_hash}.*'):
+      print(f'(Deleting now-obsolete cached file {f})')
+      os.remove(f)
+
+    if last_n_sec:
+      last_n_sec = -last_n_sec
+    # (Because get_audio, called below, accepts "preview_sec", whose positive value means "preview the first n seconds", but we want to preview the last n seconds)
+
+    wav, total_audio_length, upsampled_lengths = get_audio(project_name, sample_id, cut_out, last_n_sec, None, upsample_rendering, combine_levels)
+    # (level is None, which means "the highest level that is available", i.e. 2)
 
     if not os.path.exists(os.path.dirname(filename)):
       os.makedirs(os.path.dirname(filename))
 
     librosa.output.write_wav(f'{filename}.wav', np.asfortranarray(wav), hps.sr)
 
+    # Add metadata (total audio length, upsampled lengths) to a yaml with the same name as the wav file
+    with open(f'{filename}.yaml', 'w') as f:
+      yaml.dump({
+        'total_audio_length': total_audio_length,
+        'upsampled_lengths': upsampled_lengths
+      }, f)
+
     # Convert to mp3
     subprocess.run(['ffmpeg', '-y', '-i', f'{filename}.wav', '-acodec', 'libmp3lame', '-ab', '320k', f'{filename}.mp3'])
 
+    # If there are more than 30 files in the rendered folder (i.e. more than 10 samples), delete the ones older than 1 day
+    file_count_limit = 30
+    files = glob.glob(f'{base_path}/{project_name}/rendered/*')
+    if len(files) > file_count_limit:
+      removed_count = 0
+      failed_count = 0
+      for f in files:
+        try:
+          if datetime.now() - datetime.fromtimestamp(os.path.getmtime(f)) > timedelta(days=1):
+            os.remove(f)
+            removed_count += 1
+        except Exception as e:
+          print(f'Could not remove {f}: {e}')
+          failed_count += 1
+      print(f'Deleted {removed_count} of {removed_count + failed_count} old files')
+        
   else:
-    wav, _ = librosa.load(filename + '.wav', sr=hps.sr)
-    total_audio_length = wav.shape[0] / hps.sr
-    print(f'Loaded {filename}.wav of shape {wav.shape} ({total_audio_length} sec)')
+    print('Yep, using it.')
+    wav = None
+
+    # Load metadata
+    with open(f'{filename}.yaml', 'r') as f:
+      metadata = yaml.load(f, Loader=yaml.FullLoader)
+      total_audio_length = metadata['total_audio_length']
+      upsampled_lengths = metadata['upsampled_lengths']
+      print(f'(Also loaded metadata: {metadata})')
+
+  chunk_filenames = []
+
+  # If the mp3 size is > certain sie, we'll need to send it back in chunks, so we divide the mp3 into as many chunks as needed
+  file_size = os.path.getsize(f'{filename}.mp3')
+  file_limit = 300000
+  if file_size > file_limit:
+    print(f'MP3 file size is {file_size} bytes, splitting into chunks...')
+    file_content = open(f'{filename}.mp3', 'rb').read()
+    for i in range(0, file_size, file_limit):
+      # Place the chunk file in tmp/[filename without path] [range].mp3_chunk
+      # Create the tmp folder if it doesn't exist
+      if not os.path.exists(f'tmp'):        
+        os.makedirs(f'tmp')
+      chunk_filename = f'tmp/{os.path.basename(filename)}{i}-{i+file_limit} .mp3_chunk'
+      with open(chunk_filename, 'wb') as f:
+        f.write(file_content[i:i+file_limit])
+        print(f'Wrote bytes {i}-{i+file_limit} to {chunk_filename}')
+      chunk_filenames.append(chunk_filename)
+  else:
+    chunk_filenames = [f'{filename}.mp3']
+  
+  print(f'Files to send: {chunk_filenames}')
 
   return {
-    # UI.generated_audio: gr.update(
-    #   value = ( hps.sr, wav ),
-    #   label = f'{sample_id} (lossless)',
-    # ),
-    UI.mp3_file: f'{filename}.mp3',
+    UI.current_chunks: chunk_filenames,
     UI.total_audio_length: total_audio_length,
     UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
@@ -1400,6 +1624,25 @@ def get_sample(project_name, sample_id, preview_just_the_last_n_sec, trim_to_n_s
     UI.sample_box: gr.update(
       visible = True
     ),
+    UI.upsampled_lengths: ','.join([str(length) for length in upsampled_lengths]),
+    # Random number for picked sample updated flag
+    UI.picked_sample_updated: random.random(),
+  }
+
+def get_sibling_samples(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
+  print(f'Updating sibling samples for {sample_id}...')
+  sibling_files = []
+  for sibling_id in get_siblings(project_name, sample_id):
+    if sibling_id == sample_id:
+      continue
+    sibling_sample = get_sample(project_name, sibling_id, cut_out, last_n_sec, upsample_rendering, combine_levels)
+    sibling_sample_files = sibling_sample[UI.current_chunks]
+    # breakpoint()
+    print(f'Adding sibling {sibling_id} with files {sibling_sample_files}')
+    sibling_files.extend(sibling_sample_files)
+    print(f'Totally {len(sibling_files)} sibling files')
+  return {
+    UI.sibling_chunks: sibling_files
   }
 
 def refresh_siblings(project_name, sample_id):
@@ -1504,9 +1747,11 @@ def seconds_to_tokens(sec, level = 2):
 
   return int(tokens)
 
-def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
+def start_upsampling(project_name, sample_id, artist, lyrics, genre_left, genre_center, genre_right, kill_runtime_once_done=False):
 
   global hps, top_prior, priors
+
+  genres = [genre_left, genre_center, genre_right]
 
   print(f'Starting upsampling for {sample_id}, artist: {artist}, lyrics: {lyrics}, genres: {genres}')
 
@@ -1514,7 +1759,11 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   Upsampling.sample_id = sample_id
 
   Upsampling.running = True
-  Upsampling.status_markdown = "Upsampling started. Loading the upsampling models..."
+  Upsampling.status_markdown = "Loading the upsampling models..."
+
+  Upsampling.level = 1
+
+  Upsampling.kill_runtime_once_done = kill_runtime_once_done
 
   print(f'Upsampling {sample_id} with genres {genres}')
   filename = f'{base_path}/{project_name}/{sample_id}.z'
@@ -1522,7 +1771,6 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   Upsampling.zs = t.load(filename)
 
   # Get the level 0/1 zs of the first upsampled ancestor (so we can continue upsampling from where we left off)
-  first_upsampled_ancestor = get_first_upsampled_ancestor_zs(project_name, sample_id)
   for i in range( len(Upsampling.zs) ):
     if i == 2:
       Upsampling.zs[i] = Upsampling.zs[i][0].repeat(3, 1)
@@ -1546,20 +1794,40 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
     offset = 0,
     lyrics = lyrics,
   ) for genre in genres ]
-  
+
   if not Upsampling.labels:
 
-    try:
-      assert top_prior
-    except:
-      load_top_prior()
-    
-    Upsampling.labels = top_prior.labeller.get_batch_labels(Upsampling.metas, 'cuda')
-    print('Calculated new labels from top prior')
+    # Search for labels under [project_name]/[project_name].labels
+    labels_path = f'{base_path}/{project_name}/{project_name}.labels'
 
-    # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
-    del top_prior
-    empty_cache()
+    should_reload_labels = True
+
+    if os.path.exists(labels_path):
+      Upsampling.labels, stored_metas = t.load(labels_path)
+      print(f'Loaded labels from {labels_path}')
+      # Make sure the metas match
+      if stored_metas == Upsampling.metas:
+        print('Metas match, not reloading labels')
+        should_reload_labels = False
+      else:
+        print(f'Metas do not match, reloading labels. Stored metas: {stored_metas}, current metas: {Upsampling.metas}')
+    
+    if should_reload_labels:
+
+      try:
+        assert top_prior
+      except:
+        load_top_prior()
+      
+      Upsampling.labels = top_prior.labeller.get_batch_labels(Upsampling.metas, 'cuda')
+      print('Calculated new labels from top prior')
+
+      t.save([ Upsampling.labels, Upsampling.metas ], labels_path)
+      print(f'Saved labels and metas to {labels_path}')
+
+      # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
+      del top_prior
+      empty_cache()
 
   labels = Upsampling.labels
 
@@ -1576,6 +1844,8 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   bak_filename = f'{filename}.{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.bak'
   shutil.copy(filename, f'{bak_filename}')
   print(f'Created backup of {filename} as {bak_filename}')
+
+  t.save(Upsampling.zs, filename)
 
   Upsampling.params = [
     dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
@@ -1595,7 +1865,53 @@ def start_upsampling(project_name, sample_id, artist, lyrics, *genres):
   Upsampling.hps.name = f'{base_path}/{project_name}'
 
   Upsampling.priors = [*upsamplers, None]
-  Upsampling.zs = upsample(Upsampling.zs, labels, Upsampling.params, Upsampling.priors, Upsampling.hps)
+  Upsampling.zs = upsample(Upsampling.zs, Upsampling.labels, Upsampling.params, Upsampling.priors, Upsampling.hps)
+
+def request_to_stop_upsampling():
+  if Upsampling.running:
+    print('Stopping upsampling...')
+    Upsampling.stop = True
+  else:
+    print('No upsampling running')
+
+def is_ancestor(project_name, potential_ancestor, potential_descendant):
+  parent = get_parent(project_name, potential_descendant)
+  if parent == potential_ancestor:
+    return True
+  elif parent:
+    return is_ancestor(project_name, potential_ancestor, parent)
+  else:
+    return False
+
+def restart_upsampling(sample_id, even_if_no_labels = False, even_if_not_ancestor = False):
+
+  global sample_id_to_restart_upsampling_with
+
+  get_custom_parents(Upsampling.project, force_reload = True)
+
+  if Upsampling.running:
+    print('Upsampling is already running; stopping & waiting for it to finish to restart')
+    request_to_stop_upsampling()
+    sample_id_to_restart_upsampling_with = sample_id
+    return
+
+  assert not Upsampling.running, 'Upsampling is already running. Use stop_upsampling() to stop it and wait for the current window to finish.'
+
+  assert Upsampling.labels or even_if_no_labels, 'Upsampling.labels is empty, cannot restart. If you want to restart anyway, set even_if_no_labels to True.'
+  if not Upsampling.labels:
+    load_top_prior()
+    # (We deleted the top_prior object in start_upsampling, so we need to reload it to recalculate the labels)
+
+  assert even_if_not_ancestor or is_ancestor(Upsampling.project, Upsampling.sample_id, sample_id), 'Cannot restart upsampling with a sample that is not a descendant of the currently upsampled sample. If you really want to do this, set even_if_not_ancestor to True.'
+
+  start_upsampling(Upsampling.project, sample_id, Upsampling.metas[0]['artist'], Upsampling.metas[0]['lyrics'], *[ meta['genre'] for meta in Upsampling.metas ])
+  # (Note that the metas don't do anything here, as we're already using the calculated labels. Keeping for future cases where we might want to restart with different metas.)
+  print('Warning: Using the same labels as before. If you want to restart with different labels, you need to set Upsampling.labels to None before calling restart_upsampling.')
+
+def set_keep_upsampling_after_restart():
+  global keep_upsampling_after_restart
+
+  keep_upsampling_after_restart = True
 
 def tokens_to_seconds(tokens, level = 2):
 
@@ -1603,17 +1919,99 @@ def tokens_to_seconds(tokens, level = 2):
 
   return tokens * raw_to_tokens / hps.sr / 4 ** (2 - level)
 
-def trim(project_name, sample_id, n_sec):
+def cut_z(z, specs, level):
+  # possible specs:
+  # start-end -- cuts out the specified range (in seconds), either can be omitted to cut from the start or to the end, the dash can be omitted to cut from the specified time to the end
+  # start-end+sample_id@start-end -- takes the specified range from the specified sample and adds it instead of the cut-out range
+  # start-end+start-end -- same, but takes the specified range from the current sample
+  # +sample_id@start-end -- adds the specified range from the specified sample to the end of the current sample
+  # +start-end -- keeps just the specified range from the current sample (i.e. the opposite of start-end)
+  # Any whitespaces are ignored
+  # All of these can be combined with a comma to cut out multiple ranges
+  specs = specs.replace(' ', '')
 
-  filename = f'{base_path}/{project_name}/{sample_id}.z'
-  zs = t.load(filename)
-  n_tokens = seconds_to_tokens(n_sec)
-  zs[2] = zs[2][:, :n_tokens]
-  t.save(zs, filename)
-  return 0
+  print(f'z shape before cut: {z.shape}')
+
+  for spec in specs.split(','):
+
+    remove, add = spec.split('+') if '+' in spec else (spec, None)    
+
+    out_z = z[:, :0]
+
+    if remove:
+
+      # The removed interval is a string of format 'start-end' or just 'start'. In the latter case, end is assumed to be the end of the sample
+      remove_start, remove_end = remove.split('-') if '-' in remove else (remove, None)
+
+      # Hidden spec: if either start or end start with a '<', the corresponding value is taken from the end of the sample (i.e. we just negate the value, i.e. replace '<' with '-')
+      # ("<" because "-" is already used for specifying the interval. It also looks like a backwards arrow which is a good visual cue for this)
+      remove_start, remove_end = [ s and s.replace('<', '-') for s in (remove_start, remove_end) ]
+
+      # If start or end is empty, it means the interval starts at the beginning or ends at the end
+      remove_start = seconds_to_tokens(float(remove_start), level) if remove_start else 0
+
+      # If remove_start is more than the length of the sample, we just return an empty sample
+      # (We don't need to see the add part, because it's not going to be added to anything. The only exception is if no remove part is specified, but in that case this part of the code is not executed anyway)
+      if remove_start >= z.shape[1]:
+        print(f'Warning: remove_start ({remove_start}) is more than the length of the sample ({z.shape[1]}) for level {level}. Returning an empty sample.')
+        break
+
+      remove_end = seconds_to_tokens(float(remove_end), level) if remove_end else z.shape[1]
+      print(f'Cutting out {remove} (tokens {remove_start}-{remove_end})')
+
+      out_z = t.cat([out_z, z[:, :remove_start]], dim=1)
+      print(f'out_z shape: {out_z.shape}')
+
+    # For the added interval, both start and end are required (but sample_id is optional, and defaults to the current sample)
+    if add:
+      add_sample_id, add = add.split('@') if '@' in add else (None, add)
+      add_start, add_end = add.split('-')
+      add_start = seconds_to_tokens(float(add_start), level)
+      add_end = seconds_to_tokens(float(add_end), level)
+      print(f'Adding {add} (tokens {add_start}-{add_end}) from { add_sample_id or "current sample" }')
+
+      if add_sample_id:
+        add_z = get_zs(get_project_name_from_sample_id(add_sample_id), add_sample_id)[level]
+        # If no remove was specified, add the entire original sample (before we add the part from the other sample)
+        if not remove:
+          out_z = z
+      else:
+        add_z = z
+        # (In this case we don't add the original sample, because we just want to keep the specified range)
+      
+      out_z = t.cat([out_z, add_z[:, add_start:add_end]], dim=1)
+      print(f'out_z shape: {out_z.shape}')
+
+    if remove:
+      # If we added anything, and its end was after the end of the original sample, we break
+      # This is needed for cases when we add a part that hasn't been upsampled yet, so it would be added for the low-quality level, but not for the high-quality level (at least partially)
+      # In this case, we don't want to add the rest of the original sample, because then we would have a "hole" in the high-quality level, which will make further upsampling impossible
+      if add and add_end > z.shape[1]:
+        print(f'Warning: add_end ({add_end}) is more than the length of the sample ({z.shape[1]}) for level {level}. Breaking before adding the rest of the original sample.')
+        break
+
+      print(f'Adding the rest of the sample (tokens {remove_end}-{z.shape[1]})')
+      out_z = t.cat([out_z, z[:, remove_end:]], dim = 1)
+      print(f'out_z shape: {out_z.shape}')
+    
+    z = out_z
+
+  print(f'z shape after cut: {out_z.shape}')
+  return z
+
+def cut_zs(zs, specs):
+  return [ cut_z(zs[level], specs, level) for level in range(len(zs)) ]
+
+def cut_audio(project_name, sample_id, interval):
+  zs = get_zs(project_name, sample_id)
+  backup_zs(zs, project_name, sample_id)
+  zs = cut_zs(zs, interval)
+  save_zs(zs, project_name, sample_id)
+  return ''
 
 SHOW = gr.update( visible = True )
 HIDE = gr.update( visible = False )
+SHOW_OR_HIDE = lambda x: gr.update( visible = x )
 
 with gr.Blocks(
   css = """
@@ -1640,7 +2038,7 @@ with gr.Blocks(
 
 
   """,
-  title = 'Jukebox Web UI v0.3',
+  title = f'Jukebox Web UI { GITHUB_SHA }{ " (dev mode)" if DEV_MODE else "" }',
 ) as app:
 
   UI.browser_timezone.render()
@@ -1782,14 +2180,31 @@ with gr.Blocks(
             
             UI.routed_sample_id.render()
             UI.sample_tree.render()
-            UI.show_leafs_only.render()
-            
-            UI.show_leafs_only.change(
-              inputs = [ UI.project_name, UI.show_leafs_only ],
-              outputs = UI.sample_tree,
-              fn = lambda *args: gr.update( choices = get_samples(*args) ),
-            )
 
+            with gr.Column():
+
+              # with gr.Accordion('Options & stats', open=False ):
+
+              UI.show_leafs_only.render()
+
+              UI.show_leafs_only.change(
+                inputs = [ UI.project_name, UI.show_leafs_only ],
+                outputs = UI.sample_tree,
+                fn = lambda *args: gr.update( choices = get_samples(*args) ),
+              )
+
+                # UI.branch_sample_count.render()
+                # UI.leaf_sample_count.render()
+
+                # # Recount on sample_tree change
+                # UI.sample_tree.change(
+                #   inputs = UI.project_name,
+                #   outputs = [ UI.branch_sample_count, UI.leaf_sample_count ],
+                #   fn = lambda project_name: [
+                #     len(get_samples(project_name, leafs_only)) for leafs_only in [ False, True ]
+                #   ]
+                # )
+            
           UI.picked_sample.render()
 
           UI.sample_tree.change(
@@ -1799,28 +2214,92 @@ with gr.Blocks(
             api_name = 'get-siblings'        
           )
 
-          preview_args = dict(
+          preview_inputs = [
+              UI.project_name, UI.picked_sample, UI.cut_audio_specs, UI.preview_just_the_last_n_sec,
+              UI.upsample_rendering, UI.combine_upsampling_levels
+          ]
+
+          get_preview_args = lambda force_reload: dict(
             inputs = [
-              UI.project_name, UI.picked_sample, UI.preview_just_the_last_n_sec, UI.trim_to_n_sec, UI.upsampling_level, UI.upsample_rendering
+              *preview_inputs, gr.State(force_reload)
             ],
-            outputs = [ 
-              UI.sample_box, UI.mp3_file, #UI.generated_audio,
-              UI.total_audio_length, UI.go_to_children_button, UI.go_to_parent_button,
+            outputs = [
+              UI.sample_box, UI.current_chunks, #UI.generated_audio,
+              UI.total_audio_length, UI.upsampled_lengths,
+              UI.go_to_children_button, UI.go_to_parent_button,
+              UI.picked_sample_updated
             ],
             fn = get_sample,
           )
 
+          default_preview_args = get_preview_args(False)
+
+          # Virtual input & handler to create an API method for get_sample_filename
+          gr.Textbox(visible=False).change(
+            inputs = preview_inputs,
+            outputs = gr.Textbox(visible=False),
+            fn = get_sample_filename,
+            api_name = 'get-sample-filename'
+          )
+
           UI.picked_sample.change(
-            **preview_args,
+            **default_preview_args,
             api_name = 'get-sample',
             _js =
             # Set the search string to ?[sample_id] for easier navigation
             '''
-              ( ...args ) => (
-                args[1] && window.history.pushState( {}, '', `?${args[1]}` ),
-                args
-              ) 
+              async ( ...args ) => {
+
+                try {
+
+                  let sample_id = args[1]
+
+                  sample_id && window.history.pushState( {}, '', `?${args[1]}` )
+
+                  // Gray out the wavesurfer
+                  Ji.grayOutWavesurfer()
+
+                  // Now we'll try to reload the audio from cache. To do that, we'll find the first cached blob (Ji.blobCache) whose key starts with the sample_id either followed by space or end of string.
+                  // (Although different version of the same sample might have been cached, the first one will be the one that was added last, so it's the most recent one)
+                  let cached_blob = Ji.blobCache.find( ({ key }) => key.match( new RegExp(`^${sample_id}( |$)`) ) )
+                  if ( cached_blob ) {
+                    console.log( 'Found cached blob', cached_blob )
+                    let { key, blob } = cached_blob
+                    wavesurfer.loadBlob( blob )
+                    Ji.lastLoadedBlobKey = key
+                    Ji.preloadedAudio = true
+                  }
+
+                } catch (e) {
+                  console.error(e)
+                } finally {
+
+                  return args
+
+                }
+
+
+              }
             '''
+          )
+           
+          # When the picked sample is updated, update all the others too (UI.sibling_chunks) by calling get_sample for each sibling
+          UI.picked_sample_updated.render().change(
+            inputs = [ *preview_inputs ],
+            outputs = UI.sibling_chunks,
+            fn = get_sibling_samples,
+            api_name = 'get-sibling-samples',
+          )
+
+          UI.current_chunks.render()
+          UI.sibling_chunks.render()
+
+          UI.upsampled_lengths.render().change(
+            inputs = UI.upsampled_lengths,
+            outputs = None,
+            fn = None,
+            # Split by comma and turn into floats and add wavesurfer markers for each (first clear all the markers)
+            _js = 'comma_separated => Ji.addUpsamplingMarkers( comma_separated.split(",").map( parseFloat ) )'
           )
 
           with UI.sample_box.render():
@@ -1832,7 +2311,7 @@ with gr.Blocks(
                 with gr.Column():
 
                   UI.upsampling_level.render().change(
-                    **preview_args,
+                    **default_preview_args,
                   )
 
                   # Only show the upsampling elements if there are upsampled versions of the picked sample
@@ -1845,19 +2324,23 @@ with gr.Blocks(
                     print(f'Available level names: {available_level_names}')
 
                     return {
-                      UI.upsampling_accordion: gr.update(
-                        visible = len(levels) > 1 or upsampling_running,
+                      # UI.upsampling_accordion: gr.update(
+                      #   visible = len(levels) > 1 or upsampling_running,
+                      # ),
+                      # (removing the accordion for now)
+                      UI.upsampling_status: gr.update(
+                        visible = upsampling_running,
                       ),
                       UI.upsampling_level: gr.update(
                         choices = available_level_names,
-                        # Choose the highest available level by default 
+                        # Choose the highest available level
                         value = available_level_names[-1],
                       )
                     }
                   
                   show_or_hide_upsampling_elements_args = dict(
                     inputs = [ UI.project_name, UI.picked_sample, UI.upsampling_running ],
-                    outputs = [ UI.upsampling_accordion, UI.upsampling_level ],
+                    outputs = [ UI.upsampling_status, UI.upsampling_level ],
                     fn = show_or_hide_upsampling_elements,
                   )
 
@@ -1866,21 +2349,25 @@ with gr.Blocks(
 
                 with gr.Column(visible = False) as upsampling_manipulation_column:
 
-                  # Show the column only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
-                  UI.upsampling_level.change(
-                    inputs = [ UI.upsampling_level, UI.upsampling_running ],
-                    outputs = [ upsampling_manipulation_column, UI.compose_row ],
-                    fn = lambda upsampling_level, upsampling_running: [
-                      gr.update( visible = upsampling_level != 'Raw' ),
-                      gr.update( visible = upsampling_level == 'Raw' and not upsampling_running ),
-                    ]
-                  )
+                  # # Show the column only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
+                  # UI.upsampling_level.change(
+                  #   inputs = [ UI.upsampling_level, UI.upsampling_running ],
+                  #   outputs = [ upsampling_manipulation_column, UI.compose_row ],
+                  #   fn = lambda upsampling_level, upsampling_running: [
+                  #     gr.update( visible = upsampling_level != 'Raw' ),
+                  #     gr.update( visible = upsampling_level == 'Raw' and not upsampling_running ),
+                  #   ]
+                  # )
 
-                  UI.upsample_rendering.render().change(
-                    **preview_args,
-                  )
+                  with gr.Row():
 
-              UI.upsampling_status_markdown.render()
+                    UI.upsample_rendering.render().change(
+                      **default_preview_args,
+                    )
+
+                    UI.combine_upsampling_levels.render().change(
+                      **default_preview_args,
+                    )
 
               # Show the continue upsampling markdown only if the current level's length in tokens is less than the total audio length
               # Also update the upsampling button to say "Continue upsampling" instead of "Upsample"
@@ -1889,10 +2376,10 @@ with gr.Blocks(
                 if not upsampling_running:
                   zs = get_zs(project_name, sample_id)
                   levels = get_levels(zs)
-                  print(f'Levels: {levels}, z: {zs}')
+                  # print(f'Levels: {levels}, z: {zs}')
                   # We'll show if there's no level 0 in levels or if the length of level 0 (in seconds) is less than the length of level 2 (in seconds)
                   must_show = 0 not in levels or tokens_to_seconds(len(zs[0]), 0) < tokens_to_seconds(len(zs[2]), 2)
-                  print(f'Must show: {must_show}')
+                  # print(f'Must show: {must_show}')
                   
                 else:
                   must_show = True
@@ -1946,7 +2433,7 @@ with gr.Blocks(
 
               [ 
                 UI.upsampling_audio_refresher.change( **action ) for action in [ 
-                  preview_args, 
+                  default_preview_args, 
                   show_or_hide_upsampling_elements_args,
                   dict(
                     inputs = None,
@@ -1957,15 +2444,13 @@ with gr.Blocks(
                 ] 
               ]
 
-            # UI.generated_audio.render()
-
-            UI.mp3_file.render()
-
+            UI.upsampling_status.render()
+            
             # Refresh button
             internal_refresh_button = gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False)
             
             internal_refresh_button.click(
-              **preview_args,
+              **get_preview_args(force_reload = True),
             )
 
             internal_refresh_button.click(
@@ -1993,13 +2478,16 @@ with gr.Blocks(
               <input type="number" class="gr-box gr-input gr-text-input" id="audio-time" value="0" readonly>
 
               <!-- Download button -- it will be set to the right href later on -->
+              <!--
               <a class="gr-button gr-button-lg gr-button-secondary" id="download-button">
                 🔗
               </a>
+              -->
+              <!-- (Removed for now, as it only links to the first chunk, will fix later) -->
 
               <!-- Refresh button -- it virtually clicks the "internal-refresh-button" button (which is hidden) -->
-              <button class="gr-button gr-button-lg gr-button-secondary" onclick="window.shadowRoot.getElementById('internal-refresh-button').click()">
-                🔃
+              <button class="gr-button gr-button-lg gr-button-secondary" onclick="window.shadowRoot.getElementById('internal-refresh-button').click()" id="refresh-button">
+                ↻
               </button>
             """)
 
@@ -2057,25 +2545,95 @@ with gr.Blocks(
               with gr.Tab('Manipulate audio'):
 
                 UI.total_audio_length.render()
-                UI.preview_just_the_last_n_sec.render().blur(**preview_args)
-                UI.trim_to_n_sec.render().blur(**preview_args)
 
-                # Also make the cut button visible or not depending on whether the cut value is 0
-                UI.trim_to_n_sec.change(
-                  inputs = UI.trim_to_n_sec,
-                  outputs = UI.trim_button,
-                  fn = lambda trim_to_n_sec: gr.update( visible = trim_to_n_sec )
+                # Change the max n samples depending on the audio length
+                def set_max_n_samples( total_audio_length, n_samples ):
+
+                  max_n_samples_by_gpu_and_duration = {
+                    'Tesla T4': {
+                      0: 4,
+                      8.5: 3,
+                      13: 2
+                    }
+                    # The key indicates the audio length threshold in seconds trespassing which makes max_n_samples equal to the value
+                  }
+
+                  # Get GPU via nvidia-smi
+                  gpu = subprocess.check_output( 'nvidia-smi --query-gpu=gpu_name --format=csv,noheader', shell=True ).decode('utf-8').strip()
+
+                  # The default value is 4
+                  max_n_samples = 4
+                  if gpu in max_n_samples_by_gpu_and_duration and total_audio_length:
+                    # Get the max n samples for the GPU from the respective dict
+                    max_n_samples_for_gpu = max_n_samples_by_gpu_and_duration[gpu]
+                    max_n_samples_above_threshold = [ max_n_samples_for_gpu[threshold] for threshold in max_n_samples_for_gpu if total_audio_length > threshold ]
+                    if len(max_n_samples_above_threshold) > 0:
+                      max_n_samples = min( max_n_samples_for_gpu[ threshold ] for threshold in max_n_samples_for_gpu if total_audio_length > threshold )
+
+                  return max_n_samples
+
+                # Do this on audio length change and app load
+                for handler in [ UI.total_audio_length.change, app.load ]:
+                  handler(
+                    inputs = [ UI.total_audio_length, UI.n_samples ],
+                    outputs = UI.max_n_samples,
+                    fn = set_max_n_samples,
+                  )
+                
+                # If max_n_samples changes, update the n_samples input respectively
+                UI.max_n_samples.render().change(
+                  inputs = UI.max_n_samples,
+                  outputs = UI.n_samples,
+                  fn = lambda max_n_samples: gr.update(
+                    maximum = max_n_samples,
+                    # value = min( n_samples, max_n_samples ),
+                  )
                 )
 
-                UI.trim_button.render()
+                UI.cut_audio_specs.render().submit(**default_preview_args)
 
-                UI.trim_button.click(
-                  inputs = [ UI.project_name, UI.picked_sample, UI.trim_to_n_sec ],
-                  outputs = UI.trim_to_n_sec,
-                  fn = trim,
-                  api_name = 'trim'
-                )
-              
+                with gr.Row():
+
+                  UI.cut_audio_preview_button.render().click(**default_preview_args)
+
+                  # Make the cut out buttons visible or not depending on whether the cut out value is 0
+                  UI.cut_audio_specs.change(
+                    inputs = UI.cut_audio_specs,
+                    outputs = [ UI.cut_audio_preview_button, UI.cut_audio_apply_button ],
+                    fn = lambda cut_audio_specs: [
+                      gr.update( visible = cut_audio_specs != '' ) for _ in range(3)
+                    ]
+                  )
+
+                  UI.cut_audio_apply_button.render().click(
+                    inputs = [ UI.project_name, UI.picked_sample, UI.cut_audio_specs ],
+                    outputs = UI.cut_audio_specs,
+                    fn = cut_audio,
+                    api_name = 'cut-audio',
+                  )
+
+                with gr.Accordion('How does it work?', open = False):
+                  # possible specs:
+                  # start-end -- cuts out the specified range (in seconds), either can be omitted to cut from the start or to the end, the dash can be omitted to cut from the specified time to the end
+                  # start-end+sample_id@start-end -- takes the specified range from the specified sample and adds it instead of the cut-out range
+                  # start-end+start-end -- same, but takes the specified range from the current sample
+                  # +sample_id@start-end -- adds the specified range from the specified sample to the end of the current sample
+                  # +start-end -- keeps just the specified range from the current sample (i.e. the opposite of start-end)
+                  # Any whitespaces are ignored
+                  gr.Markdown('''
+                    - `start-end` (e.g. 0.5-2.5) — *removes* the specified range (in seconds),
+                      - `start-` or just `start` — *removes* from the specified time to the end
+                      - `-end` -- **removes** from the start to the specified time
+                    - `start-end+start-end` — *removes* the range before `+` and *inserts* the range after `+` instead. Note that, unlike the remove range, the insert range must be fully specified.
+                    - `start-end+sample_id@start-end` — same as above, but the insert range is taken from the specified sample, even if it is in another project (mix and match!)
+                    - `+sample_id@start-end` — same as above, but the range from the other sample is added *to the end* of the current sample
+                    - `+start-end` — *keeps* just the specified range and removes everything else.
+
+                    You can combine several of the above by using a comma (`,`). **KEEP IN MIND** that in this case the ranges are applied sequentially, so the order matters. For example, `0-1,2-3` will first remove 0-1s, and will then remove 2-3s FROM THE ALREADY MODIFIED SAMPLE, so it will actually remove ranges 0-1s and *3-4s* from the original sample. This is intentional, as it allows for a step-by-step approach to editing the audio, where you add new specifiers as you listen to the result of the previous ones.
+                  ''')
+
+                UI.preview_just_the_last_n_sec.render().blur(**default_preview_args)
+
               with gr.Tab('Rename sample'):
 
                 new_sample_id = gr.Textbox(
@@ -2089,6 +2647,7 @@ with gr.Blocks(
                   fn = rename_sample,
                   api_name = 'rename-sample'
                 )
+        
         UI.generation_progress.render()
 
 
@@ -2148,7 +2707,7 @@ with gr.Blocks(
             """
               timestamp => {
                 console.log(`Timestamp changed to ${timestamp}; clicking the 'Workspace' tab`)
-                Ju.clickTabWithText('Workspace')
+                Ji.clickTabWithText('Workspace')
                 return timestamp
               }
             """
@@ -2199,14 +2758,16 @@ with gr.Blocks(
             for input in [ UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel ]:
 
               input.render()
+          
+          UI.kill_runtime_once_done.render()
         
         # If upsampling is running, enable the upsampling_refresher -- a "virtual" input that, when changed, will update the upsampling_status_markdown
         # It will do so after waiting for 10 seconds (using js). After finishing, it will update itself again, causing the process to repeat.
         UI.upsampling_refresher.render().change(
           inputs = [ UI.upsampling_refresher, UI.upsampling_audio_refresher ],
-          outputs = [ UI.upsampling_refresher, UI.upsampling_status_markdown, UI.upsampling_audio_refresher ],
+          outputs = [ UI.upsampling_refresher, UI.upsampling_status, UI.upsampling_audio_refresher ],
           fn = lambda refresher, audio_refresher: {
-            UI.upsampling_status_markdown: Upsampling.status_markdown,
+            UI.upsampling_status: Upsampling.status_markdown,
             UI.upsampling_refresher: refresher + 1,
             UI.upsampling_audio_refresher: audio_refresher + 1 if Upsampling.should_refresh_audio else audio_refresher
           },
@@ -2235,17 +2796,18 @@ with gr.Blocks(
           inputs = [
             UI.upsampling_triggered_by_button,
             UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
-            UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
+            UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel,
+            UI.kill_runtime_once_done            
           ],
           outputs = None,
           fn = lambda triggered_by_button, *args: start_upsampling( *args ) if triggered_by_button else None,
           api_name = 'toggle-upsampling',
-          # Also go to the "Workspace" tab (because that's where we'll display the upsampling status) via the Ju.clickTabWithText helper method in js
+          # Also go to the "Workspace" tab (because that's where we'll display the upsampling status) via the Ji.clickTabWithText helper method in js
           _js = """
             async ( ...args ) => {
               console.log( 'Upsampling toggled, args:', args )
               if ( args[0] ) {
-                Ju.clickTabWithText( 'Workspace' )
+                Ji.clickTabWithText( 'Workspace' )
                 return args
               } else {
                 throw new Error('Upsampling not triggered by button')
@@ -2257,9 +2819,9 @@ with gr.Blocks(
         # When it changes regardless of the session, e.g. also at page refresh, update the various relevant UI elements, start the refresher, etc.
         UI.upsampling_running.change(
           inputs = None,
-          outputs = [ UI.upsampling_status_markdown, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher, UI.compose_row ],
+          outputs = [ UI.upsampling_status, UI.upsample_button, UI.continue_upsampling_button, UI.upsampling_refresher ],
           fn = lambda: {
-            UI.upsampling_status_markdown: 'Upsampling in progress...',
+            UI.upsampling_status: 'Upsampling in progress...',
             UI.upsample_button: gr.update(
               value = 'Stop upsampling',
               variant = 'secondary',
@@ -2269,21 +2831,19 @@ with gr.Blocks(
             ),
             # Random refresher value (int) to trigger the refresher
             UI.upsampling_refresher: random.randint( 0, 1000000 ),
-            # Hide the compose row
-            UI.compose_row: HIDE,
+            # # Hide the compose row
+            # UI.compose_row: HIDE,
           }
         )
 
       with gr.Tab('Panic'):
 
-        with gr.Accordion('?', open = False):
+        with gr.Accordion('What is this?', open = False):
 
           gr.Markdown('''
-            Sometimes the app will crash due to insufficient GPU memory. If this happens, you can try using the button below to empty the cache.
+            Sometimes the app will crash due to insufficient GPU memory. If this happens, you can try using the button below to empty the cache. Usually around 12 GB of GPU RAM is needed to safely run the app.
 
             If that doesn’t work, you’ll have to restart the runtime (`Runtime` > `Restart and run all` in Colab). That’ll take a couple of minutes, but the memory will be new as a daisy.
-
-            Usually around 12 GB of GPU RAM is needed to safely run the app.
           ''')
 
         memory_usage = gr.Textbox(
@@ -2303,6 +2863,7 @@ with gr.Blocks(
             inputs = None,
             outputs = memory_usage,
             fn = get_gpu_memory_usage,
+            api_name = 'get-gpu-memory-usage',
           )
 
           gr.Button('Empty cache', variant='primary').click(
@@ -2312,15 +2873,16 @@ with gr.Blocks(
               empty_cache(),
               get_gpu_memory_usage(),
             ][-1],
+            api_name = 'empty-cache',
           )
 
-        with gr.Accordion('Run any code', open = False):
+        with gr.Accordion('Run any code', open = False, visible = DEV_MODE):
 
           gr.Markdown('''
             The following input box allows you to execute arbitrary Python code. ⚠️ DON’T USE THIS FEATURE IF YOU DON’T KNOW WHAT YOU’RE DOING! ⚠️
           ''')
 
-          eval_code = gr.Textbox(
+          eval_server_code = gr.Textbox(
             label = 'Python code',
             placeholder = 'Shift+Enter for a new line, Enter to run',
             value = '',
@@ -2336,13 +2898,38 @@ with gr.Blocks(
           )
 
           eval_args = dict(
-            inputs = eval_code,
+            inputs = eval_server_code,
             outputs = eval_output,
-            fn = lambda code: eval(code),
+            fn = lambda code: {
+              eval_output: eval( code )
+            }
           )
 
           eval_button.click(**eval_args)
-          eval_code.submit(**eval_args)
+          eval_server_code.submit(
+            **eval_args,
+            api_name = 'eval-code',
+          )
+
+  # TODO: Don't forget to remove this line before publishing the app
+  frontend_on_load_url = f'https://cdn.jsdelivr.net/gh/vzakharov/jukebox-webui@{GITHUB_SHA}/frontend-on-load.js'
+  with urllib.request.urlopen(frontend_on_load_url) as response:
+    frontend_on_load_js = response.read().decode('utf-8')
+
+    try:
+      old_frontend_on_load_md5 = frontend_on_load_md5
+    except NameError:
+      old_frontend_on_load_md5 = None
+
+    frontend_on_load_md5 = hashlib.md5(frontend_on_load_js.encode('utf-8')).hexdigest()
+    print(f'Loaded frontend-on-load.js from {response.geturl()}, md5: {frontend_on_load_md5}')
+
+    if frontend_on_load_md5 != old_frontend_on_load_md5:
+      print('(New version)')
+    else:
+      print('(Same version as during the previous run)')
+
+    # print(frontend_on_load_js)
 
   app.load(
     on_load,
@@ -2352,144 +2939,10 @@ with gr.Blocks(
       UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
     ],
     api_name = 'initialize',
-    _js = """async (...args) => {
-      
-      try {
-
-        // Create and inject wavesurfer scripts
-        let require = url => {
-          console.log(`Injecting ${url}`)
-          let script = document.createElement('script')
-          script.src = url
-          document.head.appendChild(script)
-          return new Promise( resolve => script.onload = () => {
-            console.log(`Injected ${url}`)
-            resolve()
-          } )
-        }
-
-        await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/wavesurfer.min.js')
-        await require('https://cdnjs.cloudflare.com/ajax/libs/wavesurfer.js/6.3.0/plugin/wavesurfer.timeline.min.js')
-
-        window.shadowRoot = document.querySelector('gradio-app').shadowRoot
-
-        // The wavesurfer element is hidden inside a shadow DOM hosted by <gradio-app>, so we need to get it from there
-        let shadowSelector = selector => window.shadowRoot.querySelector(selector)
-
-        let waveformDiv = shadowSelector('#audio-waveform')
-        console.log(`Found waveform div:`, waveformDiv)
-
-        let timelineDiv = shadowSelector('#audio-timeline')
-        console.log(`Found timeline div:`, timelineDiv)
-        
-        let getAudioTime = time => {
-          let previewDuration = wavesurfer.getDuration()
-          // console.log('Preview duration: ', previewDuration)
-          // Take total duration from #total-audio-length's input, unless #trim-to-n-sec is set, in which case use that
-          let trimToNSec = parseFloat(shadowSelector('#trim-to-n-sec input')?.value || 0)
-          // console.log('Trim to n sec: ', trimToNSec)
-          let totalDuration = trimToNSec || parseFloat(shadowSelector('#total-audio-length input').value)
-          // console.log('Total duration: ', totalDuration)
-          let additionalDuration = totalDuration - previewDuration
-          // console.log('Additional duration: ', additionalDuration)
-          let result = Math.round( ( time + additionalDuration ) * 100 ) / 100          
-          // console.log('Result: ', result)
-          return result
-        }
-
-        // Create a (global) wavesurfer object with and attach it to the div
-        window.wavesurferTimeline = WaveSurfer.timeline.create({
-          container: timelineDiv,
-          // Light colors, as the background is dark
-          primaryColor: '#eee',
-          secondaryColor: '#ccc',
-          primaryFontColor: '#eee',
-          secondaryFontColor: '#ccc',
-          formatTimeCallback: time => Math.round(getAudioTime(time))
-        })
-
-        window.wavesurfer = WaveSurfer.create({
-          container: waveformDiv,
-          waveColor: 'skyblue',
-          progressColor: 'steelblue',
-          plugins: [
-            window.wavesurferTimeline
-          ]
-        })
-        
-        // Add a seek event listener to the wavesurfer object, modifying the #audio-time input
-        wavesurfer.on('seek', progress => {
-          shadowSelector('#audio-time').value = getAudioTime(progress * wavesurfer.getDuration())
-        })
-
-        // Also update the time when the audio is playing
-        wavesurfer.on('audioprocess', time => {
-          shadowSelector('#audio-time').value = getAudioTime(time)
-        })
-
-        // Put an observer on #audio-file (also in the shadow DOM) to reload the audio from its inner <a> element
-        let parentElement = window.shadowRoot.querySelector('#audio-file')
-        let parentObserver
-
-        parentObserver = new MutationObserver( mutations => {
-          // Check if there is an inner <a> element
-          let wavesurferSrcElement = parentElement.querySelector('a')
-          if ( wavesurferSrcElement ) {
-            
-            console.log('Found audio element:', wavesurferSrcElement)
-
-            // If so, create an observer on it while removing the observer on the parent
-            parentObserver.disconnect()
-
-            let audioSrc
-
-            let reloadAudio = () => {
-              // Check if the audio source has changed
-              if ( wavesurferSrcElement.href && wavesurferSrcElement.href !== audioSrc ) {
-                // If so, reload the audio
-                audioSrc = wavesurferSrcElement.href
-                console.log('Reloading audio from', audioSrc)
-                wavesurfer.load(audioSrc)
-                // Also set the href of #download-button to the audio source
-                window.shadowRoot.querySelector('#download-button').href = audioSrc
-              }
-            }
-
-            reloadAudio()
-
-            let audioObserver = new MutationObserver( reloadAudio )
-
-            audioObserver.observe(wavesurferSrcElement, { attributes: true })
-
-          }
-
-        })
-
-        parentObserver.observe(parentElement, { childList: true, subtree: true })
-
-        window.Ju = {}
-
-        Ju.clickTabWithText = function (buttonText) {
-          for ( let button of document.querySelector('gradio-app').shadowRoot.querySelectorAll('div.tabs > div > button') ) {
-            if ( button.innerText == buttonText ) {
-              button.click()
-              break
-            }
-          }
-        }
-
-        // href, query_string, error_message
-        return [ window.location.href, window.location.search.slice(1), null ]
-
-      } catch (e) {
-
-        console.error(e)
-
-        // If anything went wrong, return the error message
-        return [ window.location.href, window.location.search.slice(1), e.message ]
-
-      }
-    }"""
+    _js = frontend_on_load_js,
+    # _js = """
+    # // (insert manually for debugging)
+    # """,
   )
 
   # Also load browser's time zone offset on app load
