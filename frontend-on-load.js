@@ -158,6 +158,38 @@ async () => {
     // When wavesurfer starts/stops playing, update Ji.playing
     wavesurfer.on('play', () => Ji.playing = true)
     wavesurfer.on('pause', () => Ji.playing = false)
+    
+    Ji.grayOutWavesurfer = ( on = true ) => {
+      // Gray out the wavesurfer (e.g. when the audio is being refreshed)
+      let { container } = wavesurfer
+      if ( on ) {
+        container.style.filter = 'grayscale(1)'
+      } else {
+        container.style.filter = ''
+      }
+    }
+
+    wavesurfer.on('ready', () => {
+
+      // Stop the clock blinking
+      clearInterval(Ji.clockInterval)
+
+      // Seek to the remembered time, unless it's higher than the new audio length
+      let duration = wavesurfer.getDuration()
+      Ji.currentTime < duration && wavesurfer.seekTo(Ji.currentTime / duration)
+
+      // Start playing if Ji.playing is true
+      Ji.playing && wavesurfer.play()
+      
+      // Replace the clock with a refresh glyph
+      if ( refreshButton ) {
+        refreshButton.innerText = '↻'
+      }
+
+      // Remove the gray filter
+      Ji.grayOutWavesurfer(false)
+
+    })
 
     Ji.blobCache = []
 
@@ -254,25 +286,6 @@ async () => {
       let blob = cachedBlob?.blob || new Blob( Ji.mainBlobPromise = await Promise.all( Array.from(Ji.audioElements).map( Ji.fetchBlob ) ), { type: 'audio/mpeg' } )
       
       wavesurfer.loadBlob(blob)
-
-      wavesurfer.on('ready', () => {
-
-        // Stop the clock blinking
-        clearInterval(Ji.clockInterval)
-
-        // Seek to the remembered time, unless it's higher than the new audio length
-        let duration = wavesurfer.getDuration()
-        Ji.currentTime < duration && wavesurfer.seekTo(Ji.currentTime / duration)
-
-        // Start playing if Ji.playing is true
-        Ji.playing && wavesurfer.play()
-        
-        // Replace the clock with a refresh glyph
-        if ( refreshButton ) {
-          refreshButton.innerText = '↻'
-        }
-
-      })
 
       !cachedBlob && Ji.addBlobToCache( filename, blob )
 
