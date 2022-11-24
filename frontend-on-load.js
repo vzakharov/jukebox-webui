@@ -208,6 +208,8 @@ async () => {
       .replace(/%20\d+-\d+$/, '')
       // and replace all %20's with spaces
       .replace(/%20/g, ' ')
+      // trim
+      .trim()
 
     Ji.reloadAudio = async () => {
 
@@ -333,8 +335,8 @@ async () => {
 
           let blobPromisesByFilename = {}
           // // Make sure no more than 10 requests are sent per second
-          // let rateLimit = 100
-          // let totalDelay = 0
+          let rateLimit = 100
+          let totalDelay = 0
 
           for ( let audioElement of audioElements ) {
 
@@ -345,14 +347,15 @@ async () => {
               continue
 
             let chunkPromise = new Promise( async resolve => {
-              // // Wait for totalDelay (which is increased by rateLimit each time)
-              // await new Promise( resolve => setTimeout(resolve, totalDelay) )
-              // console.log(`Fetching blob for ${filename} after ${totalDelay / 1000}s`)
-              // totalDelay += rateLimit
-              resolve( Ji.fetchBlob(audioElement) )
+              // Wait for totalDelay (which is increased by rateLimit each time)
+              await new Promise( resolve => setTimeout(resolve, totalDelay) )
+              totalDelay += rateLimit
+              let blob = await Ji.fetchBlob(audioElement)
+              console.log(`Fetched blob for ${filename} after ${totalDelay / 1000}s:`, blob)
+              resolve(blob)
             })
 
-            ( blobPromisesByFilename[filename] ||= [] ).push( chunkPromise )
+            ;( blobPromisesByFilename[filename] ||= [] ).push( chunkPromise )
 
           }
 
