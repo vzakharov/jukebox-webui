@@ -330,11 +330,17 @@ async () => {
         
         let cacheSiblingChunks = async () => {
 
-          console.log('Sibling chunk container updated, caching blobs...')
+          console.log('Sibling chunk container updated, let’s cache some blobs...')
+
+          await Ji.mainBlobPromise
+          // (We need to wait for the main blob to be loaded, so that the others don't slow down the loading of the main one)
+
+          console.log('Main blob loaded, caching...')
+
           let audioElements = Ji.siblingChunksContainer.querySelectorAll('a')
 
           let blobPromisesByFilename = {}
-          // // Make sure no more than 10 requests are sent per second
+          // Make sure no more than 10 requests are sent per second
           let rateLimit = 100
           let totalDelay = 0
 
@@ -349,18 +355,16 @@ async () => {
             let chunkPromise = new Promise( async resolve => {
               // Wait for totalDelay (which is increased by rateLimit each time)
               totalDelay += rateLimit
+              console.log(`Waiting ${totalDelay}ms before fetching ${filename}`)
               await new Promise( resolve => setTimeout(resolve, totalDelay) )
               let blob = await Ji.fetchBlob(audioElement)
-              console.log(`Fetched blob for ${filename} after ${totalDelay / 1000}s:`, blob)
+              console.log(`Fetched ${filename}:`, blob)
               resolve(blob)
-            })
+            } )
 
             ;( blobPromisesByFilename[filename] ||= [] ).push( chunkPromise )
 
           }
-
-          await Ji.mainBlobPromise
-          // (We need to wait for the main blob to be loaded, so that the others don't slow down the loading of the main one)
 
           // Combine all the blobs for each filename (await Promise.all for faster loading)
           await Promise.all( Object.entries(blobPromisesByFilename).map( async ([filename, blobPromises]) => {
