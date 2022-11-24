@@ -238,7 +238,7 @@ async () => {
       // and replace all %20's with spaces
       .replace(/%20/g, ' ')
       // and remove everything after and including the last space (this is where Gradio puts the hash)
-      .replace(/ .*$/, '')
+      .replace(/ [^ ]*$/, '')
       // and \s\d+-\d+ in the end, indicating a chunk (if any)
       .replace(/\s\d+-\d+$/, '')
       // trim
