@@ -202,12 +202,12 @@ async () => {
     Ji.getFilenameFromHref = href => href
       // Remove path & extension
       .replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
-      // and the last 8 characters (the hash)
-      .slice(0, -8)
-      // and %20\d+-\d+ in the end, indicating a chunk (if any)
-      .replace(/%20\d+-\d+$/, '')
       // and replace all %20's with spaces
       .replace(/%20/g, ' ')
+      // and remove everything after and including the last space (this is where Gradio puts the hash)
+      .replace(/ .*$/, '')
+      // and \s\d+-\d+ in the end, indicating a chunk (if any)
+      .replace(/\s\d+-\d+$/, '')
       // trim
       .trim()
 
@@ -348,8 +348,8 @@ async () => {
 
             let chunkPromise = new Promise( async resolve => {
               // Wait for totalDelay (which is increased by rateLimit each time)
-              await new Promise( resolve => setTimeout(resolve, totalDelay) )
               totalDelay += rateLimit
+              await new Promise( resolve => setTimeout(resolve, totalDelay) )
               let blob = await Ji.fetchBlob(audioElement)
               console.log(`Fetched blob for ${filename} after ${totalDelay / 1000}s:`, blob)
               resolve(blob)

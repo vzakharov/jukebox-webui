@@ -1,4 +1,4 @@
-GITHUB_SHA = 'af9b125dc3a40e7ed40264d96dec71fc229d6d28'
+GITHUB_SHA = '88c4aa83137ca00b74392dc468df98d64174a592'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -1502,6 +1502,9 @@ def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_r
     
     if combine_levels:
       filename += f' combined'
+
+    # Add a space in the end because Gradio adds a hash to the filename, and we must know where to remove it
+    filename += ' '
     
     return filename
 
@@ -1598,7 +1601,7 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
       # Create the tmp folder if it doesn't exist
       if not os.path.exists(f'tmp'):        
         os.makedirs(f'tmp')
-      chunk_filename = f'tmp/{os.path.basename(filename)} {i}-{i+file_limit}.mp3_chunk'
+      chunk_filename = f'tmp/{os.path.basename(filename)}{i}-{i+file_limit} .mp3_chunk'
       with open(chunk_filename, 'wb') as f:
         f.write(file_content[i:i+file_limit])
         print(f'Wrote bytes {i}-{i+file_limit} to {chunk_filename}')
