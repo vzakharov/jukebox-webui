@@ -1,4 +1,4 @@
-GITHUB_SHA = '7d397907a0e6ba6eef632e93acd179d4e72b5775'
+GITHUB_SHA = '8ee64fb65534a17edcb19d882ca04ab855ddb585'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -2478,9 +2478,12 @@ with gr.Blocks(
               <input type="number" class="gr-box gr-input gr-text-input" id="audio-time" value="0" readonly>
 
               <!-- Download button -- it will be set to the right href later on -->
+              <!--
               <a class="gr-button gr-button-lg gr-button-secondary" id="download-button">
                 🔗
               </a>
+              -->
+              <!-- (Removed for now, as it only links to the first chunk, will fix later) -->
 
               <!-- Refresh button -- it virtually clicks the "internal-refresh-button" button (which is hidden) -->
               <button class="gr-button gr-button-lg gr-button-secondary" onclick="window.shadowRoot.getElementById('internal-refresh-button').click()" id="refresh-button">
