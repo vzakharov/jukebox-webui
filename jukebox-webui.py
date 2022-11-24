@@ -1,4 +1,4 @@
-GITHUB_SHA = '88c4aa83137ca00b74392dc468df98d64174a592'
+GITHUB_SHA = '48c510b196e12f2e40630a204b705140da682f55'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -2255,9 +2255,9 @@ with gr.Blocks(
 
                   sample_id && window.history.pushState( {}, '', `?${args[1]}` )
 
-                  // Now we'll try to reload the audio from cache. To do that, we'll find the first cached blob (Ji.blobCache) whose key starts with the sample_id followed by %20 (meaning space)
+                  // Now we'll try to reload the audio from cache. To do that, we'll find the first cached blob (Ji.blobCache) whose key starts with the sample_id either followed by space or end of string.
                   // (Although different version of the same sample might have been cached, the first one will be the one that was added last, so it's the most recent one)
-                  let cached_blob = Ji.blobCache.find( ({ key }) => key.startsWith( `${sample_id}%20` ) )
+                  let cached_blob = Ji.blobCache.find( ({ key }) => rf'^{sample_id}($| )'.test(key) )
                   if ( cached_blob ) {
                     console.log( 'Found cached blob', cached_blob )
                     let { key, blob } = cached_blob
