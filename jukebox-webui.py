@@ -1,4 +1,4 @@
-GITHUB_SHA = 'a82ddc1cb65cf1b4c92e38fbf1f5f260de93280a'
+GITHUB_SHA = '1b0aa1aa562b1f3385da58e09ef89a89201a1ab0'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True

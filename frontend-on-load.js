@@ -195,8 +195,7 @@ async () => {
 
     Ji.blobCache = []
 
-    Ji.maxCacheSize = 1000
-
+    Ji.maxCacheSize = 100
 
     Ji.addBlobToCache = ( key, blob ) => {
       let { blobCache, maxCacheSize } = Ji
