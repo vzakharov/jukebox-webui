@@ -199,6 +199,16 @@ async () => {
       })
     }        
 
+    Ji.getFilenameFromHref = href => href
+      // Remove path & extension
+      .replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
+      // and the last 8 characters (the hash)
+      .slice(0, -8)
+      // and %20\d+-\d+ in the end, indicating a chunk (if any)
+      .replace(/%20\d+-\d+$/, '')
+      // and replace all %20's with spaces
+      .replace(/%20/g, ' ')
+
     Ji.reloadAudio = async () => {
 
       Ji.audioElements = Ji.currentChunksContainer.querySelectorAll('a')
@@ -209,13 +219,8 @@ async () => {
         console.log('The audio is already loaded, not reloading')
         return
       }
-
-      // Remove path & extension
-      filename = audioHref.replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
-      // and the last 8 characters (the hash)
-        .slice(0, -8)
-      // and %20\d+-\d+ in the end, indicating a chunk (if any)
-        .replace(/%20\d+-\d+$/, '')
+      
+      let filename = Ji.getFilenameFromHref(audioHref)
 
       if ( filename == Ji.lastLoadedBlobKey ) {
         console.log(`The blob for ${filename} is already loaded, not reloading`)
@@ -237,6 +242,11 @@ async () => {
       console.log(`Checking blob cache for ${filename}`)
       let cachedBlob = Ji.blobCache.find( ({ key }) => key == filename )
 
+      if ( cachedBlob && cachedBlob.blob instanceof Promise ) {
+        console.log(`Blob for ${filename} is a promise, waiting for it to resolve`)
+        
+
+      // If cached blob is a promise, wait for it to resolve
       // If not cached, combine a blob from all the chunks in audioElements
       let blob = cachedBlob?.blob || new Blob( Ji.mainBlobPromise = await Promise.all( Array.from(Ji.audioElements).map( Ji.fetchBlob ) ), { type: 'audio/mpeg' } )
       
@@ -321,19 +331,27 @@ async () => {
           let audioElements = Ji.siblingChunksContainer.querySelectorAll('a')
 
           let blobPromisesByFilename = {}
+          // // Make sure no more than 10 requests are sent per second
+          // let rateLimit = 100
+          // let totalDelay = 0
 
           for ( let audioElement of audioElements ) {
 
-            // Remove path & extension
-            let filename = audioElement.href.replace(/^.*\//, '').replace(/\.[^/.]+$/, '')
-            // and the last 8 characters (the hash)
-              .slice(0, -8)
+            let filename = Ji.getFilenameFromHref(audioElement.href)
 
             // If cached, skip
             if ( Ji.blobCache.find( ({ key }) => key == filename ) )
               continue
 
-            ( blobPromisesByFilename[filename] ||= [] ).push( Ji.fetchBlob(audioElement) )
+            let chunkPromise = new Promise( async resolve => {
+              // // Wait for totalDelay (which is increased by rateLimit each time)
+              // await new Promise( resolve => setTimeout(resolve, totalDelay) )
+              // console.log(`Fetching blob for ${filename} after ${totalDelay / 1000}s`)
+              // totalDelay += rateLimit
+              resolve( Ji.fetchBlob(audioElement) )
+            })
+
+            ( blobPromisesByFilename[filename] ||= [] ).push( chunkPromise )
 
           }
 
