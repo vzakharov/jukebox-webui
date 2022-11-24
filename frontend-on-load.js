@@ -356,7 +356,7 @@ async () => {
               // Wait for totalDelay (which is increased by rateLimit each time)
               // totalDelay += rateLimit
               let delay = totalDelay += rateLimit
-              await new Promise( resolve => setTimeout(resolve, totalDelay) )
+              await new Promise( resolve => setTimeout(resolve, delay) )
               console.log(`Fetching ${filename} after ${delay}ms`)
               let blob = await Ji.fetchBlob(audioElement)
               console.log(`Fetched ${filename}:`, blob)
