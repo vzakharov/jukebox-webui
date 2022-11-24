@@ -263,6 +263,8 @@ async () => {
         return
       }
 
+      Ji.preloadedAudio = null
+
       console.log(`The audio is not loaded, reloading from ${audioHref}`)
 
       // Replace the #reload-button inner text with an clock, blinking with different times at 0.5s intervals
