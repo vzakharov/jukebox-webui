@@ -264,10 +264,10 @@ async () => {
       console.log(`The audio is not loaded, reloading from ${audioHref}`)
 
       // Replace the #reload-button inner text with an clock, blinking with different times at 0.5s intervals
-      let refreshButton = shadowRoot.querySelector('#refresh-button')
-      if ( refreshButton ) {
+      Ji.refreshButton = shadowRoot.querySelector('#refresh-button')
+      if ( Ji.refreshButton ) {
         let emojis = [ '🕛', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚' ]
-        let flip = () => emojis.push( refreshButton.innerText = emojis.shift() )      
+        let flip = () => emojis.push( Ji.refreshButton.innerText = emojis.shift() )      
         clearInterval(Ji.clockInterval)
         Ji.clockInterval = setInterval( flip, 500 )
         flip()
