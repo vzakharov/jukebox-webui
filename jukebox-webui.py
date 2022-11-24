@@ -1,4 +1,4 @@
-GITHUB_SHA = '48c510b196e12f2e40630a204b705140da682f55'
+GITHUB_SHA = '368cf03554473deddee39c30a1ba007c43c55881'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -1490,11 +1490,15 @@ def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_r
     
     filename = f'{base_path}/{project_name}/rendered/{sample_id}'
 
-    # Add cutout/preview suffixes
+    # Add cutout/preview suffixes, replacing dots with underscores (to avoid confusion with file extensions)
+
+    def replace_dots_with_underscores(s):
+      return s.replace('.', '_')
+
     if cut_out:
-      filename += f' cut {cut_out}'
+      filename += f' cut {replace_dots_with_underscores(cut_out)}'
     if last_n_sec:
-      filename += f' last {last_n_sec}'
+      filename += f' last {replace_dots_with_underscores(last_n_sec)}'
     
     # Add lowercase of upsample rendering option
     if upsample_rendering:
