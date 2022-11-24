@@ -1,4 +1,4 @@
-GITHUB_SHA = 'e3ff78d488513c0773cb7ddd3048e1d8b9a78336'
+GITHUB_SHA = '7d397907a0e6ba6eef632e93acd179d4e72b5775'
 # TODO: Don't forget to change to release branch/version before publishing
 
 DEV_MODE = True
@@ -1488,7 +1488,7 @@ def get_project(project_name, routed_sample_id):
 
 def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
     
-    filename = f'{base_path}/{project_name}/rendered/{sample_id}'
+    filename = f'{base_path}/{project_name}/rendered/{sample_id} '
 
     # Add cutout/preview suffixes, replacing dots with underscores (to avoid confusion with file extensions)
 
@@ -1496,19 +1496,16 @@ def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_r
       return str(number).replace('.', '_')
 
     if cut_out:
-      filename += f' cut {replace_dots_with_underscores(cut_out)}'
+      filename += f'cut {replace_dots_with_underscores(cut_out)} '
     if last_n_sec:
-      filename += f' last {replace_dots_with_underscores(last_n_sec)}'
+      filename += f'last {replace_dots_with_underscores(last_n_sec)} '
     
     # Add lowercase of upsample rendering option
     if upsample_rendering:
-      filename += f' r{upsample_rendering}'
+      filename += f'r{upsample_rendering} '
     
     if combine_levels:
-      filename += f' combined'
-
-    # Add a space in the end because Gradio adds a hash to the filename, and we must know where to remove it
-    filename += ' '
+      filename += f'combined '
     
     return filename
 
@@ -1522,7 +1519,7 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
   filename_without_hash = filename
 
   # Add a hash (8 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
-  filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:8]}'
+  filename += f'{hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:8]} '
 
 
   print(f'Checking if {filename} is cached...')
