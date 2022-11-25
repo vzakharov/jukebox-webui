@@ -1,8 +1,5 @@
-GITHUB_SHA = 'fa68c6ce17bc430a329cfa9f685a7d26e60f8f3c'
+GITHUB_SHA = 'v0.4.1'
 # TODO: Don't forget to change to release branch/version before publishing
-
-DEV_MODE = True
-# TODO: Don't forget to set to False before publishing
 
 #@title Jukebox Web UI
 
@@ -36,6 +33,11 @@ use_optimized_jukebox = False #@param{type:'boolean'}
 
 share_gradio = True #param{type:'boolean'}
 # ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
+
+#@markdown ### *Dev mode*
+DEV_MODE = False #@param{type:'boolean'}
+#@markdown Some dev-only stuff. Feel free to try it out, but don’t expect it to work.
+
 
 #@markdown ---
 #@markdown That’s it, you can now run the cell. Note that the first time you run it, it will take a few minutes to download the model. Afterwards, re-running the cell will be much faster.
@@ -506,6 +508,8 @@ class UI:
   picked_sample = gr.Radio(
     label = 'Variations',
   )
+
+  picked_sample_updated = gr.Number( 0, visible = False )
 
   sample_box = gr.Box(
     visible = False
@@ -1484,32 +1488,41 @@ def get_project(project_name, routed_sample_id):
     **settings_out_dict
   }
 
-def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, force_reload):
+def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
+    
+    filename = f'{base_path}/{project_name}/rendered/{sample_id} '
+
+    # Add cutout/preview suffixes, replacing dots with underscores (to avoid confusion with file extensions)
+
+    def replace_dots_with_underscores(number):
+      return str(number).replace('.', '_')
+
+    if cut_out:
+      filename += f'cut {replace_dots_with_underscores(cut_out)} '
+    if last_n_sec:
+      filename += f'last {replace_dots_with_underscores(last_n_sec)} '
+    
+    # Add lowercase of upsample rendering option
+    if upsample_rendering:
+      filename += f'r{upsample_rendering} '
+    
+    if combine_levels:
+      filename += f'combined '
+    
+    return filename
+
+def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_rendering=4, combine_levels=True, force_reload=False):
 
   global hps
 
   print(f'Loading sample {sample_id}')
 
-  filename = f'{base_path}/{project_name}/rendered/{sample_id}'
+  filename = get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels)
+  filename_without_hash = filename
 
-  # Add cutout/preview suffixes
-  if cut_out:
-    filename += f' cut {cut_out}'
-  if last_n_sec:
-    filename += f' last {last_n_sec}'
-  
-  # # Add lowercase of upsample rendering option
-  # if upsample_rendering and level_name != 'Raw':
-  #   suffixes = [ 'left', 'center', 'right', 'stereo', 'stereo-delay' ]
-  #   filename += f' {suffixes[upsample_rendering]}'
-  
-  # if pad_with_lower_sampled and level_name != 'Raw':
-  #   filename += ' padded'
-  # (Note: This is old code that won't run if uncommented, but keeping it here just in case)
-  
   # Add a hash (8 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
-  filename += f' {hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:8]}'
-  filename_without_hash = filename[:-9]
+  filename += f'{hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:8]} '
+
 
   print(f'Checking if {filename} is cached...')
 
@@ -1578,7 +1591,7 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
       upsampled_lengths = metadata['upsampled_lengths']
       print(f'(Also loaded metadata: {metadata})')
 
-  chunk_filenames = [f'{filename}.mp3']
+  chunk_filenames = []
 
   # If the mp3 size is > certain sie, we'll need to send it back in chunks, so we divide the mp3 into as many chunks as needed
   file_size = os.path.getsize(f'{filename}.mp3')
@@ -1591,11 +1604,13 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
       # Create the tmp folder if it doesn't exist
       if not os.path.exists(f'tmp'):        
         os.makedirs(f'tmp')
-      chunk_filename = f'tmp/{os.path.basename(filename)} {i}-{i+file_limit}.mp3_chunk'
+      chunk_filename = f'tmp/{os.path.basename(filename)}{i}-{i+file_limit} .mp3_chunk'
       with open(chunk_filename, 'wb') as f:
         f.write(file_content[i:i+file_limit])
         print(f'Wrote bytes {i}-{i+file_limit} to {chunk_filename}')
       chunk_filenames.append(chunk_filename)
+  else:
+    chunk_filenames = [f'{filename}.mp3']
   
   print(f'Files to send: {chunk_filenames}')
 
@@ -1611,7 +1626,25 @@ def get_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering,
     UI.sample_box: gr.update(
       visible = True
     ),
-    UI.upsampled_lengths: ','.join([str(length) for length in upsampled_lengths])
+    UI.upsampled_lengths: ','.join([str(length) for length in upsampled_lengths]),
+    # Random number for picked sample updated flag
+    UI.picked_sample_updated: random.random(),
+  }
+
+def get_sibling_samples(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
+  print(f'Updating sibling samples for {sample_id}...')
+  sibling_files = []
+  for sibling_id in get_siblings(project_name, sample_id):
+    if sibling_id == sample_id:
+      continue
+    sibling_sample = get_sample(project_name, sibling_id, cut_out, last_n_sec, upsample_rendering, combine_levels)
+    sibling_sample_files = sibling_sample[UI.current_chunks]
+    # breakpoint()
+    print(f'Adding sibling {sibling_id} with files {sibling_sample_files}')
+    sibling_files.extend(sibling_sample_files)
+    print(f'Totally {len(sibling_files)} sibling files')
+  return {
+    UI.sibling_chunks: sibling_files
   }
 
 def refresh_siblings(project_name, sample_id):
@@ -2196,11 +2229,20 @@ with gr.Blocks(
               UI.sample_box, UI.current_chunks, #UI.generated_audio,
               UI.total_audio_length, UI.upsampled_lengths,
               UI.go_to_children_button, UI.go_to_parent_button,
+              UI.picked_sample_updated
             ],
             fn = get_sample,
           )
 
           default_preview_args = get_preview_args(False)
+
+          # Virtual input & handler to create an API method for get_sample_filename
+          gr.Textbox(visible=False).change(
+            inputs = preview_inputs,
+            outputs = gr.Textbox(visible=False),
+            fn = get_sample_filename,
+            api_name = 'get-sample-filename'
+          )
 
           UI.picked_sample.change(
             **default_preview_args,
@@ -2212,22 +2254,24 @@ with gr.Blocks(
 
                 try {
 
-                  args[1] && window.history.pushState( {}, '', `?${args[1]}` )
+                  let sample_id = args[1]
 
-                  // Check Ji.blobCache for a key equal to a JSON string of the args
-                  // If it exists, loadBlob wavesurver from the cache
-                  // Otherwise, loadBlob wavesurver from the server
-                  // Use just the inputs for the key (args contains both inputs and outputs, so we only need to take the first 7 elements)
-                  let key = JSON.stringify( args.slice(0,%d) )
-                  let blob = Ji.blobCache.find( entry => entry.key == key )?.blob
-                  if ( blob ) {
+                  sample_id && window.history.pushState( {}, '', `?${args[1]}` )
+
+                  // Gray out the wavesurfer
+                  Ji.grayOutWavesurfer()
+
+                  // Now we'll try to reload the audio from cache. To do that, we'll find the first cached blob (Ji.blobCache) whose key starts with the sample_id either followed by space or end of string.
+                  // (Although different version of the same sample might have been cached, the first one will be the one that was added last, so it's the most recent one)
+                  let cached_blob = Ji.blobCache.find( ({ key }) => key.match( new RegExp(`^${sample_id}( |$)`) ) )
+                  if ( cached_blob ) {
+                    console.log( 'Found cached blob', cached_blob )
+                    let { key, blob } = cached_blob
                     wavesurfer.loadBlob( blob )
-                    Ji.preloadedBlobSHA = await Ji.blobSHA( blob )
-                    console.log( `Loaded blob for ${key} from cache, SHA: ${Ji.preloadedBlobSHA}` )
-                    delete Ji.preloadedBlobKey
-                  } else {
-                    Ji.preloadedBlobKey = key
-                    console.log(`Loading blob from server, to be later cached under key ${key}`)
+                    Ji.lastLoadedBlobKey = key
+                    Ji.preloadedAudio = true
+                    // Gray out slightly less
+                    Ji.grayOutWavesurfer( true, 0.75 )
                   }
 
                 } catch (e) {
@@ -2240,14 +2284,19 @@ with gr.Blocks(
 
 
               }
-            ''' % len(default_preview_args['inputs'])
+            '''
+          )
+           
+          # When the picked sample is updated, update all the others too (UI.sibling_chunks) by calling get_sample for each sibling
+          UI.picked_sample_updated.render().change(
+            inputs = [ *preview_inputs ],
+            outputs = UI.sibling_chunks,
+            fn = get_sibling_samples,
+            api_name = 'get-sibling-samples',
           )
 
-          # # When the current chunks (i.e. audio chunks of the picked sample) change, update all the others too (UI.sibling_chunks) by calling get_sample for each sibling
-          # UI.current_chunks.render().change(
-          #   inputs = [ *preview_inputs ],
-          #   outputs = UI.sibling_chunks,
-
+          UI.current_chunks.render()
+          UI.sibling_chunks.render()
 
           UI.upsampled_lengths.render().change(
             inputs = UI.upsampled_lengths,
@@ -2401,8 +2450,6 @@ with gr.Blocks(
 
             UI.upsampling_status.render()
             
-            UI.current_chunks.render()
-
             # Refresh button
             internal_refresh_button = gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False)
             
@@ -2432,12 +2479,15 @@ with gr.Blocks(
               >▶️</button>
 
               <!-- Textbox showing current time -->
-              <input type="number" class="gr-box gr-input gr-text-input" id="audio-time" value="0" readonly>
+              <input type="number" class="gr-box gr-input gr-text-input" id="audio-time" value="0">
 
               <!-- Download button -- it will be set to the right href later on -->
+              <!--
               <a class="gr-button gr-button-lg gr-button-secondary" id="download-button">
                 🔗
               </a>
+              -->
+              <!-- (Removed for now, as it only links to the first chunk, will fix later) -->
 
               <!-- Refresh button -- it virtually clicks the "internal-refresh-button" button (which is hidden) -->
               <button class="gr-button gr-button-lg gr-button-secondary" onclick="window.shadowRoot.getElementById('internal-refresh-button').click()" id="refresh-button">
@@ -2874,7 +2924,9 @@ with gr.Blocks(
           eval_args = dict(
             inputs = eval_server_code,
             outputs = eval_output,
-            fn = lambda code: eval(code),
+            fn = lambda code: {
+              eval_output: eval( code )
+            }
           )
 
           eval_button.click(**eval_args)
