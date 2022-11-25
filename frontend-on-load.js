@@ -314,7 +314,7 @@ async () => {
 
       !cachedBlob && Ji.addBlobToCache( filename, blob )
 
-      window.shadowRoot.querySelector('#download-button').href = audioHref
+      // window.shadowRoot.querySelector('#download-button').href = audioHref
 
       Ji.lastAudioHref = audioHref
       
