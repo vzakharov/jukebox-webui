@@ -2474,8 +2474,8 @@ with gr.Blocks(
               <button class="gr-button gr-button-lg gr-button-secondary"
                 onclick = "
                   wavesurfer.playPause()
-                  // Use an hourglass instead of play glyph because it takes some time to start playing. We'll update later during the `audioProcess` event
-                  this.innerText = wavesurfer.isPlaying() ? '⏸️' : '⏳'
+                  // Use an hourglass instead of pause glyph because it takes some time to start playing. We'll update later during the `audioProcess` event
+                  this.innerText = wavesurfer.isPlaying() ? '⏳' : '▶️'
                 "
                 id = "play-pause-button"
               >▶️</button>
