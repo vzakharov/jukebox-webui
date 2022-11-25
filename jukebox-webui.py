@@ -1,4 +1,4 @@
-GITHUB_SHA = '0e797e9ed0d2a81210fdbd060a1fd756fd02dac5'
+GITHUB_SHA = '1edc38b47db6ad7da771df97c7c65a1c29feb617'
 # TODO: Don't forget to change to release branch/version before publishing
 
 #@title Jukebox Web UI
@@ -2474,10 +2474,8 @@ with gr.Blocks(
               <button class="gr-button gr-button-lg gr-button-secondary"
                 onclick = "
                   wavesurfer.playPause()
-                  // Use an hourglass instead of pause glyph because it takes some time to start playing. We'll update later during the `audioProcess` event
-                  this.innerText = wavesurfer.isPlaying() ? '⏳' : '▶️'
+                  this.innerText = wavesurfer.isPlaying() ? '⏸️' : '▶️'
                 "
-                id = "play-pause-button"
               >▶️</button>
 
               <!-- Textbox showing current time -->

@@ -154,13 +154,6 @@ async () => {
 
     // Also update the time when the audio is playing
     wavesurfer.on('audioprocess', Ji.trackTime)
-    
-    // Also set the play/pause button glyph to pause at audioprocess, unless it's already set to it
-    wavesurfer.on('audioprocess', () => {
-      let playPauseButton = shadowSelector('#play-pause-button')
-      ;( playPauseButton.innerText !== '⏸' ) && ( playPauseButton.innerText = '⏸' )
-    })
-
     // Add a seek event listener to the wavesurfer object, modifying the #audio-time input
     wavesurfer.on('seek', progress => Ji.trackTime(progress * wavesurfer.getDuration()))
 
