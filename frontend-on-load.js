@@ -147,7 +147,6 @@ async () => {
     
     Ji.trackTime = time => (
       shadowSelector('#audio-time').value = Ji.wavesurferToActualTime(time),
-      Ji.currentTime = time
     )
 
     // Also update the time when the audio is playing
@@ -158,6 +157,9 @@ async () => {
     // When wavesurfer starts/stops playing, update Ji.playing
     wavesurfer.on('play', () => Ji.playing = true)
     wavesurfer.on('pause', () => Ji.playing = false)
+
+    // Also on start playing, update Ji.currentTime
+    wavesurfer.on('play', () => Ji.currentTime = Ji.wavesurferToActualTime( wavesurfer.getCurrentTime()) )
     
     Ji.grayOutWavesurfer = ( on = true ) => {
       // Gray out the wavesurfer (e.g. when the audio is being refreshed)
@@ -174,9 +176,11 @@ async () => {
       // Stop the clock blinking
       clearInterval(Ji.clockInterval)
 
-      // Seek to the remembered time, unless it's higher than the new audio length
+      // Seek to the remembered time, unless it's higher than the new audio length or < 0 (when converted to wavesurfer time), in which case seek to end/start respectively
       let duration = wavesurfer.getDuration()
-      Ji.currentTime < duration && wavesurfer.seekTo(Ji.currentTime / duration)
+      let wavesurferTime = Ji.actualToWavesurferTime( Ji.currentTime )
+      wavesurfer.seekTo( Math.min( Math.max( wavesurferTime, 0 ), duration ) / duration )
+      
 
       // Start playing if Ji.playing is true
       Ji.playing && wavesurfer.play()
