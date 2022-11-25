@@ -1,4 +1,4 @@
-GITHUB_SHA = '44c7d269ea4f21e590c7cca3d08b6289491e7d22'
+GITHUB_SHA = '1edc38b47db6ad7da771df97c7c65a1c29feb617'
 # TODO: Don't forget to change to release branch/version before publishing
 
 #@title Jukebox Web UI
@@ -2270,6 +2270,8 @@ with gr.Blocks(
                     wavesurfer.loadBlob( blob )
                     Ji.lastLoadedBlobKey = key
                     Ji.preloadedAudio = true
+                    // Gray out slightly less
+                    Ji.grayOutWavesurfer( true, 0.5 )
                   }
 
                 } catch (e) {
