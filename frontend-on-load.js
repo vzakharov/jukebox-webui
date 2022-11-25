@@ -170,13 +170,13 @@ async () => {
       }
     })
 
+    // Also on seek, update Ji.rememberedTime
+    Ji.rememberedTime = 0
+    wavesurfer.on('play', () => Ji.rememberedTime = Ji.wavesurferToActualTime( wavesurfer.getCurrentTime()) )
 
     // When wavesurfer starts/stops playing, update Ji.playing
     wavesurfer.on('play', () => Ji.playing = true)
     wavesurfer.on('pause', () => Ji.playing = false)
-
-    // Also on start playing, update Ji.currentTime
-    wavesurfer.on('play', () => Ji.currentTime = Ji.wavesurferToActualTime( wavesurfer.getCurrentTime()) )
     
     Ji.grayOutWavesurfer = ( on = true, factor = 1 ) => {
       // Gray out the wavesurfer (e.g. when the audio is being refreshed)
@@ -194,9 +194,9 @@ async () => {
       clearInterval(Ji.clockInterval)
 
       // Seek to the remembered time, unless it's higher than the new audio length or < 0 (when converted to wavesurfer time), in which case seek to end/start respectively
-      if ( typeof Ji.currentTime === 'number' ) {
+      if ( typeof Ji.rememberedTime === 'number' ) {
         let duration = wavesurfer.getDuration()
-        let wavesurferTime = Ji.actualToWavesurferTime( Ji.currentTime )
+        let wavesurferTime = Ji.actualToWavesurferTime( Ji.rememberedTime )
         wavesurfer.seekTo( Math.min( Math.max( wavesurferTime, 0 ), duration ) / duration )
       }      
 
