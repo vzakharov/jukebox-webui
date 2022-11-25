@@ -1,9 +1,6 @@
 GITHUB_SHA = 'v0.4.0'
 # TODO: Don't forget to change to release branch/version before publishing
 
-DEV_MODE = False
-# TODO: Don't forget to set to False before publishing
-
 #@title Jukebox Web UI
 
 #@markdown This Notebook allows you to create music with OpenAI’s Jukebox model using a simple, web-based UI that uses your Colab Notebook as a backend.
@@ -36,6 +33,11 @@ use_optimized_jukebox = False #@param{type:'boolean'}
 
 share_gradio = True #param{type:'boolean'}
 # ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
+
+#@markdown ### *Dev mode*
+DEV_MODE = False #@param{type:'boolean'}
+#@markdown Some dev-only stuff. Feel free to try it out, but don’t expect it to work.
+
 
 #@markdown ---
 #@markdown That’s it, you can now run the cell. Note that the first time you run it, it will take a few minutes to download the model. Afterwards, re-running the cell will be much faster.
