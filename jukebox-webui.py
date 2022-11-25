@@ -764,7 +764,7 @@ def delete_sample(project_name, sample_id, confirm):
     ),            
   }
 
-def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length):
+def generate(project_name, parent_sample_id, show_leafs_only, max_n_samples, artist, genre, lyrics, n_samples, temperature, generation_length):
 
   print(f'Generating {n_samples} sample(s) of {generation_length} sec each for project {project_name}...')
 
@@ -2136,7 +2136,7 @@ with gr.Blocks(
               """)
 
               gr.Button('Generate initial samples', variant = "primary" ).click(
-                inputs = [ UI.project_name, UI.sample_tree, UI.show_leafs_only, *UI.generation_params ],
+                inputs = [ UI.project_name, UI.sample_tree, UI.show_leafs_only, UI.max_n_samples, *UI.generation_params ],
                 outputs = [ UI.sample_tree, UI.first_generation_row, UI.sample_tree_row, UI.generation_progress ],
                 fn = lambda *args: {
                   **generate(*args),
@@ -2451,15 +2451,32 @@ with gr.Blocks(
                 value = 'Go on',
                 variant = 'primary',
               ).click(
-                inputs =  [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
+                inputs =  [ UI.project_name, UI.picked_sample, UI.show_leafs_only, UI.max_n_samples, *UI.generation_params ],
                 outputs = [ UI.sample_tree, UI.generation_progress ],
                 fn = generate,
+                _js = """
+                  // Make sure max_n_samples is not exceeded
+                  // (generation_params are respectively [ artist, genre, lyrics, n_samples, temperature, generation_length ])
+                  ( ...args ) => {
+                    let max_n_samples = args[3]
+                    let n_samples = args[7]
+                    if ( n_samples > max_n_samples ) {
+                      console.log('n_samples', n_samples, 'max_n_samples', max_n_samples)
+                      if ( alert(`The number of samples to generate (${n_samples}) is greater than the GPU limit (${max_n_samples}) for that length. Are you sure you want to continue?`) )
+                        return args
+                      else
+                        throw new Error('Generation canceled by user (max_n_samples exceeded)')
+                    } else {
+                      return args
+                    }
+                  }
+                """                  
               )
 
               gr.Button(
                 value = 'More variations',          
               ).click(
-                inputs = [ UI.project_name, UI.picked_sample, UI.show_leafs_only, *UI.generation_params ],
+                inputs = [ UI.project_name, UI.picked_sample, UI.show_leafs_only, UI.max_n_samples, *UI.generation_params ],
                 outputs = [ UI.sample_tree, UI.generation_progress ],
                 fn = lambda project_name, sample_id, *args: generate(project_name, get_parent(project_name, sample_id), *args),
               )
@@ -2523,6 +2540,9 @@ with gr.Blocks(
                     max_n_samples_above_threshold = [ max_n_samples_for_gpu[threshold] for threshold in max_n_samples_for_gpu if total_audio_length > threshold ]
                     if len(max_n_samples_above_threshold) > 0:
                       max_n_samples = min( max_n_samples_for_gpu[ threshold ] for threshold in max_n_samples_for_gpu if total_audio_length > threshold )
+
+                  if n_samples > max_n_samples:
+                    print(f'⚠️ Warning⚠️ n_samples ({n_samples}) is greater than the maximum allowed ({max_n_samples}) for the current GPU ({gpu}) and audio length ({total_audio_length} seconds). Setting n_samples to {max_n_samples}')
 
                   return max_n_samples
 
