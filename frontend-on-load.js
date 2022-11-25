@@ -158,7 +158,7 @@ async () => {
     // Also set the play/pause button glyph to pause at audioprocess, unless it's already set to it
     wavesurfer.on('audioprocess', () => {
       let playPauseButton = shadowSelector('#play-pause-button')
-      ( playPauseButton.innerText !== '⏸' ) && ( playPauseButton.innerText = '⏸' )
+      ;( playPauseButton.innerText !== '⏸' ) && ( playPauseButton.innerText = '⏸' )
     })
 
     // Add a seek event listener to the wavesurfer object, modifying the #audio-time input
