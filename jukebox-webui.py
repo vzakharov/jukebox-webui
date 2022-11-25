@@ -1,4 +1,4 @@
-GITHUB_SHA = 'v0.4.0'
+GITHUB_SHA = '44c7d269ea4f21e590c7cca3d08b6289491e7d22'
 # TODO: Don't forget to change to release branch/version before publishing
 
 #@title Jukebox Web UI
@@ -2477,7 +2477,7 @@ with gr.Blocks(
               >▶️</button>
 
               <!-- Textbox showing current time -->
-              <input type="number" class="gr-box gr-input gr-text-input" id="audio-time" value="0" readonly>
+              <input type="number" class="gr-box gr-input gr-text-input" id="audio-time" value="0">
 
               <!-- Download button -- it will be set to the right href later on -->
               <!--

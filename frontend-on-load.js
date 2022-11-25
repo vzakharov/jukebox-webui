@@ -144,15 +144,32 @@ async () => {
     // Enable drags election when #cut-audio-specs input is focused, disable when blurred
     cutAudioSpecsInput.addEventListener('focus', () => wavesurfer.regions.enableDragSelection() )
     cutAudioSpecsInput.addEventListener('blur', () => wavesurfer.regions.disableDragSelection() )
-    
+
+    // Also seek to the time when the #audio-time input changes
+    Ji.seekedAutomatically = false
     Ji.trackTime = time => (
       shadowSelector('#audio-time').value = Ji.wavesurferToActualTime(time),
+      Ji.seekedAutomatically = true
     )
 
     // Also update the time when the audio is playing
     wavesurfer.on('audioprocess', Ji.trackTime)
     // Add a seek event listener to the wavesurfer object, modifying the #audio-time input
     wavesurfer.on('seek', progress => Ji.trackTime(progress * wavesurfer.getDuration()))
+
+    // Respectively, when the #audio-time input changes, seek to the time (if it's not seeked automatically)
+    shadowSelector('#audio-time').addEventListener('input', () => {    
+      if ( Ji.seekedAutomatically ) {
+        Ji.seekedAutomatically = false
+        return
+      } else {
+        let { value } = shadowSelector('#audio-time')
+        // Make sure it's a number
+        if ( !value.match(/^\d+(\.\d+)?$/) ) return
+        wavesurfer.seekTo( Ji.actualToWavesurferTime(parseFloat(value)) / wavesurfer.getDuration() )
+      }
+    })
+
 
     // When wavesurfer starts/stops playing, update Ji.playing
     wavesurfer.on('play', () => Ji.playing = true)
