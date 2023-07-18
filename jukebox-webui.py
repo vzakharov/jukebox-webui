@@ -9,22 +9,22 @@ GITHUB_SHA = 'v0.4.1'
 
 #@markdown ## Parameters
 #@markdown ### *Song duration in seconds*
-total_duration = 200 #@param {type:"slider", min:60, max:300, step:10}
+total_duration = 120 #@param {type:"slider", min:60, max:300, step:10}
 #@markdown This is the only generation parameter you need to set in advance (instead of setting it in the UI later), as changing the duration requires reloading the model. If you do want to do this, stop the cell and run it again with the new value.
 #@markdown
 
 #@markdown ### *Google Drive or Colab’s (non-persistent!) storage*
-use_google_drive = True #@param{type:'boolean'}
+use_google_drive = False #@param{type:'boolean'}
 #@markdown Uncheck if you want to store data locally (or in your Colab instance) instead of Google Drive. Note that in this case your data will be lost when the Colab instance is stopped.
 #@markdown
 
 #@markdown ### *Path for projects*
-base_path = '/content/drive/My Drive/jukebox-webui' #@param{type:'string'}
+base_path = './content/drive/My Drive/jukebox-webui' #@param{type:'string'}
 #@markdown This is where your projects will go. ```/content/drive/My Drive/``` refers to the very top of your Google Drive. The folder will be automatically created if it doesn’t exist, so you don’t need to create it manually.
 #@markdown
 
 #@markdown ### *Path for models*
-models_path = '/content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
+models_path = './content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
 #@markdown This is where your models will be stored. This app is capable of loading the model from an arbitrary path, so storing it on Google Drive will save you the hassle (and time) of having to download or copy it every time you start the instance. The models will be downloaded automatically if they don’t exist, so you don’t need to download them manually.
 
 #@markdown ### *Optimized Jukebox* (experimental)
@@ -35,7 +35,7 @@ share_gradio = True #param{type:'boolean'}
 # ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
 
 #@markdown ### *Dev mode*
-DEV_MODE = False #@param{type:'boolean'}
+DEV_MODE = True #@param{type:'boolean'}
 #@markdown Some dev-only stuff. Feel free to try it out, but don’t expect it to work.
 
 
@@ -54,7 +54,8 @@ import subprocess
 def print_gpu_and_memory():
   # Print only gpu and memory info from print_gpu_and_memory()
   print("💻 GPU, total memory, memory used:")
-  !nvidia-smi --query-gpu=gpu_name,memory.total,memory.used --format=csv,noheader
+  # !nvidia-smi --query-gpu=gpu_name,memory.total,memory.used --format=csv,noheader
+  subprocess.run(['nvidia-smi', '--query-gpu=gpu_name,memory.total,memory.used', '--format=csv,noheader'])
 
 
 # If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
@@ -95,12 +96,12 @@ except:
     from google.colab import drive, runtime
     drive.mount('/content/drive')
 
-  if use_optimized_jukebox:
-    !pip install git+https://github.com/craftmine1000/jukebox-saveopt.git
-  else:
-    !pip install git+https://github.com/openai/jukebox.git
+  # if use_optimized_jukebox:
+  #   !pip install git+https://github.com/craftmine1000/jukebox-saveopt.git
+  # else:
+  #   !pip install git+https://github.com/openai/jukebox.git
     
-  !pip install gradio
+  # !pip install gradio==3.11.0
 
   repeated_run = True
  
@@ -133,8 +134,6 @@ from jukebox.utils.sample_utils import get_starts
 from jukebox.utils.torch_utils import empty_cache
 from jukebox.sample import sample_partial_window, load_prompts, upsample, sample_single_window
 
-### Model
-
 raw_to_tokens = 128
 chunk_size = 16
 lower_batch_size = 16
@@ -146,220 +145,231 @@ hps.levels = 3
 hps.hop_fraction = [ 0.5, 0.5, 0.125 ]
 hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
 
-reload_dist = False #param{type:'boolean'}
+### Model. Don't load if --no-load flag is set.
+# Check if the flag is set when running the script (python app.py --no-load)
+import sys
 
-try:
-  assert not reload_dist and not reload_all
-  rank, local_rank, device
-  print('Dist already setup')
-except:
-  rank, local_rank, device = setup_dist_from_mpi()
-  print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
+print("Launch arguments:", sys.argv)
 
-browser_timezone = None
+if '--no-load' in sys.argv:
+  print("🚫 Skipping model loading")
+  pass
 
-try:
-  keep_upsampling_after_restart
-except NameError:
-  keep_upsampling_after_restart = False
-
-if not keep_upsampling_after_restart:
-
-  class Upsampling:
-
-    project = None
-    sample_id = None
-
-    running = False
-    zs = None
-    level = None
-    metas = None
-    labels = None
-    priors = None
-    params = None
-
-    windows = []
-    window_index = 0
-    window_start_time = None
-    # Set time per window by default to 6 minutes (will be updated later) in timedelta format
-    time_per_window = timedelta(minutes=6)
-    windows_remaining = None
-    time_remaining = None
-    eta = None
-
-    status_markdown = None
-    should_refresh_audio = False
-
-    stop = False
-    kill_runtime_once_done = False
-
-print('Monkey patching Jukebox methods...')
-
-# Monkey patch load_checkpoint, allowing to load models from arbitrary paths
-def download_to_cache(remote_path, local_path):
-  print(f'Caching {remote_path} to {local_path}')
-  if not os.path.exists(os.path.dirname(local_path)):
-    print(f'Creating directory {os.path.dirname(local_path)}')
-    os.makedirs(os.path.dirname(local_path))
-  if not os.path.exists(local_path):
-    print('Downloading...')
-    download(remote_path, local_path)
-    print('Done.')
-  else:
-    print('Already cached.')
-
-def monkey_patched_load_checkpoint(path):
-  global models_path
-  restore = path
-  if restore.startswith(REMOTE_PREFIX):
-      remote_path = restore
-      local_path = os.path.join(models_path, remote_path[len(REMOTE_PREFIX):])
-      if dist.get_rank() % 8 == 0:
-          download_to_cache(remote_path, local_path)
-      restore = local_path
-  dist.barrier()
-  checkpoint = t.load(restore, map_location=t.device('cpu'))
-  print("Restored from {}".format(restore))
-  return checkpoint
-
-jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
-print('load_checkpoint monkey patched.')
-
-# # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
-# for model_path in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
-#   download_to_cache(f'{REMOTE_PREFIX}{model_path}', os.path.join(data_path, model_path))
-
-# Monkey patch load_audio, allowing for duration = None
-def monkey_patched_load_audio(file, sr, offset, duration, mono=False):
-  # Librosa loads more filetypes than soundfile
-  x, _ = librosa.load(file, sr=sr, mono=mono, offset=offset/sr, duration=None if duration is None else duration/sr)
-  if len(x.shape) == 1:
-      x = x.reshape((1, -1))
-  return x
-
-jukebox.utils.audio_utils.load_audio = monkey_patched_load_audio
-print('load_audio monkey patched.')
-
-sample_id_to_restart_upsampling_with = None
-
-def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
-
-  global base_path
-
-  # The original code provides for shorter samples by sampling only a partial window, but we'll just throw an error for simplicity
-  assert total_length >= prior.n_ctx, f'Total length {total_length} is shorter than prior.n_ctx {prior.n_ctx}'
-
-  Upsampling.zs = zs
-  Upsampling.level = level
-
-  print(f"Sampling level {level}")
-  # Remember current time
-  start_time = datetime.now()
-  Upsampling.windows = get_starts(total_length, prior.n_ctx, hop_length)
-
-  print(f'Totally {len(Upsampling.windows)} windows at level {level}')
-
-  # Remove all windows whose start + n_ctx is less than however many samples we've already upsampled (at this level)
-  already_upsampled = Upsampling.zs[level].shape[1]
-  if already_upsampled > 0:
-    print(f'Already upsampled {already_upsampled} samples at level {level}')
-    Upsampling.windows = [ start for start in Upsampling.windows if start + prior.n_ctx > already_upsampled ]
-
-  if len(Upsampling.windows) == 0:
-    print(f'No windows to upsample at level {level}')
-  else:
-    print(f'Upsampling {len(Upsampling.windows)} windows, from {Upsampling.windows[0]} to {Upsampling.windows[-1]+prior.n_ctx}')
-
-    Upsampling.window_index = 0
-    for start in Upsampling.windows:
-
-      if Upsampling.stop:
-        print(f'Upsampling stopped for level {level}')
-        if Upsampling.level == 0:
-          Upsampling.stop = False
-        Upsampling.running = False
-
-        if sample_id_to_restart_upsampling_with is not None:
-          print(f'Upsampling will be restarted for sample {sample_id_to_restart_upsampling_with}')
-          restart_upsampling(sample_id_to_restart_upsampling_with)
-
-        break
-
-      Upsampling.window_start_time = datetime.now()
-      Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
-      Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
-      Upsampling.eta = datetime.now() + Upsampling.time_remaining
-      
-      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{ UI.UPSAMPLING_LEVEL_NAMES[2-level] }** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
-          
-      # Print the status with an hourglass emoji in front of it
-      print(f'\n\n⏳ {Upsampling.status_markdown}\n\n')
-      
-      Upsampling.zs = sample_single_window(Upsampling.zs, labels, sampling_kwargs, level, prior, start, hps)
-
-      # Only update time_per_window we've sampled at least 2 windows (as the first window can take either a long or short time due to its size)
-      if Upsampling.window_index > 1:
-        Upsampling.time_per_window = datetime.now() - Upsampling.window_start_time
-
-      path = f'{base_path}/{Upsampling.project}/{Upsampling.sample_id}.z'
-      print(f'Saving upsampled z to {path}')
-      t.save(Upsampling.zs, path)
-      print('Done.')
-      Upsampling.should_refresh_audio = True
-      Upsampling.window_index += 1
-
-  if level == 0:
-    Upsampling.running = False
-    if Upsampling.kill_runtime_once_done:
-      print('Killing runtime')
-      runtime.unassign()
-
-  return Upsampling.zs
-
-jukebox.sample.sample_level = monkey_patched_sample_level
-print('sample_level monkey patched.')
-
-reload_prior = False #param{type:'boolean'}
-
-def load_top_prior():
-  global top_prior, vqvae, device
-
-  print('Loading top prior')
-  top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
-
-
-if Upsampling.running:
-  print('''
-    !!! APP SET FOR UPSAMPLING !!!
-
-    To use the app for composing, stop execution, create a new cell and run the following code:
-
-    Upsampling.started = False
-
-    Then run the main cell again.
-  ''')
 else:
+
+  reload_dist = False #param{type:'boolean'}
+
+  try:
+    assert not reload_dist and not reload_all
+    rank, local_rank, device
+    print('Dist already setup')
+  except:
+    rank, local_rank, device = setup_dist_from_mpi()
+    print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
+
+  browser_timezone = None
+
+  try:
+    keep_upsampling_after_restart
+  except NameError:
+    keep_upsampling_after_restart = False
 
   if not keep_upsampling_after_restart:
 
-    try:
-      vqvae, priors, top_prior
+    class Upsampling:
 
-      assert total_duration == calculated_duration and not reload_prior and not reload_all
-      print('Model already loaded.')
-    except:
+      project = None
+      sample_id = None
 
-      print(f'Loading vqvae and top_prior for duration {total_duration}...')
+      running = False
+      zs = None
+      level = None
+      metas = None
+      labels = None
+      priors = None
+      params = None
 
-      vqvae, *priors = MODELS['5b_lyrics']
+      windows = []
+      window_index = 0
+      window_start_time = None
+      # Set time per window by default to 6 minutes (will be updated later) in timedelta format
+      time_per_window = timedelta(minutes=6)
+      windows_remaining = None
+      time_remaining = None
+      eta = None
 
-      vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
+      status_markdown = None
+      should_refresh_audio = False
 
-      load_top_prior()
+      stop = False
+      kill_runtime_once_done = False
 
-      calculated_duration = total_duration
+  print('Monkey patching Jukebox methods...')
 
-      empty_cache
+  # Monkey patch load_checkpoint, allowing to load models from arbitrary paths
+  def download_to_cache(remote_path, local_path):
+    print(f'Caching {remote_path} to {local_path}')
+    if not os.path.exists(os.path.dirname(local_path)):
+      print(f'Creating directory {os.path.dirname(local_path)}')
+      os.makedirs(os.path.dirname(local_path))
+    if not os.path.exists(local_path):
+      print('Downloading...')
+      download(remote_path, local_path)
+      print('Done.')
+    else:
+      print('Already cached.')
+
+  def monkey_patched_load_checkpoint(path):
+    global models_path
+    restore = path
+    if restore.startswith(REMOTE_PREFIX):
+        remote_path = restore
+        local_path = os.path.join(models_path, remote_path[len(REMOTE_PREFIX):])
+        if dist.get_rank() % 8 == 0:
+            download_to_cache(remote_path, local_path)
+        restore = local_path
+    dist.barrier()
+    checkpoint = t.load(restore, map_location=t.device('cpu'))
+    print("Restored from {}".format(restore))
+    return checkpoint
+
+  jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
+  print('load_checkpoint monkey patched.')
+
+  # # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
+  # for model_path in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
+  #   download_to_cache(f'{REMOTE_PREFIX}{model_path}', os.path.join(data_path, model_path))
+
+  # Monkey patch load_audio, allowing for duration = None
+  def monkey_patched_load_audio(file, sr, offset, duration, mono=False):
+    # Librosa loads more filetypes than soundfile
+    x, _ = librosa.load(file, sr=sr, mono=mono, offset=offset/sr, duration=None if duration is None else duration/sr)
+    if len(x.shape) == 1:
+        x = x.reshape((1, -1))
+    return x
+
+  jukebox.utils.audio_utils.load_audio = monkey_patched_load_audio
+  print('load_audio monkey patched.')
+
+  sample_id_to_restart_upsampling_with = None
+
+  def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
+
+    global base_path
+
+    # The original code provides for shorter samples by sampling only a partial window, but we'll just throw an error for simplicity
+    assert total_length >= prior.n_ctx, f'Total length {total_length} is shorter than prior.n_ctx {prior.n_ctx}'
+
+    Upsampling.zs = zs
+    Upsampling.level = level
+
+    print(f"Sampling level {level}")
+    # Remember current time
+    start_time = datetime.now()
+    Upsampling.windows = get_starts(total_length, prior.n_ctx, hop_length)
+
+    print(f'Totally {len(Upsampling.windows)} windows at level {level}')
+
+    # Remove all windows whose start + n_ctx is less than however many samples we've already upsampled (at this level)
+    already_upsampled = Upsampling.zs[level].shape[1]
+    if already_upsampled > 0:
+      print(f'Already upsampled {already_upsampled} samples at level {level}')
+      Upsampling.windows = [ start for start in Upsampling.windows if start + prior.n_ctx > already_upsampled ]
+
+    if len(Upsampling.windows) == 0:
+      print(f'No windows to upsample at level {level}')
+    else:
+      print(f'Upsampling {len(Upsampling.windows)} windows, from {Upsampling.windows[0]} to {Upsampling.windows[-1]+prior.n_ctx}')
+
+      Upsampling.window_index = 0
+      for start in Upsampling.windows:
+
+        if Upsampling.stop:
+          print(f'Upsampling stopped for level {level}')
+          if Upsampling.level == 0:
+            Upsampling.stop = False
+          Upsampling.running = False
+
+          if sample_id_to_restart_upsampling_with is not None:
+            print(f'Upsampling will be restarted for sample {sample_id_to_restart_upsampling_with}')
+            restart_upsampling(sample_id_to_restart_upsampling_with)
+
+          break
+
+        Upsampling.window_start_time = datetime.now()
+        Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
+        Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
+        Upsampling.eta = datetime.now() + Upsampling.time_remaining
+        
+        Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{ UI.UPSAMPLING_LEVEL_NAMES[2-level] }** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
+            
+        # Print the status with an hourglass emoji in front of it
+        print(f'\n\n⏳ {Upsampling.status_markdown}\n\n')
+        
+        Upsampling.zs = sample_single_window(Upsampling.zs, labels, sampling_kwargs, level, prior, start, hps)
+
+        # Only update time_per_window we've sampled at least 2 windows (as the first window can take either a long or short time due to its size)
+        if Upsampling.window_index > 1:
+          Upsampling.time_per_window = datetime.now() - Upsampling.window_start_time
+
+        path = f'{base_path}/{Upsampling.project}/{Upsampling.sample_id}.z'
+        print(f'Saving upsampled z to {path}')
+        t.save(Upsampling.zs, path)
+        print('Done.')
+        Upsampling.should_refresh_audio = True
+        Upsampling.window_index += 1
+
+    if level == 0:
+      Upsampling.running = False
+      if Upsampling.kill_runtime_once_done:
+        print('Killing runtime')
+        runtime.unassign()
+
+    return Upsampling.zs
+
+  jukebox.sample.sample_level = monkey_patched_sample_level
+  print('sample_level monkey patched.')
+
+  reload_prior = False #param{type:'boolean'}
+
+  def load_top_prior():
+    global top_prior, vqvae, device
+
+    print('Loading top prior')
+    top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
+
+  if Upsampling.running:
+    print('''
+      !!! APP SET FOR UPSAMPLING !!!
+
+      To use the app for composing, stop execution, create a new cell and run the following code:
+
+      Upsampling.started = False
+
+      Then run the main cell again.
+    ''')
+  else:
+
+    if not keep_upsampling_after_restart:
+
+      try:
+        vqvae, priors, top_prior
+
+        assert total_duration == calculated_duration and not reload_prior and not reload_all
+        print('Model already loaded.')
+      except:
+
+        print(f'Loading vqvae and top_prior for duration {total_duration}...')
+
+        vqvae, *priors = MODELS['5b_lyrics']
+
+        vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
+
+        load_top_prior()
+
+        calculated_duration = total_duration
+
+        empty_cache
 
 
 # If the base folder doesn't exist, create it
@@ -423,8 +433,13 @@ class UI:
     label = 'Artist'
   )
 
-  genre = gr.Dropdown(
-    label = 'Genre'
+  genre_dropdown = gr.Dropdown(
+    label = 'Available genres'
+  )
+
+  genre = gr.Textbox(
+    label = 'Genre',
+    placeholder = 'Separate several with spaces'
   )
 
   lyrics = gr.Textbox(
@@ -438,7 +453,7 @@ class UI:
   n_samples = gr.Slider(
     label = 'Number of samples',
     minimum = 1,
-    maximum = 4,
+    maximum = 5,
     step = 1
   )
 
@@ -517,7 +532,7 @@ class UI:
 
   upsampling_accordion = gr.Accordion(
     label = 'Upsampling',
-    visible = False
+    # visible = False
   )
 
   UPSAMPLING_LEVEL_NAMES = [ 'Raw', 'Midsampled', 'Upsampled' ]
@@ -532,7 +547,7 @@ class UI:
     label = 'Render...',
     type = 'index',
     choices = [ 'Channel 1', 'Channel 2', 'Channel 3', 'Pseudo-stereo', 'Pseudo-stereo with delay' ],
-    value = 'Pseudo-stereo with delay',
+    value = 'Pseudo-stereo',
   )
 
   combine_upsampling_levels = gr.Checkbox(
@@ -667,6 +682,11 @@ def create_project(name):
     choices = get_projects(),
     value = name
   )
+
+def get_zs_filename(project_name, sample_name, with_prefix = True):
+  if not with_prefix:
+    sample_name = f'{project_name}-{sample_name}'
+  return f'{base_path}/{project_name}/{sample_name}.z'
 
 def convert_audio_to_sample(project_name, audio, sec_to_trim_primed_audio, show_leafs_only):
 
@@ -1194,6 +1214,9 @@ def get_children(project_name, parent_sample_id, include_custom=True):
 
   # print(f'Children of {parent_sample_id}: {child_ids}')
 
+  # Sort alphabetically
+  child_ids.sort()
+
   return child_ids
 
 def get_custom_parents(project_name, force_reload=False):
@@ -1293,7 +1316,7 @@ def on_load( href, query_string, error_message ):
     UI.artist: gr.update(
       choices = get_list('artist'),
     ),
-    UI.genre: gr.update(
+    UI.genre_dropdown: gr.update(
       choices = get_list('genre'),
     ),
     UI.getting_started_column: gr.update(
@@ -1596,6 +1619,7 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
   # If the mp3 size is > certain sie, we'll need to send it back in chunks, so we divide the mp3 into as many chunks as needed
   file_size = os.path.getsize(f'{filename}.mp3')
   file_limit = 300000
+
   if file_size > file_limit:
     print(f'MP3 file size is {file_size} bytes, splitting into chunks...')
     file_content = open(f'{filename}.mp3', 'rb').read()
@@ -2045,6 +2069,18 @@ with gr.Blocks(
 
   UI.browser_timezone.render()
 
+  # Render an invisible checkbox group to enable loading list of projects via API
+  project_list = gr.CheckboxGroup(
+    visible = False,
+  )
+
+  project_list.change(
+    inputs = None,
+    outputs = [ project_list ],
+    fn = lambda: get_projects(),
+    api_name = 'get-projects'
+  )
+
   with UI.separate_tab_warning.render():
 
     UI.separate_tab_link.render()
@@ -2124,6 +2160,17 @@ with gr.Blocks(
                 api_name = 'filter-artists'
               )
           
+          elif component == UI.genre:
+
+            UI.genre_dropdown.render().change(
+              inputs = [ UI.genre, UI.genre_dropdown ],
+              outputs = UI.genre,
+              # Add after a space, if not empty
+              fn = lambda genre, genre_dropdown: ( genre + ' ' if genre else '' ) + genre_dropdown,
+            )
+          
+            component.render()
+
           else:
 
             component.render()
@@ -2351,7 +2398,7 @@ with gr.Blocks(
                   UI.picked_sample.change( **show_or_hide_upsampling_elements_args )
                   UI.upsampling_running.change( **show_or_hide_upsampling_elements_args )
 
-                with gr.Column(visible = False) as upsampling_manipulation_column:
+                with gr.Column() as upsampling_manipulation_column:
 
                   # # Show the column only if an upsampled sample is selected and hide the compose row respectively (we can only compose with the original sample)
                   # UI.upsampling_level.change(
@@ -2652,6 +2699,74 @@ with gr.Blocks(
                   api_name = 'rename-sample'
                 )
         
+              with gr.Tab('Purge samples'):
+
+                # For all samples whose parent sample's level 0/1 are the same as this one, purge those levels
+
+                # We need a button to prepare the list of samples to purge, a multiline textbox to show the list, and a button to confirm the purge
+
+                purge_list = gr.Textbox(
+                  label = 'Purge list',
+                  placeholder = 'Click the button below to prepare the list of samples to purge',
+                  multiline = True,
+                  disabled = True,
+                )
+
+                def prepare_purge_list(project_name):
+                  # Get the list of samples to purge
+                  # For each sample, get its parent sample
+                  # If the parent sample's level 0/1 is the same as this one, add it to the list
+                  samples = get_samples(project_name, False)
+                  purge_list = []
+                  for sample in samples:
+                    current_zs = t.load(get_zs_filename(project_name, sample))
+                    parent = get_parent(project_name, sample)
+                    if not parent:
+                      print(f'No parent for {sample}, skipping')
+                      continue
+                    parent_zs = t.load(get_zs_filename(project_name, parent))
+                    if ( 
+                      t.equal( current_zs[0], parent_zs[0] ) and
+                      t.equal( current_zs[1], parent_zs[1] ) and
+                      ( current_zs[0].shape[1] + current_zs[1].shape[1] > 0 )
+                    ):
+                      purge_list.append(sample)
+                      print(f'Adding {sample} to the purge list')
+                  print(f'Purge list: {purge_list}')
+                  return '\n'.join(purge_list)
+
+                gr.Button('Prepare purge list').click(
+                  inputs = [ UI.project_name ],
+                  outputs = purge_list,
+                  fn = prepare_purge_list,
+                  api_name = 'prepare-purge-list'
+                )
+
+                def purge_samples(project_name, purge_list):
+                  # Check the project size before purging, i.e. the joint size of all *.z files in the project directory
+                  project_size_before = subprocess.check_output(['du','-sh', os.path.join( base_path, project_name )]).split()[0].decode('utf-8')
+                  # For each sample in the purge list, delete it
+                  for sample in purge_list.split('\n'):
+                    zs = t.load(get_zs_filename(project_name, sample))
+                    level2_shape0 = zs[2].shape[0]
+                    purged_zs = [
+                      t.empty([level2_shape0,0], device='cuda'),
+                      t.empty([level2_shape0,0], device='cuda'),
+                      zs[2]
+                    ]
+                    print(f'Purged {sample} from shapes {[x.shape for x in zs]} to {[x.shape for x in purged_zs]}')
+                    t.save(purged_zs, get_zs_filename(project_name, sample))
+                  # Check the project size after purging
+                  project_size_after = subprocess.check_output(['du','-sh', os.path.join( base_path, project_name )]).split()[0].decode('utf-8')
+                  return f'Project size before: {project_size_before}, after: {project_size_after}'
+                
+                gr.Button('Purge samples').click(
+                  inputs = [ UI.project_name, purge_list ],
+                  outputs = purge_list,
+                  fn = purge_samples,
+                  api_name = 'purge-samples'
+                )
+
         UI.generation_progress.render()
 
 
@@ -2880,7 +2995,15 @@ with gr.Blocks(
             api_name = 'empty-cache',
           )
 
-        with gr.Accordion('Run any code', open = False, visible = DEV_MODE):
+        with gr.Accordion('Dev', open = False, visible = DEV_MODE):
+
+          # Button to kill current process
+          gr.Button('Kill current process').click(
+            inputs = None,
+            outputs = None,
+            fn = lambda: subprocess.run( ['kill', '-9', str(os.getpid())] ),
+            api_name = 'kill-current-process',
+          )
 
           gr.Markdown('''
             The following input box allows you to execute arbitrary Python code. ⚠️ DON’T USE THIS FEATURE IF YOU DON’T KNOW WHAT YOU’RE DOING! ⚠️
@@ -2939,7 +3062,7 @@ with gr.Blocks(
     on_load,
     inputs = [ gr.Textbox(visible=False), gr.Textbox(visible=False), gr.Textbox(visible=False) ],
     outputs = [ 
-      UI.project_name, UI.routed_sample_id, UI.artist, UI.genre, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window,
+      UI.project_name, UI.routed_sample_id, UI.artist, UI.genre_dropdown, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window,
       UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
     ],
     api_name = 'initialize',
