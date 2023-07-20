@@ -9,7 +9,7 @@ GITHUB_SHA = 'v0.4.1'
 
 #@markdown ## Parameters
 #@markdown ### *Song duration in seconds*
-total_duration = 120 #@param {type:"slider", min:60, max:300, step:10}
+total_duration = 200 #@param {type:"slider", min:60, max:300, step:10}
 #@markdown This is the only generation parameter you need to set in advance (instead of setting it in the UI later), as changing the duration requires reloading the model. If you do want to do this, stop the cell and run it again with the new value.
 #@markdown
 
@@ -19,12 +19,12 @@ use_google_drive = False #@param{type:'boolean'}
 #@markdown
 
 #@markdown ### *Path for projects*
-base_path = './content/drive/My Drive/jukebox-webui' #@param{type:'string'}
+base_path = '../content/drive/My Drive/jukebox-webui' #@param{type:'string'}
 #@markdown This is where your projects will go. ```/content/drive/My Drive/``` refers to the very top of your Google Drive. The folder will be automatically created if it doesn’t exist, so you don’t need to create it manually.
 #@markdown
 
 #@markdown ### *Path for models*
-models_path = './content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
+models_path = '../content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
 #@markdown This is where your models will be stored. This app is capable of loading the model from an arbitrary path, so storing it on Google Drive will save you the hassle (and time) of having to download or copy it every time you start the instance. The models will be downloaded automatically if they don’t exist, so you don’t need to download them manually.
 
 #@markdown ### *Optimized Jukebox* (experimental)
@@ -3086,6 +3086,5 @@ with gr.Blocks(
     _js = '() => [ new Date().getTimezoneOffset() ]',
     fn = set_browser_timezone
   )
-
 
   app.launch( share = share_gradio, debug = debug_gradio )
