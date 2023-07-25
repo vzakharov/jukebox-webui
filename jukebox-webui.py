@@ -475,7 +475,14 @@ class UI:
     step = 0.1
   )
 
-  generation_params = [ artist, genre, lyrics, n_samples, temperature, generation_length ]
+  generation_discard_window = gr.Slider(
+    label = 'Generation discard window, sec',
+    minimum = 0,
+    maximum = 200,
+    step = 1
+  )
+
+  generation_params = [ artist, genre, lyrics, n_samples, temperature, generation_length, generation_discard_window ]
 
   getting_started_column = gr.Column( scale = 2, elem_id = 'getting-started-column' )
   
@@ -793,7 +800,7 @@ def delete_sample(project_name, sample_id, confirm):
     ),            
   }
 
-def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length):
+def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length, discard_window):
 
   print(f'Generating {n_samples} sample(s) of {generation_length} sec each for project {project_name}...')
 
@@ -807,6 +814,12 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
 
   # If metas or n_samples have changed, recalculate the metas
   if calculated_metas != dict( artist = artist, genre = genre, lyrics = lyrics ) or len(metas) != n_samples:
+
+    # If there's "---\n" in the lyrics, remove everything before and including it
+    cutout = '---\n'
+    if lyrics and cutout in lyrics:
+      lyrics = lyrics.split(cutout)[1]
+      print(f'Lyrics after cutting: {lyrics}')
 
     print(f'Metas or n_samples have changed, recalculating the model for {artist}, {genre}, {lyrics}, {n_samples} samples...')
 
@@ -837,6 +850,13 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
     zs = [ z[0].repeat(n_samples, 1) for z in zs ]
     print(f'Converted to shape {[ z.shape for z in zs ]}')
 
+    if discard_window > 0:
+
+      discarded_zs = [ z[:, :seconds_to_tokens(discard_window)] for z in zs ]
+      zs = [ z[:, seconds_to_tokens(discard_window):] for z in zs ]
+      print(f'Kept only the last {discard_window} seconds of the parent sample for generation purposes')
+    
+
   else:
     zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]
     print('No parent sample or primer provided, starting from scratch')
@@ -850,6 +870,10 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   print(f'zs: {[ z.shape for z in zs ]}')
   zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
   print(f'Generated zs of shape {[ z.shape for z in zs ]}')
+  
+  if discarded_zs is not None:
+    zs = [ t.cat([ discarded_zs[i], zs[i] ], dim=1) for i in range(3) ]
+    print(f'Concatenated cutout zs of shape {[ z.shape for z in discarded_zs ]} with generated zs of shape {[ z.shape for z in zs ]}')
 
   wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
   print(f'Generated wavs of shape {wavs.shape}')
@@ -2183,6 +2207,18 @@ with gr.Blocks(
             )
           
             component.render()
+
+          elif component == UI.generation_discard_window:
+
+            component.render()
+
+            with gr.Accordion( 'What is this?', open = False ):
+
+              gr.Markdown("""
+                If your song is too long, the generation may take too much memory and crash. In this case, you can discard the first N seconds of the song for generation purposes (i.e. the model won’t take them into account when generating the rest of the song).
+                          
+                If your song has lyrics, put '---' (with a new line before and after) at the point that is now the “beginning” of the song, so that the model doesn’t get confused by the now-irrelevant lyrics.
+              """)
 
           else:
 
