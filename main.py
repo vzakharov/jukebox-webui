@@ -60,24 +60,6 @@ def print_gpu_and_memory():
 
 # If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
 
-
-# Print the IP address of the current Colab instance
-import socket
-
-try:
-  old_colab_instance_ip = colab_instance_ip
-except NameError:
-  old_colab_instance_ip = None
-
-colab_instance_ip = socket.gethostbyname(socket.gethostname())
-print(f'🌐 IP address: {colab_instance_ip}')
-
-if colab_instance_ip == old_colab_instance_ip:
-  print('(Same as during the previous run)')
-else:
-  print('(New IP)')
-
-
 try:
 
   print_gpu_and_memory()
