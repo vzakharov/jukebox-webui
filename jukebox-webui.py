@@ -9,7 +9,7 @@ GITHUB_SHA = 'v0.4.1'
 
 #@markdown ## Parameters
 #@markdown ### *Song duration in seconds*
-total_duration = 200 #@param {type:"slider", min:60, max:300, step:10}
+total_duration = 250 #@param {type:"slider", min:60, max:300, step:10}
 #@markdown This is the only generation parameter you need to set in advance (instead of setting it in the UI later), as changing the duration requires reloading the model. If you do want to do this, stop the cell and run it again with the new value.
 #@markdown
 
@@ -509,7 +509,7 @@ class UI:
   )
 
   show_leafs_only = gr.Checkbox(
-    label = 'Hide branch samples',
+    label = 'Leaf samples only',
   )
 
   branch_sample_count = gr.Number(
@@ -553,6 +553,11 @@ class UI:
   combine_upsampling_levels = gr.Checkbox(
     label = 'Combine levels',
     value = True
+  )
+
+  invert_center_channel = gr.Checkbox(
+    label = 'Invert center channel',
+    value = False
   )
 
   continue_upsampling_button = gr.Button('Continue upsampling', visible = False )
@@ -946,7 +951,7 @@ def get_first_upsampled_ancestor_zs(project_name, sample_id):
       print(f'No upsampled ancestor found for {sample_id}')
       return None
 
-def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stereo_rendering=3, combine_levels=True):
+def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stereo_rendering=3, combine_levels=True, invert_center=False):
 
   print(f'Generating audio for {project_name}/{sample_id} (level {level}, stereo rendering {stereo_rendering}, combine levels {combine_levels})')
   print(f'Cut: {cut_audio}, preview: {preview_sec}')
@@ -1114,7 +1119,8 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
 
     else:
 
-      def to_stereo(wav, stereo_delay_ms=0):
+      # def to_stereo(wav, stereo_delay_ms=0):
+      def to_stereo(wav, stereo_delay_ms=0, invert_center=False):
 
         # A stereo wav is of form (sample_length + double the delay, 2)
         delay_quants = int( stereo_delay_ms * hps.sr / 1000 )
@@ -1131,6 +1137,10 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
         else:
           stereo[ :, 0 ] = wav[ :, 0 ] + wav[ :, 1 ]
           stereo[ :, 1 ] = wav[ :, 2 ] + wav[ :, 1 ]
+        
+        if invert_center:
+          stereo[ :, 1 ] *= -1
+
         # Now we have max amplitude of 2, so we need to divide by 2
         stereo /= 2
 
@@ -1138,7 +1148,7 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
 
         return stereo
       
-      wav = to_stereo(wav, stereo_delay_ms=20 if stereo_rendering == 4 else 0)
+      wav = to_stereo(wav, 20 if stereo_rendering == 4 else 0, invert_center)
 
   upsampled_lengths = [ 0, 0 ]
   if combine_levels:
@@ -1149,7 +1159,7 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
     for sub_level in available_levels:
 
       if sub_level < level:
-        sub_wav = get_audio(project_name, sample_id, cut_audio, seconds_to_cut_from_start, sub_level, stereo_rendering, combine_levels=False)[0]
+        sub_wav = get_audio(project_name, sample_id, cut_audio, seconds_to_cut_from_start, sub_level, stereo_rendering, combine_levels, invert_center)[0]
         upsampled_lengths[sub_level] = sub_wav.shape[0] / hps.sr + seconds_to_cut_from_start
       else:
         sub_wav = wav
@@ -1511,7 +1521,7 @@ def get_project(project_name, routed_sample_id):
     **settings_out_dict
   }
 
-def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
+def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center):
     
     filename = f'{base_path}/{project_name}/rendered/{sample_id} '
 
@@ -1531,16 +1541,19 @@ def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_r
     
     if combine_levels:
       filename += f'combined '
+
+    if invert_center:
+      filename += 'inverted '
     
     return filename
 
-def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_rendering=4, combine_levels=True, force_reload=False):
+def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_rendering=4, combine_levels=True, invert_center=False, force_reload=False):
 
   global hps
 
   print(f'Loading sample {sample_id}')
 
-  filename = get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels)
+  filename = get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center)
   filename_without_hash = filename
 
   # Add a hash (8 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
@@ -1569,7 +1582,7 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
       last_n_sec = -last_n_sec
     # (Because get_audio, called below, accepts "preview_sec", whose positive value means "preview the first n seconds", but we want to preview the last n seconds)
 
-    wav, total_audio_length, upsampled_lengths = get_audio(project_name, sample_id, cut_out, last_n_sec, None, upsample_rendering, combine_levels)
+    wav, total_audio_length, upsampled_lengths = get_audio(project_name, sample_id, cut_out, last_n_sec, None, upsample_rendering, combine_levels, invert_center)
     # (level is None, which means "the highest level that is available", i.e. 2)
 
     if not os.path.exists(os.path.dirname(filename)):
@@ -1655,13 +1668,13 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
     UI.picked_sample_updated: random.random(),
   }
 
-def get_sibling_samples(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels):
+def get_sibling_samples(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center):
   print(f'Updating sibling samples for {sample_id}...')
   sibling_files = []
   for sibling_id in get_siblings(project_name, sample_id):
     if sibling_id == sample_id:
       continue
-    sibling_sample = get_sample(project_name, sibling_id, cut_out, last_n_sec, upsample_rendering, combine_levels)
+    sibling_sample = get_sample(project_name, sibling_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center)
     sibling_sample_files = sibling_sample[UI.current_chunks]
     # breakpoint()
     print(f'Adding sibling {sibling_id} with files {sibling_sample_files}')
@@ -2265,7 +2278,7 @@ with gr.Blocks(
 
           preview_inputs = [
               UI.project_name, UI.picked_sample, UI.cut_audio_specs, UI.preview_just_the_last_n_sec,
-              UI.upsample_rendering, UI.combine_upsampling_levels
+              UI.upsample_rendering, UI.combine_upsampling_levels, UI.invert_center_channel
           ]
 
           get_preview_args = lambda force_reload: dict(
@@ -2417,6 +2430,10 @@ with gr.Blocks(
                     )
 
                     UI.combine_upsampling_levels.render().change(
+                      **default_preview_args,
+                    )
+
+                    UI.invert_center_channel.render().change(
                       **default_preview_args,
                     )
 
@@ -2719,19 +2736,23 @@ with gr.Blocks(
                   samples = get_samples(project_name, False)
                   purge_list = []
                   for sample in samples:
-                    current_zs = t.load(get_zs_filename(project_name, sample))
-                    parent = get_parent(project_name, sample)
-                    if not parent:
-                      print(f'No parent for {sample}, skipping')
+                    try:
+                      current_zs = t.load(get_zs_filename(project_name, sample))
+                      parent = get_parent(project_name, sample)
+                      if not parent:
+                        print(f'No parent for {sample}, skipping')
+                        continue
+                      parent_zs = t.load(get_zs_filename(project_name, parent))
+                      if ( 
+                        t.equal( current_zs[0], parent_zs[0] ) and
+                        t.equal( current_zs[1], parent_zs[1] ) and
+                        ( current_zs[0].shape[1] + current_zs[1].shape[1] > 0 )
+                      ):
+                        purge_list.append(sample)
+                        print(f'Adding {sample} to the purge list')
+                    except Exception as e:
+                      print(f'Error while processing {sample}: {e}, continuing')
                       continue
-                    parent_zs = t.load(get_zs_filename(project_name, parent))
-                    if ( 
-                      t.equal( current_zs[0], parent_zs[0] ) and
-                      t.equal( current_zs[1], parent_zs[1] ) and
-                      ( current_zs[0].shape[1] + current_zs[1].shape[1] > 0 )
-                    ):
-                      purge_list.append(sample)
-                      print(f'Adding {sample} to the purge list')
                   print(f'Purge list: {purge_list}')
                   return '\n'.join(purge_list)
 
