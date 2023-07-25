@@ -927,15 +927,17 @@ def save_zs(zs, project_name, sample_id):
   t.save(zs, filename)
   print(f'Wrote {filename}')
 
-def backup_zs(zs, project_name, sample_id):
+def backup_sample(project_name, sample_id):
   global base_path
 
+  current_filename = f'{base_path}/{project_name}/{sample_id}.z'
   timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-  filename = f'{base_path}/{project_name}/bak/{sample_id}_{timestamp}.z'
-  if not os.path.exists(os.path.dirname(filename)):
-    os.makedirs(os.path.dirname(filename))
-  t.save(zs, filename)
-  print(f'Backed up {filename}')
+  backup_filename = f'{base_path}/{project_name}/bak/{sample_id}_{timestamp}.z'
+  if not os.path.exists(os.path.dirname(backup_filename)):
+    os.makedirs(os.path.dirname(backup_filename))
+  # t.save(zs, backup_filename)
+  shutil.copyfile(current_filename, backup_filename)
+  print(f'Backed up {backup_filename}')
 
 def get_levels(zs):
 
@@ -2066,8 +2068,8 @@ def cut_zs(zs, specs):
   return [ cut_z(zs[level], specs, level) for level in range(len(zs)) ]
 
 def cut_audio(project_name, sample_id, interval):
+  backup_sample(project_name, sample_id)
   zs = get_zs(project_name, sample_id)
-  backup_zs(zs, project_name, sample_id)
   zs = cut_zs(zs, interval)
   save_zs(zs, project_name, sample_id)
   return ''
@@ -2822,6 +2824,26 @@ with gr.Blocks(
                   outputs = purge_list,
                   fn = purge_samples,
                   api_name = 'purge-samples'
+                )
+
+              with gr.Tab('Completify sample'):
+
+                gr.Markdown('''
+                  For space saving purposes, the app will sometime NOT include the entire information needed to render the sample into the sample file, taking the missing info (e.g. upsampled tokens) from its ancestors instead.
+                            
+                  If, for whatever reason, you want to have the entire information in the sample file, you can add it by clicking the button below.
+                ''')
+
+                def completify(project_name, sample_id):
+                  zs = get_zs(project_name, sample_id, True)
+                  backup_sample(project_name, sample_id)
+                  save_zs(zs, project_name, sample_id)
+
+                completify_button = gr.Button('Completify')
+                completify_button.click(
+                  completify,
+                  [ UI.project_name, UI.picked_sample ],
+                  gr.Button('Completify')
                 )
 
         UI.generation_progress.render()
