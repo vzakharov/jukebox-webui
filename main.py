@@ -9,7 +9,7 @@ GITHUB_SHA = 'v0.4.1'
 
 #@markdown ## Parameters
 #@markdown ### *Song duration in seconds*
-total_duration = 250 #@param {type:"slider", min:60, max:300, step:10}
+total_duration = 150 #@param {type:"slider", min:60, max:300, step:10}
 #@markdown This is the only generation parameter you need to set in advance (instead of setting it in the UI later), as changing the duration requires reloading the model. If you do want to do this, stop the cell and run it again with the new value.
 #@markdown
 
