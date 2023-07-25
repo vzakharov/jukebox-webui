@@ -38,7 +38,6 @@ share_gradio = True #param{type:'boolean'}
 DEV_MODE = True #@param{type:'boolean'}
 #@markdown Some dev-only stuff. Feel free to try it out, but don’t expect it to work.
 
-
 #@markdown ---
 #@markdown That’s it, you can now run the cell. Note that the first time you run it, it will take a few minutes to download the model. Afterwards, re-running the cell will be much faster.
 
@@ -47,49 +46,9 @@ debug_gradio = True #param{type:'boolean'}
 reload_all = False #param{type:'boolean'}
 
 import glob
-import json
-import math
 import subprocess
 
-def print_gpu_and_memory():
-  # Print only gpu and memory info from print_gpu_and_memory()
-  print("💻 GPU, total memory, memory used:")
-  # !nvidia-smi --query-gpu=gpu_name,memory.total,memory.used --format=csv,noheader
-  subprocess.run(['nvidia-smi', '--query-gpu=gpu_name,memory.total,memory.used', '--format=csv,noheader'])
-
-
-# If running locally, comment out the whole try-except block below, otherwise the !-prefixed commands will give a compile-time error (i.e. it will fail even if the corresponding code is not executed). Note that the app was never tested locally (tbh, I didn’t even succeed installing Jukebox on my machine), so it’s not guaranteed to work.
-
-try:
-
-  print_gpu_and_memory()
-  empty_cache()
-  print('Cache cleared.')
-  print_gpu_and_memory()
-
-  assert not reload_all
-  repeated_run
-  # ^ If this doesn't give an error, it means we're in Colab and re-running the notebook (because repeated_run is defined in the first run)
-  print('Re-running the notebook')
-
-except:
-  
-  if use_google_drive:
-    from google.colab import drive, runtime
-    drive.mount('/content/drive')
-
-  # if use_optimized_jukebox:
-  #   !pip install git+https://github.com/craftmine1000/jukebox-saveopt.git
-  # else:
-  #   !pip install git+https://github.com/openai/jukebox.git
-    
-  # !pip install gradio==3.11.0
-
-  repeated_run = True
- 
-
 # import glob
-import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
 import random
