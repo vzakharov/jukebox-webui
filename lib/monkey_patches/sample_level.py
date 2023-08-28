@@ -1,6 +1,7 @@
+from lib.utils import as_local_hh_mm
 from lib.ui.UI import UI
 from lib.upsampling.Upsampling import Upsampling
-from main import as_local_hh_mm, sample_id_to_restart_upsampling_with
+from main import sample_id_to_restart_upsampling_with
 
 
 import torch as t

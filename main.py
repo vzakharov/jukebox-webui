@@ -24,6 +24,10 @@ from lib.ui.UI import UI
 from lib.upsampling.Upsampling import Upsampling
 from lib.upsampling.start_upsampling import start_upsampling
 from lib.load_model import load_model
+from lib.upsampling.utils import get_first_upsampled_ancestor_zs
+from lib.upsampling.utils import get_levels
+from lib.utils import convert_name
+from lib.upsampling.utils import is_upsampled
 from params import DEV_MODE, GITHUB_SHA, base_path, debug_gradio, share_gradio, total_duration
 
 raw_to_tokens = 128
@@ -65,12 +69,6 @@ except:
 
 loaded_settings = {}
 custom_parents = None
-
-def as_local_hh_mm(dt, include_seconds = False):
-  return dt.astimezone(browser_timezone).strftime('%H:%M:%S' if include_seconds else '%H:%M')
-
-def convert_name(name):
-  return re.sub(r'[^a-z0-9]+', '-', name.lower())
 
 def create_project(name):
 
@@ -224,44 +222,6 @@ def backup_sample(project_name, sample_id):
   # t.save(zs, backup_filename)
   shutil.copyfile(current_filename, backup_filename)
   print(f'Backed up {backup_filename}')
-
-def get_levels(zs):
-
-  levels = []
-  for i in range(3):
-    if zs[i].shape[1] == 0:
-      # print(f'Level {i} is empty, skipping')
-      pass
-    else:
-      # We also need to make sure that, if it's not level 2, there are exactly 3 samples in the tensor
-      # Otherwise it's a primed sample, not the one we created during upsampling
-      # I agree this is a bit hacky; in the future we need to make sure that the primed samples are not saved for levels other than 2
-      # But for backwards compatibility, we need to keep this check
-      if i != 2 and zs[i].shape[0] != 3:
-        # print(f"Level {i}'s tensor has {z[i].shape[0]} samples, not 3, skipping")
-        pass
-      else:
-        levels.append(i)
-
-  return levels
-
-def is_upsampled(zs):
-  # Yes if there are at least 2 levels
-  return len(get_levels(zs)) >= 2
-
-def get_first_upsampled_ancestor_zs(project_name, sample_id):
-  zs = get_zs(project_name, sample_id)
-  # print(f'Looking for the first upsampled ancestor of {sample_id}')
-  if is_upsampled(zs):
-    print(f'Found upsampled ancestor: {sample_id}')
-    return zs
-  else:
-    parent = get_parent(project_name, sample_id)
-    if parent:
-      return get_first_upsampled_ancestor_zs(project_name, parent)
-    else:
-      print(f'No upsampled ancestor found for {sample_id}')
-      return None
 
 def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stereo_rendering=3, combine_levels=True, invert_center=False):
 
