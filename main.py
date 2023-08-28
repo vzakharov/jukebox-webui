@@ -9,27 +9,15 @@ GITHUB_SHA = 'v0.4.1'
 
 #@markdown ## Parameters
 #@markdown ### *Song duration in seconds*
-total_duration = 150 #@param {type:"slider", min:60, max:300, step:10}
+total_duration = 200 #@param {type:"slider", min:60, max:300, step:10}
 #@markdown This is the only generation parameter you need to set in advance (instead of setting it in the UI later), as changing the duration requires reloading the model. If you do want to do this, stop the cell and run it again with the new value.
-#@markdown
-
-#@markdown ### *Google Drive or Colab’s (non-persistent!) storage*
-use_google_drive = False #@param{type:'boolean'}
-#@markdown Uncheck if you want to store data locally (or in your Colab instance) instead of Google Drive. Note that in this case your data will be lost when the Colab instance is stopped.
 #@markdown
 
 #@markdown ### *Path for projects*
 base_path = '../content/drive/My Drive/jukebox-webui' #@param{type:'string'}
-#@markdown This is where your projects will go. ```/content/drive/My Drive/``` refers to the very top of your Google Drive. The folder will be automatically created if it doesn’t exist, so you don’t need to create it manually.
-#@markdown
 
 #@markdown ### *Path for models*
 models_path = '../content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
-#@markdown This is where your models will be stored. This app is capable of loading the model from an arbitrary path, so storing it on Google Drive will save you the hassle (and time) of having to download or copy it every time you start the instance. The models will be downloaded automatically if they don’t exist, so you don’t need to download them manually.
-
-#@markdown ### *Optimized Jukebox* (experimental)
-use_optimized_jukebox = False #@param{type:'boolean'}
-#@markdown The optimized version by craftmine1000 uses less memory and can run on the free Colab tier. It also has a few other improvements too. It’s not as well-tested as the original one, though, so only set it if you have a good reason to.
 
 share_gradio = True #param{type:'boolean'}
 # ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
@@ -480,6 +468,7 @@ class UI:
 
   upsampling_accordion = gr.Accordion(
     label = 'Upsampling',
+    open = False
     # visible = False
   )
 
@@ -756,13 +745,14 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   # If metas or n_samples have changed, recalculate the metas
   if calculated_metas != dict( artist = artist, genre = genre, lyrics = lyrics ) or len(metas) != n_samples:
 
-    # If there's "---\n" in the lyrics, remove everything before and including it
-    cutout = '---\n'
-    if lyrics and cutout in lyrics:
-      lyrics = lyrics.split(cutout)[1]
-      print(f'Lyrics after cutting: {lyrics}')
+    if discard_window > 0:
+      # If there's "---\n" in the lyrics, remove everything before and including it
+      cutout = '---\n'
+      if lyrics and cutout in lyrics:
+        lyrics = lyrics.split(cutout)[1]
+        print(f'Lyrics after cutting: {lyrics}')
 
-    print(f'Metas or n_samples have changed, recalculating the model for {artist}, {genre}, {lyrics}, {n_samples} samples...')
+      print(f'Metas or n_samples have changed, recalculating the model for {artist}, {genre}, {lyrics}, {n_samples} samples...')
 
     metas = [dict(
       artist = artist,
@@ -795,7 +785,7 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
 
       discarded_zs = [ z[:, :seconds_to_tokens(discard_window)] for z in zs ]
       zs = [ z[:, seconds_to_tokens(discard_window):] for z in zs ]
-      print(f'Kept only the last {discard_window} seconds of the parent sample for generation purposes')
+      print(f'Discarded the first {discard_window} seconds, now zs are of shape {[ z.shape for z in zs ]}')
     
 
   else:
@@ -812,12 +802,9 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
   print(f'Generated zs of shape {[ z.shape for z in zs ]}')
   
-  if discarded_zs is not None:
+  if discard_window > 0:
     zs = [ t.cat([ discarded_zs[i], zs[i] ], dim=1) for i in range(3) ]
     print(f'Concatenated cutout zs of shape {[ z.shape for z in discarded_zs ]} with generated zs of shape {[ z.shape for z in zs ]}')
-
-  wavs = vqvae.decode(zs[2:], start_level=2).cpu().numpy()
-  print(f'Generated wavs of shape {wavs.shape}')
 
   prefix = get_prefix(project_name, parent_sample_id)
   # For each sample, write the z (a subarray of zs)
@@ -1673,6 +1660,10 @@ def rename_sample(project_name, old_sample_id, new_sample_id, show_leafs_only):
     raise ValueError('Sample ID must be alphanumeric and dashes only')
 
   new_sample_id = f'{project_name}-{new_sample_id}'
+
+  # If the file already exists, raise an error
+  if os.path.isfile(f'{base_path}/{project_name}/{new_sample_id}.z'):
+    raise ValueError(f'{new_sample_id} already exists')
 
   print(f'Renaming {old_sample_id} to {new_sample_id}')
 
