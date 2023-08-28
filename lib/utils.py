@@ -1,5 +1,6 @@
 import re
-from main import browser_timezone, chunk_size, hps, raw_to_tokens
+from main import browser_timezone
+from lib.model.params import chunk_size, hps, raw_to_tokens
 
 
 def as_local_hh_mm(dt, include_seconds = False):

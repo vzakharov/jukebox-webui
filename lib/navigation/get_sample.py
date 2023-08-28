@@ -3,7 +3,7 @@ from lib.navigation.get_children import get_children
 from lib.navigation.get_parent import get_parent
 from lib.navigation.get_sample_filename import get_sample_filename
 from lib.ui.UI import UI
-from main import hps
+from lib.model.params import hps
 from params import base_path
 
 

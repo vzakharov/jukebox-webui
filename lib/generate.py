@@ -3,7 +3,7 @@ from lib.navigation.get_first_free_index import get_first_free_index
 from lib.navigation.utils import get_prefix
 from lib.ui.UI import UI
 from lib.utils import seconds_to_tokens
-from main import calculated_metas, chunk_size, device, hps, lower_batch_size, lower_level_chunk_size, priors, raw_to_tokens, top_prior
+from main import calculated_metas, device, priors, top_prior
 
 
 import gradio as gr
@@ -15,6 +15,7 @@ import random
 from datetime import datetime
 
 from params import base_path, total_duration
+from lib.model.params import chunk_size, hps, lower_batch_size, lower_level_chunk_size, raw_to_tokens
 
 
 def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length, discard_window):

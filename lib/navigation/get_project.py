@@ -1,7 +1,8 @@
+from lib.model.params import hps
 from lib.navigation.get_samples import get_samples
 from lib.navigation.utils import is_new
 from lib.ui.UI import UI
-from main import hps, loaded_settings
+from main import loaded_settings
 from params import base_path
 
 

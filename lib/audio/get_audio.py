@@ -1,8 +1,9 @@
 from lib.cut import cut_z
+from lib.model.params import hps
 from lib.navigation.utils import get_zs
 from lib.upsampling.utils import get_levels
 from lib.utils import seconds_to_tokens, tokens_to_seconds
-from main import hps, vqvae
+from main import vqvae
 from params import base_path
 
 

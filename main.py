@@ -8,9 +8,10 @@ from datetime import timedelta, timezone
 import gradio as gr
 import torch as t
 
-from jukebox.hparams import Hyperparams
 from jukebox.sample import load_prompts
 from jukebox.utils.torch_utils import empty_cache
+from lib.model.params import hps
+from lib.model.params import set_hyperparams
 from lib.navigation.get_sibling_samples import get_sibling_samples
 from lib.navigation.get_sample import get_sample
 from lib.navigation.get_sample_filename import get_sample_filename
@@ -33,26 +34,15 @@ from lib.navigation.utils import backup_sample
 from lib.ui.UI import UI
 from lib.upsampling.Upsampling import Upsampling
 from lib.upsampling.start_upsampling import start_upsampling
-from lib.load_model import load_model
+from lib.model.load import load_model
 from lib.upsampling.utils import get_levels
 from lib.utils import convert_name
 from lib.ui.on_load import on_load
 from lib.utils import tokens_to_seconds
-from params import DEV_MODE, GITHUB_SHA, base_path, debug_gradio, share_gradio, total_duration
+from params import DEV_MODE, GITHUB_SHA, base_path, debug_gradio, share_gradio
 from lib.navigation.refresh_siblings import refresh_siblings
 from lib.navigation.rename_sample import rename_sample
 from lib.navigation.save_project import save_project
-
-raw_to_tokens = 128
-chunk_size = 16
-lower_batch_size = 16
-lower_level_chunk_size = 32
-
-hps = Hyperparams()
-hps.sr = 44100
-hps.levels = 3
-hps.hop_fraction = [ 0.5, 0.5, 0.125 ]
-hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
 
 ### Model. Don't load if --no-load flag is set.
 # Check if the flag is set when running the script (python app.py --no-load)
