@@ -53,15 +53,16 @@ import urllib.request
 import yaml
 
 import jukebox
-import jukebox.utils.dist_adapter as dist
 
 from jukebox.make_models import make_vqvae, make_prior, MODELS
-from jukebox.hparams import Hyperparams, setup_hparams, REMOTE_PREFIX
+from jukebox.hparams import Hyperparams, setup_hparams
 from jukebox.utils.dist_utils import setup_dist_from_mpi
 from jukebox.utils.remote_utils import download
 from jukebox.utils.sample_utils import get_starts
 from jukebox.utils.torch_utils import empty_cache
 from jukebox.sample import sample_partial_window, load_prompts, upsample, sample_single_window
+
+from lib.monkey_patches import monkey_patched_load_audio, monkey_patched_load_checkpoint
 
 raw_to_tokens = 128
 chunk_size = 16
@@ -148,34 +149,12 @@ else:
     else:
       print('Already cached.')
 
-  def monkey_patched_load_checkpoint(path):
-    global models_path
-    restore = path
-    if restore.startswith(REMOTE_PREFIX):
-        remote_path = restore
-        local_path = os.path.join(models_path, remote_path[len(REMOTE_PREFIX):])
-        if dist.get_rank() % 8 == 0:
-            download_to_cache(remote_path, local_path)
-        restore = local_path
-    dist.barrier()
-    checkpoint = t.load(restore, map_location=t.device('cpu'))
-    print("Restored from {}".format(restore))
-    return checkpoint
-
   jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
   print('load_checkpoint monkey patched.')
 
   # # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
   # for model_path in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
   #   download_to_cache(f'{REMOTE_PREFIX}{model_path}', os.path.join(data_path, model_path))
-
-  # Monkey patch load_audio, allowing for duration = None
-  def monkey_patched_load_audio(file, sr, offset, duration, mono=False):
-    # Librosa loads more filetypes than soundfile
-    x, _ = librosa.load(file, sr=sr, mono=mono, offset=offset/sr, duration=None if duration is None else duration/sr)
-    if len(x.shape) == 1:
-        x = x.reshape((1, -1))
-    return x
 
   jukebox.utils.audio_utils.load_audio = monkey_patched_load_audio
   print('load_audio monkey patched.')
