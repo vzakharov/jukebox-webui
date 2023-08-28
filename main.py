@@ -57,7 +57,6 @@ import jukebox
 from jukebox.make_models import make_vqvae, make_prior, MODELS
 from jukebox.hparams import Hyperparams, setup_hparams
 from jukebox.utils.dist_utils import setup_dist_from_mpi
-from jukebox.utils.remote_utils import download
 from jukebox.utils.sample_utils import get_starts
 from jukebox.utils.torch_utils import empty_cache
 from jukebox.sample import sample_partial_window, load_prompts, upsample, sample_single_window
@@ -96,19 +95,6 @@ else:
   keep_upsampling_after_restart = False
 
   print('Monkey patching Jukebox methods...')
-
-  # Monkey patch load_checkpoint, allowing to load models from arbitrary paths
-  def download_to_cache(remote_path, local_path):
-    print(f'Caching {remote_path} to {local_path}')
-    if not os.path.exists(os.path.dirname(local_path)):
-      print(f'Creating directory {os.path.dirname(local_path)}')
-      os.makedirs(os.path.dirname(local_path))
-    if not os.path.exists(local_path):
-      print('Downloading...')
-      download(remote_path, local_path)
-      print('Done.')
-    else:
-      print('Already cached.')
 
   jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
   print('load_checkpoint monkey patched.')
