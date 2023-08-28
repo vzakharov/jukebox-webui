@@ -62,6 +62,7 @@ from jukebox.utils.sample_utils import get_starts
 from jukebox.utils.torch_utils import empty_cache
 from jukebox.sample import sample_partial_window, load_prompts, upsample, sample_single_window
 
+from lib.Upsampling import Upsampling
 from lib.monkey_patches import monkey_patched_load_audio, monkey_patched_load_checkpoint
 
 raw_to_tokens = 128
@@ -87,52 +88,12 @@ if '--no-load' in sys.argv:
 
 else:
 
-  reload_dist = False #param{type:'boolean'}
-
-  try:
-    assert not reload_dist and not reload_all
-    rank, local_rank, device
-    print('Dist already setup')
-  except:
-    rank, local_rank, device = setup_dist_from_mpi()
-    print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
+  rank, local_rank, device = setup_dist_from_mpi()
+  print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
   browser_timezone = None
 
-  try:
-    keep_upsampling_after_restart
-  except NameError:
-    keep_upsampling_after_restart = False
-
-  if not keep_upsampling_after_restart:
-
-    class Upsampling:
-
-      project = None
-      sample_id = None
-
-      running = False
-      zs = None
-      level = None
-      metas = None
-      labels = None
-      priors = None
-      params = None
-
-      windows = []
-      window_index = 0
-      window_start_time = None
-      # Set time per window by default to 6 minutes (will be updated later) in timedelta format
-      time_per_window = timedelta(minutes=6)
-      windows_remaining = None
-      time_remaining = None
-      eta = None
-
-      status_markdown = None
-      should_refresh_audio = False
-
-      stop = False
-      kill_runtime_once_done = False
+  keep_upsampling_after_restart = False
 
   print('Monkey patching Jukebox methods...')
 
@@ -151,10 +112,6 @@ else:
 
   jukebox.make_models.load_checkpoint = monkey_patched_load_checkpoint
   print('load_checkpoint monkey patched.')
-
-  # # Download jukebox/models/5b/vqvae.pth.tar and jukebox/models/5b_lyrics/prior_level_2.pth.tar right away to avoid downloading them on the first run
-  # for model_path in ['jukebox/models/5b/vqvae.pth.tar', 'jukebox/models/5b_lyrics/prior_level_2.pth.tar']:
-  #   download_to_cache(f'{REMOTE_PREFIX}{model_path}', os.path.join(data_path, model_path))
 
   jukebox.utils.audio_utils.load_audio = monkey_patched_load_audio
   print('load_audio monkey patched.')
