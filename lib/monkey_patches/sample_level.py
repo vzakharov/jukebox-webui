@@ -1,5 +1,6 @@
+from lib.UI import UI
 from lib.Upsampling import Upsampling
-from main import UI, as_local_hh_mm, base_path, restart_upsampling, sample_id_to_restart_upsampling_with
+from main import as_local_hh_mm, base_path, restart_upsampling, sample_id_to_restart_upsampling_with
 
 
 import torch as t
@@ -8,7 +9,6 @@ from jukebox.utils.sample_utils import get_starts
 
 
 from datetime import datetime
-
 
 def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
 
