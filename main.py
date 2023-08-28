@@ -52,7 +52,7 @@ import yaml
 
 from jukebox.hparams import Hyperparams, setup_hparams
 from jukebox.make_models import MODELS, make_prior, make_vqvae
-from jukebox.sample import load_prompts, upsample
+from jukebox.sample import load_prompts
 from jukebox.utils.dist_utils import setup_dist_from_mpi
 from jukebox.utils.torch_utils import empty_cache
 from lib.cut import cut_z, cut_zs, cut_audio
@@ -63,6 +63,7 @@ from lib.monkey_patches.load_checkpoint import monkey_patched_load_checkpoint
 from lib.monkey_patches.sample_level import monkey_patched_sample_level
 from lib.ui.UI import UI
 from lib.upsampling.Upsampling import Upsampling
+from lib.upsampling.start_upsampling import start_upsampling
 
 raw_to_tokens = 128
 chunk_size = 16
@@ -1199,133 +1200,6 @@ def seconds_to_tokens(sec, level = 2):
 
   return int(tokens)
 
-def start_upsampling(project_name, sample_id, artist, lyrics, genre_left, genre_center, genre_right, kill_runtime_once_done=False):
-
-  global hps, top_prior, priors
-
-  genres = [genre_left, genre_center, genre_right]
-
-  print(f'Starting upsampling for {sample_id}, artist: {artist}, lyrics: {lyrics}, genres: {genres}')
-
-  Upsampling.project = project_name
-  Upsampling.sample_id = sample_id
-
-  Upsampling.running = True
-  Upsampling.status_markdown = "Loading the upsampling models..."
-
-  Upsampling.level = 1
-
-  Upsampling.kill_runtime_once_done = kill_runtime_once_done
-
-  print(f'Upsampling {sample_id} with genres {genres}')
-  filename = f'{base_path}/{project_name}/{sample_id}.z'
-
-  Upsampling.zs = t.load(filename)
-
-  # Get the level 0/1 zs of the first upsampled ancestor (so we can continue upsampling from where we left off)
-  for i in range( len(Upsampling.zs) ):
-    if i == 2:
-      Upsampling.zs[i] = Upsampling.zs[i][0].repeat(3, 1)
-    elif Upsampling.zs[i].shape[0] != 3:
-      # If there are no upsampled ancestors, replace with an empty tensor
-      first_upsampled_ancestor = get_first_upsampled_ancestor_zs(project_name, sample_id)
-      if not first_upsampled_ancestor:
-        print(f'No upsampled ancestors found for {sample_id}, using empty tensors')
-        Upsampling.zs[i] = t.empty( (3, 0), dtype=t.int64 ).cuda()
-      else:
-        print(f'Using first upsampled ancestor zs for {sample_id}')
-        Upsampling.zs[i] = first_upsampled_ancestor[i]
-    
-  print(f'Final z shapes: {[ z.shape for z in Upsampling.zs ]}')
-
-  # We also need to create new labels from the metas with the genres replaced accordingly
-  Upsampling.metas = [ dict(
-    artist = artist,
-    genre = genre,
-    total_length = hps.sample_length,
-    offset = 0,
-    lyrics = lyrics,
-  ) for genre in genres ]
-
-  if not Upsampling.labels:
-
-    # Search for labels under [project_name]/[project_name].labels
-    labels_path = f'{base_path}/{project_name}/{project_name}.labels'
-
-    should_reload_labels = True
-
-    if os.path.exists(labels_path):
-      Upsampling.labels, stored_metas = t.load(labels_path)
-      print(f'Loaded labels from {labels_path}')
-      # Make sure the metas match
-      if stored_metas == Upsampling.metas:
-        print('Metas match, not reloading labels')
-        should_reload_labels = False
-      else:
-        print(f'Metas do not match, reloading labels. Stored metas: {stored_metas}, current metas: {Upsampling.metas}')
-    
-    if should_reload_labels:
-
-      try:
-        assert top_prior
-      except:
-        load_top_prior()
-      
-      Upsampling.labels = top_prior.labeller.get_batch_labels(Upsampling.metas, 'cuda')
-      print('Calculated new labels from top prior')
-
-      t.save([ Upsampling.labels, Upsampling.metas ], labels_path)
-      print(f'Saved labels and metas to {labels_path}')
-
-      # We need to delete the top_prior object and empty the cache, otherwise we'll get an OOM error
-      del top_prior
-      empty_cache()
-
-  labels = Upsampling.labels
-
-  upsamplers = [ make_prior(setup_hparams(prior, dict()), vqvae, 'cpu') for prior in priors[:-1] ]
-  
-  if type(labels)==dict:
-    labels = [ prior.labeller.get_batch_labels(Upsampling.metas, 'cuda') for prior in upsamplers ] + [ labels ]
-    print('Converted labels to list')
-    # Not sure why we need to do this -- I copied this from another notebook.
-  
-  Upsampling.labels = labels
-  
-  # Create a backup of the original file, in case something goes wrong
-  bak_filename = f'{filename}.{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.bak'
-  shutil.copy(filename, f'{bak_filename}')
-  print(f'Created backup of {filename} as {bak_filename}')
-
-  t.save(Upsampling.zs, filename)
-
-  Upsampling.params = [
-    dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
-    dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
-    None
-  ]
-  
-  Upsampling.hps = hps
-
-  # Set hps.n_samples to 3, because we need 3 samples for each level
-  Upsampling.hps.n_samples = 3
-
-  # Set hps.sample_length to the actual length of the sample
-  Upsampling.hps.sample_length = Upsampling.zs[2].shape[1] * raw_to_tokens
-
-  # Set hps.name to our project directory
-  Upsampling.hps.name = f'{base_path}/{project_name}'
-
-  Upsampling.priors = [*upsamplers, None]
-  Upsampling.zs = upsample(Upsampling.zs, Upsampling.labels, Upsampling.params, Upsampling.priors, Upsampling.hps)
-
-def request_to_stop_upsampling():
-  if Upsampling.running:
-    print('Stopping upsampling...')
-    Upsampling.stop = True
-  else:
-    print('No upsampling running')
-
 def is_ancestor(project_name, potential_ancestor, potential_descendant):
   parent = get_parent(project_name, potential_descendant)
   if parent == potential_ancestor:
@@ -1334,31 +1208,6 @@ def is_ancestor(project_name, potential_ancestor, potential_descendant):
     return is_ancestor(project_name, potential_ancestor, parent)
   else:
     return False
-
-def restart_upsampling(sample_id, even_if_no_labels = False, even_if_not_ancestor = False):
-
-  global sample_id_to_restart_upsampling_with
-
-  get_custom_parents(Upsampling.project, force_reload = True)
-
-  if Upsampling.running:
-    print('Upsampling is already running; stopping & waiting for it to finish to restart')
-    request_to_stop_upsampling()
-    sample_id_to_restart_upsampling_with = sample_id
-    return
-
-  assert not Upsampling.running, 'Upsampling is already running. Use stop_upsampling() to stop it and wait for the current window to finish.'
-
-  assert Upsampling.labels or even_if_no_labels, 'Upsampling.labels is empty, cannot restart. If you want to restart anyway, set even_if_no_labels to True.'
-  if not Upsampling.labels:
-    load_top_prior()
-    # (We deleted the top_prior object in start_upsampling, so we need to reload it to recalculate the labels)
-
-  assert even_if_not_ancestor or is_ancestor(Upsampling.project, Upsampling.sample_id, sample_id), 'Cannot restart upsampling with a sample that is not a descendant of the currently upsampled sample. If you really want to do this, set even_if_not_ancestor to True.'
-
-  start_upsampling(Upsampling.project, sample_id, Upsampling.metas[0]['artist'], Upsampling.metas[0]['lyrics'], *[ meta['genre'] for meta in Upsampling.metas ])
-  # (Note that the metas don't do anything here, as we're already using the calculated labels. Keeping for future cases where we might want to restart with different metas.)
-  print('Warning: Using the same labels as before. If you want to restart with different labels, you need to set Upsampling.labels to None before calling restart_upsampling.')
 
 def set_keep_upsampling_after_restart():
   global keep_upsampling_after_restart
