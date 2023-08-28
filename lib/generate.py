@@ -1,5 +1,5 @@
 from lib.ui.UI import UI
-from main import base_path, calculated_metas, chunk_size, device, get_first_free_index, get_prefix, get_samples, hps, lower_batch_size, lower_level_chunk_size, priors, raw_to_tokens, seconds_to_tokens, top_prior, total_duration
+from main import calculated_metas, chunk_size, device, get_first_free_index, get_prefix, get_samples, hps, lower_batch_size, lower_level_chunk_size, priors, raw_to_tokens, seconds_to_tokens, top_prior
 
 
 import gradio as gr
@@ -9,6 +9,8 @@ from jukebox.sample import sample_partial_window
 
 import random
 from datetime import datetime
+
+from params import base_path, total_duration
 
 
 def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length, discard_window):

@@ -1,5 +1,5 @@
 from lib.upsampling.Upsampling import Upsampling
-from main import base_path, get_first_upsampled_ancestor_zs, hps, load_top_prior, priors, raw_to_tokens, top_prior, vqvae
+from main import get_first_upsampled_ancestor_zs, hps, load_top_prior, priors, raw_to_tokens, top_prior, vqvae
 
 
 import torch as t
@@ -12,6 +12,8 @@ from jukebox.utils.torch_utils import empty_cache
 import os
 import shutil
 from datetime import datetime
+
+from params import base_path
 
 
 def start_upsampling(project_name, sample_id, artist, lyrics, genre_left, genre_center, genre_right, kill_runtime_once_done=False):

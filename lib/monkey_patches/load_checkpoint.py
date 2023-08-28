@@ -1,5 +1,5 @@
 from lib.download_to_cache import download_to_cache
-from main import models_path
+from params import models_path
 
 import jukebox.utils.dist_adapter as dist
 import torch as t

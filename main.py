@@ -1,38 +1,3 @@
-GITHUB_SHA = 'v0.4.1'
-# TODO: Don't forget to change to release branch/version before publishing
-
-#@title Jukebox Web UI
-
-#@markdown This Notebook allows you to create music with OpenAI’s Jukebox model using a simple, web-based UI that uses your Colab Notebook as a backend.
-#@markdown I strongly suggest that you refer to the [getting started page](https://github.com/vzakharov/jukebox-webui/blob/main/docs/getting-started.md) before running it.
-#@markdown ***
-
-#@markdown ## Parameters
-#@markdown ### *Song duration in seconds*
-total_duration = 200 #@param {type:"slider", min:60, max:300, step:10}
-#@markdown This is the only generation parameter you need to set in advance (instead of setting it in the UI later), as changing the duration requires reloading the model. If you do want to do this, stop the cell and run it again with the new value.
-#@markdown
-
-#@markdown ### *Path for projects*
-base_path = '../content/drive/My Drive/jukebox-webui' #@param{type:'string'}
-
-#@markdown ### *Path for models*
-models_path = '../content/drive/My Drive/jukebox-webui/_data' #@param{type:'string'}
-
-share_gradio = True #param{type:'boolean'}
-# ☝️ Here and below, change #param to #@param if you want to be able to edit the value from the notebook interface. All of these are for advanced uses (and users), so don’t bother with them unless you know what you’re doing.
-
-#@markdown ### *Dev mode*
-DEV_MODE = True #@param{type:'boolean'}
-#@markdown Some dev-only stuff. Feel free to try it out, but don’t expect it to work.
-
-#@markdown ---
-#@markdown That’s it, you can now run the cell. Note that the first time you run it, it will take a few minutes to download the model. Afterwards, re-running the cell will be much faster.
-
-debug_gradio = True #param{type:'boolean'}
-
-reload_all = False #param{type:'boolean'}
-
 import glob
 import hashlib
 import os
@@ -64,6 +29,7 @@ from lib.monkey_patches.sample_level import monkey_patched_sample_level
 from lib.ui.UI import UI
 from lib.upsampling.Upsampling import Upsampling
 from lib.upsampling.start_upsampling import start_upsampling
+from params import DEV_MODE, GITHUB_SHA, base_path, debug_gradio, reload_all, share_gradio, total_duration
 
 raw_to_tokens = 128
 chunk_size = 16
