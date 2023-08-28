@@ -1,5 +1,7 @@
+from lib.navigation.get_custom_parents import get_custom_parents
+from lib.navigation.utils import is_ancestor
 from lib.upsampling.Upsampling import Upsampling
-from main import get_custom_parents, is_ancestor, load_top_prior, sample_id_to_restart_upsampling_with
+from main import load_top_prior, sample_id_to_restart_upsampling_with
 from lib.upsampling.request_to_stop_upsampling import request_to_stop_upsampling
 from lib.upsampling.start_upsampling import start_upsampling
 

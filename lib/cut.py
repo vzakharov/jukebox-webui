@@ -1,4 +1,5 @@
-from main import get_project_name_from_sample_id, get_zs, seconds_to_tokens
+from lib.navigation.utils import get_project_name_from_sample_id, get_zs
+from lib.utils import seconds_to_tokens
 
 
 import torch as t

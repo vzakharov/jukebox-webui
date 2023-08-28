@@ -1,5 +1,9 @@
+from lib.navigation.get_samples import get_samples
+from lib.navigation.get_first_free_index import get_first_free_index
+from lib.navigation.utils import get_prefix
 from lib.ui.UI import UI
-from main import calculated_metas, chunk_size, device, get_first_free_index, get_prefix, get_samples, hps, lower_batch_size, lower_level_chunk_size, priors, raw_to_tokens, seconds_to_tokens, top_prior
+from lib.utils import seconds_to_tokens
+from main import calculated_metas, chunk_size, device, hps, lower_batch_size, lower_level_chunk_size, priors, raw_to_tokens, top_prior
 
 
 import gradio as gr
