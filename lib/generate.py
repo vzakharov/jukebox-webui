@@ -1,4 +1,3 @@
-from lib.model.metas import calculated_metas
 from lib.navigation.get_samples import get_samples
 from lib.navigation.get_first_free_index import get_first_free_index
 from lib.navigation.utils import get_prefix
@@ -15,6 +14,8 @@ from datetime import datetime
 
 from params import base_path, total_duration
 from lib.model.params import chunk_size, hps, lower_batch_size, lower_level_chunk_size, raw_to_tokens
+
+calculated_metas = {}
 
 def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length, discard_window):
 
