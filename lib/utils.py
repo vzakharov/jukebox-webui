@@ -1,4 +1,5 @@
 import re
+import subprocess
 from main import browser_timezone
 from lib.model.params import chunk_size, hps, raw_to_tokens
 
@@ -28,4 +29,10 @@ def tokens_to_seconds(tokens, level = 2):
   global hps, raw_to_tokens
 
   return tokens * raw_to_tokens / hps.sr / 4 ** (2 - level)
+
+def get_gpu_memory_usage():
+  return subprocess.check_output(
+    ['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader'],
+    encoding='utf-8'
+  ).strip()
 

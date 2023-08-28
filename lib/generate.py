@@ -1,9 +1,10 @@
+from lib.model.metas import calculated_metas
 from lib.navigation.get_samples import get_samples
 from lib.navigation.get_first_free_index import get_first_free_index
 from lib.navigation.utils import get_prefix
 from lib.ui.UI import UI
 from lib.utils import seconds_to_tokens
-from main import calculated_metas, device, priors, top_prior
+from main import device, priors, top_prior
 
 import gradio as gr
 import torch as t

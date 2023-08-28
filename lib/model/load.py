@@ -67,3 +67,4 @@ def load_model(hps):
 
         empty_cache
   return device,browser_timezone,keep_upsampling_after_restart,vqvae,priors,top_prior
+
