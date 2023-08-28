@@ -2,51 +2,43 @@ import hashlib
 import os
 import random
 import subprocess
+import sys
 import urllib.request
 from datetime import timedelta, timezone
 
 import gradio as gr
 import torch as t
-
 from jukebox.sample import load_prompts
 from jukebox.utils.torch_utils import empty_cache
-from lib.model.params import hps
-from lib.model.params import set_hyperparams
-from lib.navigation.get_sibling_samples import get_sibling_samples
+from lib.ui.utils import SHOW
+
+from lib.api import set_get_projects_api
+from lib.audio.convert_audio_to_sample import convert_audio_to_sample
+from lib.cut import cut_audio, cut_zs
+from lib.generate import generate
+from lib.model.load import load_model
+from lib.model.params import hps, set_hyperparams
+from lib.navigation.delete_sample import delete_sample
+from lib.navigation.get_children import get_children
+from lib.navigation.get_parent import get_parent
 from lib.navigation.get_sample import get_sample
 from lib.navigation.get_sample_filename import get_sample_filename
-from lib.navigation.get_project import get_project
-from lib.navigation.get_projects import get_projects
 from lib.navigation.get_samples import get_samples
-from lib.navigation.get_parent import get_parent
-from lib.lists import get_list
-from lib.navigation.get_children import get_children
-from lib.navigation.delete_sample import delete_sample
-from lib.audio.convert_audio_to_sample import convert_audio_to_sample
-from lib.navigation.utils import get_zs_filename
-from lib.navigation.create_project import create_project
-from lib.cut import cut_zs, cut_audio
-from lib.generate import generate
-from lib.navigation.utils import get_zs
-from lib.navigation.utils import save_zs
-from lib.navigation.utils import backup_sample
-
-from lib.ui.UI import UI
-from lib.upsampling.Upsampling import Upsampling
-from lib.upsampling.start_upsampling import start_upsampling
-from lib.model.load import load_model
-from lib.upsampling.utils import get_levels
-from lib.utils import convert_name
-from lib.ui.on_load import on_load
-from lib.utils import tokens_to_seconds
-from params import DEV_MODE, GITHUB_SHA, base_path, debug_gradio, share_gradio
+from lib.navigation.get_sibling_samples import get_sibling_samples
 from lib.navigation.refresh_siblings import refresh_siblings
 from lib.navigation.rename_sample import rename_sample
-from lib.navigation.save_project import save_project
-
-### Model. Don't load if --no-load flag is set.
-# Check if the flag is set when running the script (python app.py --no-load)
-import sys
+from lib.navigation.utils import (backup_sample, get_zs, get_zs_filename,
+                                  save_zs)
+from lib.ui.app_layout import app_layout
+from lib.ui.on_load import on_load
+from lib.ui.UI import UI
+from lib.ui.utils import HIDE
+from lib.upsampling.start_upsampling import start_upsampling
+from lib.upsampling.Upsampling import Upsampling
+from lib.upsampling.utils import get_levels
+from lib.utils import tokens_to_seconds
+from params import DEV_MODE, GITHUB_SHA, base_path, debug_gradio, share_gradio
+from lib.ui.sidebar.render import render_sidebar
 
 print("Launch arguments:", sys.argv)
 
@@ -70,53 +62,12 @@ except:
   calculated_metas = {}
   print('Calculated metas created.')
 
-loaded_settings = {}
-
-SHOW = gr.update( visible = True )
-HIDE = gr.update( visible = False )
-SHOW_OR_HIDE = lambda x: gr.update( visible = x )
-
-with gr.Blocks(
-  css = """
-    .gr-button {
-      /* add margin to the button */
-      margin: 5px 5px 5px 5px;
-    }
-
-    #getting-started-column {
-      /* add a considerable margin to the left of the column */
-      margin-left: 20px;
-    }
-
-    #generation-progress {
-      /* gray, smaller font */
-      color: #777;
-      font-size: 0.8rem;
-    }
-
-    #audio-timeline {
-      /* hide for now */
-      display: none;
-    }
-
-
-  """,
-  title = f'Jukebox Web UI { GITHUB_SHA }{ " (dev mode)" if DEV_MODE else "" }',
-) as app:
+with app_layout() as app:
 
   UI.browser_timezone.render()
 
   # Render an invisible checkbox group to enable loading list of projects via API
-  project_list = gr.CheckboxGroup(
-    visible = False,
-  )
-
-  project_list.change(
-    inputs = None,
-    outputs = [ project_list ],
-    fn = lambda: get_projects(),
-    api_name = 'get-projects'
-  )
+  set_get_projects_api()
 
   with UI.separate_tab_warning.render():
 
@@ -128,116 +79,7 @@ with gr.Blocks(
   
   with UI.main_window.render():
 
-    with gr.Column( scale = 1 ):
-
-      UI.project_name.render().change(
-        inputs = [ UI.project_name, UI.routed_sample_id ],
-        outputs = [ 
-          UI.create_project_box, UI.settings_box, *UI.project_settings, UI.getting_started_column, UI.workspace_column, UI.first_generation_row, 
-          UI.sample_tree_row, UI.sample_box 
-        ],
-        fn = get_project,
-        api_name = 'get-project'
-      )
-
-      with UI.create_project_box.render():
-
-        UI.new_project_name.render().blur(
-          inputs = UI.new_project_name,
-          outputs = UI.new_project_name,
-          fn = convert_name,
-        )
-
-        # When a project is created, create a subfolder for it and update the project list.
-        create_args = dict(
-          inputs = UI.new_project_name,
-          outputs = UI.project_name,
-          fn = create_project,
-        )
-
-        UI.new_project_name.submit( **create_args )
-        gr.Button('Create project').click( **create_args )
-
-      with UI.settings_box.render():
-
-        for component in UI.generation_params:
-          
-          # For artist, also add a search button and a randomize button
-          if component == UI.artist:
-
-            with gr.Row():
-
-              component.render()
-             
-              def filter_artists(filter):
-                
-                artists = get_list('artist')
-
-                if filter:
-                  artists = [ artist for artist in artists if filter.lower() in artist.lower() ]
-                  artist = artists[0]
-                else:
-                  # random artist
-                  artist = random.choice(artists)
-
-                return gr.update(
-                  choices = artists,
-                  value = artist
-                )
-
-              artist_filter = gr.Textbox(
-                label = '🔍',
-                placeholder = 'Empty for 🎲',
-              )
-
-              artist_filter.submit(
-                inputs = artist_filter,
-                outputs = UI.artist,
-                fn = filter_artists,
-                api_name = 'filter-artists'
-              )
-          
-          elif component == UI.genre:
-
-            UI.genre_dropdown.render().change(
-              inputs = [ UI.genre, UI.genre_dropdown ],
-              outputs = UI.genre,
-              # Add after a space, if not empty
-              fn = lambda genre, genre_dropdown: ( genre + ' ' if genre else '' ) + genre_dropdown,
-            )
-          
-            component.render()
-
-          elif component == UI.generation_discard_window:
-
-            component.render()
-
-            with gr.Accordion( 'What is this?', open = False ):
-
-              gr.Markdown("""
-                If your song is too long, the generation may take too much memory and crash. In this case, you can discard the first N seconds of the song for generation purposes (i.e. the model won’t take them into account when generating the rest of the song).
-                          
-                If your song has lyrics, put '---' (with a new line before and after) at the point that is now the “beginning” of the song, so that the model doesn’t get confused by the now-irrelevant lyrics.
-              """)
-
-          else:
-
-            component.render()
-        
-        for component in UI.project_settings:
-
-          # Whenever a project setting is changed, save all the settings to settings.yaml in the project folder
-          inputs = [ UI.project_name, *UI.project_settings ]
-
-          # Use the "blur" method if available, otherwise use "change"
-          handler_name = 'blur' if hasattr(component, 'blur') else 'change'
-          handler = getattr(component, handler_name)
-
-          handler(
-            inputs = inputs,
-            outputs = None,
-            fn = save_project,
-          )
+    render_sidebar()
 
 
     with UI.getting_started_column.render():

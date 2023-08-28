@@ -1,6 +1,6 @@
 from lib.navigation.utils import get_siblings
 from lib.ui.UI import UI
-from main import HIDE
+from lib.ui.utils import HIDE
 
 
 import gradio as gr

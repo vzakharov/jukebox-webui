@@ -2,7 +2,8 @@ from lib.model.params import hps
 from lib.navigation.get_samples import get_samples
 from lib.navigation.get_first_free_index import get_first_free_index
 from lib.ui.UI import UI
-from main import HIDE, device, priors, top_prior
+from lib.ui.utils import HIDE
+from main import device, priors, top_prior
 from params import base_path
 
 

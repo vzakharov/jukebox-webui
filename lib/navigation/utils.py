@@ -78,3 +78,6 @@ def is_ancestor(project_name, potential_ancestor, potential_descendant):
     return is_ancestor(project_name, potential_ancestor, parent)
   else:
     return False
+
+
+loaded_settings = {}
