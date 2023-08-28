@@ -1,4 +1,4 @@
-from lib.UI import UI
+from lib.ui.UI import UI
 from main import base_path, calculated_metas, chunk_size, device, get_first_free_index, get_prefix, get_samples, hps, lower_batch_size, lower_level_chunk_size, priors, raw_to_tokens, seconds_to_tokens, top_prior, total_duration
 
 
