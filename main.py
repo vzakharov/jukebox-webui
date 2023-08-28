@@ -62,7 +62,7 @@ from lib.monkey_patches.load_audio import monkey_patched_load_audio
 from lib.monkey_patches.load_checkpoint import monkey_patched_load_checkpoint
 from lib.monkey_patches.sample_level import monkey_patched_sample_level
 from lib.ui.UI import UI
-from lib.Upsampling import Upsampling
+from lib.upsampling.Upsampling import Upsampling
 
 raw_to_tokens = 128
 chunk_size = 16

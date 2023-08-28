@@ -1,5 +1,5 @@
 from lib.ui.UI import UI
-from lib.Upsampling import Upsampling
+from lib.upsampling.Upsampling import Upsampling
 from main import as_local_hh_mm, base_path, restart_upsampling, sample_id_to_restart_upsampling_with
 
 
