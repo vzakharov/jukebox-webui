@@ -5,13 +5,11 @@ from lib.upsampling.Upsampling import Upsampling
 from main import device, top_prior, vqvae
 from params import reload_all, total_duration
 
-
 import jukebox
 from jukebox.hparams import setup_hparams
 from jukebox.make_models import MODELS, make_prior, make_vqvae
 from jukebox.utils.dist_utils import setup_dist_from_mpi
 from jukebox.utils.torch_utils import empty_cache
-
 
 def load_model(hps):
   rank, local_rank, device = setup_dist_from_mpi()

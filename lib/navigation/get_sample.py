@@ -6,12 +6,10 @@ from lib.ui.UI import UI
 from lib.model.params import hps
 from params import base_path
 
-
 import gradio as gr
 import librosa
 import numpy as np
 import yaml
-
 
 import glob
 import hashlib
@@ -19,7 +17,6 @@ import os
 import random
 import subprocess
 from datetime import datetime, timedelta
-
 
 def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_rendering=4, combine_levels=True, invert_center=False, force_reload=False):
 
@@ -32,7 +29,6 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
 
   # Add a hash (8 characters of md5) of the corresponding z file (so that we can detect if the z file has changed and hence we need to re-render)
   filename += f'{hashlib.md5(open(f"{base_path}/{project_name}/{sample_id}.z", "rb").read()).hexdigest()[:8]} '
-
 
   print(f'Checking if {filename} is cached...')
 

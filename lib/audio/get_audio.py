@@ -6,11 +6,9 @@ from lib.utils import seconds_to_tokens, tokens_to_seconds
 from main import vqvae
 from params import base_path
 
-
 import numpy as np
 import torch as t
 from jukebox.utils.torch_utils import empty_cache
-
 
 def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stereo_rendering=3, combine_levels=True, invert_center=False):
 
@@ -82,7 +80,6 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
       # print(f'Left overlap (tokens): {left_overlap_z.shape[1]}')
       left_overlap = decode(left_overlap_z)
       # print(f'Left overlap (quants): {left_overlap.shape[1]}')
-
 
       def fade(overlap, direction):
         # To fade in, we need to add 1/4 of the overlap as silence, 2/4 of the overlap as a linear ramp, and 1/4 of the overlap as full volume

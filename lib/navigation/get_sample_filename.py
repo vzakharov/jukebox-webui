@@ -1,6 +1,5 @@
 from params import base_path
 
-
 def get_sample_filename(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center):
 
     filename = f'{base_path}/{project_name}/rendered/{sample_id} '

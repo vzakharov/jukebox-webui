@@ -3,14 +3,11 @@ from lib.ui.UI import UI
 from lib.navigation.get_projects import get_projects
 from params import base_path
 
-
 import gradio as gr
 import yaml
 
-
 import os
 import re
-
 
 def on_load( href, query_string, error_message ):
 
@@ -27,7 +24,6 @@ def on_load( href, query_string, error_message ):
         visible = False,
       ),
     }
-
 
   projects = get_projects()
 

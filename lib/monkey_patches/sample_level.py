@@ -3,11 +3,9 @@ from lib.ui.UI import UI
 from lib.upsampling.Upsampling import Upsampling
 from main import sample_id_to_restart_upsampling_with
 
-
 import torch as t
 from jukebox.sample import sample_single_window
 from jukebox.utils.sample_utils import get_starts
-
 
 from datetime import datetime
 

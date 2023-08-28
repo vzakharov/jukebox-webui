@@ -2,7 +2,6 @@ from lib.navigation.utils import get_zs
 from lib.navigation.get_parent import get_parent
 from main import keep_upsampling_after_restart
 
-
 def get_levels(zs):
 
   levels = []
@@ -23,11 +22,9 @@ def get_levels(zs):
 
   return levels
 
-
 def is_upsampled(zs):
   # Yes if there are at least 2 levels
   return len(get_levels(zs)) >= 2
-
 
 def get_first_upsampled_ancestor_zs(project_name, sample_id):
   zs = get_zs(project_name, sample_id)
@@ -42,7 +39,6 @@ def get_first_upsampled_ancestor_zs(project_name, sample_id):
     else:
       print(f'No upsampled ancestor found for {sample_id}')
       return None
-
 
 def set_keep_upsampling_after_restart():
   global keep_upsampling_after_restart

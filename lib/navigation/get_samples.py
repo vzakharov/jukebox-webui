@@ -1,10 +1,8 @@
 from lib.navigation.get_children import get_children
 from params import base_path
 
-
 import os
 import re
-
 
 def get_samples(project_name, leafs_only):
 

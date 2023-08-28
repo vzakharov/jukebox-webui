@@ -1,9 +1,7 @@
 # Monkey patch load_checkpoint, allowing to load models from arbitrary paths
 from jukebox.utils.remote_utils import download
 
-
 import os
-
 
 def download_to_cache(remote_path, local_path):
   print(f'Caching {remote_path} to {local_path}')

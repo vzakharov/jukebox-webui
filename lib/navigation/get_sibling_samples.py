@@ -2,7 +2,6 @@ from lib.navigation.get_sample import get_sample
 from lib.navigation.utils import get_siblings
 from lib.ui.UI import UI
 
-
 def get_sibling_samples(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center):
   print(f'Updating sibling samples for {sample_id}...')
   sibling_files = []

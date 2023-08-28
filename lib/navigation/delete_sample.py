@@ -2,12 +2,9 @@ from lib.ui.UI import UI
 from lib.navigation.utils import get_siblings
 from params import base_path
 
-
 import gradio as gr
 
-
 import os
-
 
 def delete_sample(project_name, sample_id, confirm):
 

@@ -5,18 +5,15 @@ from lib.ui.UI import UI
 from lib.utils import seconds_to_tokens
 from main import calculated_metas, device, priors, top_prior
 
-
 import gradio as gr
 import torch as t
 from jukebox.sample import sample_partial_window
-
 
 import random
 from datetime import datetime
 
 from params import base_path, total_duration
 from lib.model.params import chunk_size, hps, lower_batch_size, lower_level_chunk_size, raw_to_tokens
-
 
 def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length, discard_window):
 
@@ -74,7 +71,6 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
       discarded_zs = [ z[:, :seconds_to_tokens(discard_window)] for z in zs ]
       zs = [ z[:, seconds_to_tokens(discard_window):] for z in zs ]
       print(f'Discarded the first {discard_window} seconds, now zs are of shape {[ z.shape for z in zs ]}')
-
 
   else:
     zs = [ t.zeros(n_samples, 0, dtype=t.long, device='cuda') for _ in range(3) ]

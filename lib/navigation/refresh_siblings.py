@@ -2,9 +2,7 @@ from lib.navigation.utils import get_siblings
 from lib.ui.UI import UI
 from lib.ui.utils import HIDE
 
-
 import gradio as gr
-
 
 def refresh_siblings(project_name, sample_id):
 

@@ -1,7 +1,6 @@
 from lib.navigation.get_project import get_project
 from lib.ui.UI import UI
 
-
 def render_pick_project():
   UI.project_name.render().change(
     inputs = [ UI.project_name, UI.routed_sample_id ],

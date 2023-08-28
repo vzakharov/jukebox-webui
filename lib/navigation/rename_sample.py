@@ -3,14 +3,11 @@ from lib.navigation.get_parent import get_parent
 from lib.navigation.get_samples import get_samples
 from params import base_path
 
-
 import gradio as gr
 import yaml
 
-
 import os
 import re
-
 
 def rename_sample(project_name, old_sample_id, new_sample_id, show_leafs_only):
 

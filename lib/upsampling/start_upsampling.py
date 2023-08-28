@@ -2,13 +2,11 @@ from lib.upsampling.Upsampling import Upsampling
 from lib.upsampling.utils import get_first_upsampled_ancestor_zs
 from main import load_top_prior, priors, top_prior, vqvae
 
-
 import torch as t
 from jukebox.hparams import setup_hparams
 from jukebox.make_models import make_prior
 from jukebox.sample import upsample
 from jukebox.utils.torch_utils import empty_cache
-
 
 import os
 import shutil
@@ -16,7 +14,6 @@ from datetime import datetime
 
 from params import base_path
 from lib.model.params import hps, raw_to_tokens
-
 
 def start_upsampling(project_name, sample_id, artist, lyrics, genre_left, genre_center, genre_right, kill_runtime_once_done=False):
 

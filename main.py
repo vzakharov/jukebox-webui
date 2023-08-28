@@ -50,7 +50,6 @@ else:
 
   device, browser_timezone, keep_upsampling_after_restart, vqvae, priors, top_prior = load_model(hps)
 
-
 # If the base folder doesn't exist, create it
 if not os.path.isdir(base_path):
   os.makedirs(base_path)
@@ -80,7 +79,6 @@ with app_layout() as app:
   with UI.main_window.render():
 
     render_sidebar()
-
 
     with UI.getting_started_column.render():
 
@@ -219,7 +217,6 @@ with app_layout() as app:
                   return args
 
                 }
-
 
               }
             '''
@@ -408,7 +405,6 @@ with app_layout() as app:
               UI.audio_timeline
             ]:
               element.render()
-
 
             # Play/pause button, js-based
             gr.HTML("""
@@ -687,7 +683,6 @@ with app_layout() as app:
                 )
 
         UI.generation_progress.render()
-
 
       with gr.Tab('Prime'):
 

@@ -1,8 +1,6 @@
 from lib.navigation.get_projects import get_projects
 
-
 import gradio as gr
-
 
 def set_get_projects_api():
   project_list = gr.CheckboxGroup(

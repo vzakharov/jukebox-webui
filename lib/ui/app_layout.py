@@ -1,8 +1,6 @@
 from params import DEV_MODE, GITHUB_SHA
 
-
 import gradio as gr
-
 
 def app_layout():
     return gr.Blocks(

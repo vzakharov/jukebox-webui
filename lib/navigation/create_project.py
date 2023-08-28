@@ -2,12 +2,9 @@ from lib.utils import convert_name
 from lib.navigation.get_projects import get_projects
 from params import base_path
 
-
 import gradio as gr
 
-
 import os
-
 
 def create_project(name):
 

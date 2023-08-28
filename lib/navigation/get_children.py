@@ -2,10 +2,8 @@ from lib.navigation.get_custom_parents import get_custom_parents
 from lib.navigation.utils import get_prefix
 from params import base_path
 
-
 import os
 import re
-
 
 def get_children(project_name, parent_sample_id, include_custom=True):
 

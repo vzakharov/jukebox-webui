@@ -1,8 +1,6 @@
 from params import base_path
 
-
 import os
-
 
 def get_projects(include_new = True):
 

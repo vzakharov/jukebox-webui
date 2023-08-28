@@ -2,7 +2,6 @@ from jukebox.hparams import Hyperparams
 
 from params import total_duration
 
-
 raw_to_tokens = 128
 chunk_size = 16
 lower_batch_size = 16

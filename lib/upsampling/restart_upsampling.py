@@ -5,7 +5,6 @@ from main import load_top_prior, sample_id_to_restart_upsampling_with
 from lib.upsampling.request_to_stop_upsampling import request_to_stop_upsampling
 from lib.upsampling.start_upsampling import start_upsampling
 
-
 def restart_upsampling(sample_id, even_if_no_labels = False, even_if_not_ancestor = False):
 
   global sample_id_to_restart_upsampling_with

@@ -3,9 +3,7 @@ from lib.ui.UI import UI
 from lib.navigation.utils import loaded_settings
 from params import base_path
 
-
 import yaml
-
 
 def save_project(project_name, *project_input_values):
 

@@ -6,15 +6,12 @@ from lib.ui.utils import HIDE
 from main import device, priors, top_prior
 from params import base_path
 
-
 import gradio as gr
 import librosa
 import numpy as np
 import torch as t
 
-
 from datetime import datetime
-
 
 def convert_audio_to_sample(project_name, audio, sec_to_trim_primed_audio, show_leafs_only):
 

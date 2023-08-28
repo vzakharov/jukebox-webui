@@ -1,8 +1,6 @@
 import gradio as gr
 
-
 from datetime import datetime
-
 
 class UI:
 
@@ -143,7 +141,6 @@ class UI:
   leaf_sample_count = gr.Number(
     label = '# leaf samples',
   )
-
 
   picked_sample = gr.Radio(
     label = 'Variations',

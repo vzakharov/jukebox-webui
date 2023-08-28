@@ -2,12 +2,9 @@ from lib.lists import get_list
 from lib.navigation.save_project import save_project
 from lib.ui.UI import UI
 
-
 import gradio as gr
 
-
 import random
-
 
 def render_sampling_settings():
   with UI.settings_box.render():
