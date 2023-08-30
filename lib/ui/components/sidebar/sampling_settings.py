@@ -8,6 +8,7 @@ import random
 
 def render_sampling_settings():
   with UI.settings_box.render():
+    
     for component in UI.generation_params:
         # For artist, also add a search button and a randomize button
       if component == UI.artist:
