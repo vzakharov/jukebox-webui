@@ -1,19 +1,19 @@
-from lib.navigation.get_samples import get_samples
-from lib.navigation.get_first_free_index import get_first_free_index
-from lib.navigation.utils import get_prefix
-from lib.ui.UI import UI
-from lib.utils import seconds_to_tokens
-from main import device, priors, top_prior
+import random
+from datetime import datetime
 
 import gradio as gr
 import torch as t
 from jukebox.sample import sample_partial_window
 
-import random
-from datetime import datetime
-
+from lib.model.params import (chunk_size, hps, lower_batch_size,
+                              lower_level_chunk_size, raw_to_tokens)
+from lib.navigation.get_first_free_index import get_first_free_index
+from lib.navigation.get_samples import get_samples
+from lib.navigation.utils import get_prefix
+from lib.ui.UI import UI
+from lib.utils import seconds_to_tokens
+from main import device, priors, top_prior
 from params import base_path, total_duration
-from lib.model.params import chunk_size, hps, lower_batch_size, lower_level_chunk_size, raw_to_tokens
 
 calculated_metas = {}
 
