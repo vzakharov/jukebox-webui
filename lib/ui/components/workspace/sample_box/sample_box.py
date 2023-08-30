@@ -1,11 +1,12 @@
-from lib.ui.UI import UI
-from lib.ui.components.workspace.sample_box.compose_row import render_compose_row
-from lib.ui.components.workspace.sample_box.advanced.advanced import render_advanced
-from lib.ui.html.play_pause import play_pause_button
-from lib.ui.components.workspace.sample_box.upsampling.state import render_upsampling_accordion
-from lib.ui.preview import get_preview_args
-
 import gradio as gr
+
+from lib.ui.html.play_pause import play_pause_button
+from lib.ui.preview import get_preview_args
+from lib.ui.UI import UI
+
+from .advanced.advanced import render_advanced
+from .compose_row import render_compose_row
+from .upsampling.state import render_upsampling_accordion
 
 def render_sample_box(app):
   with UI.sample_box.render():
