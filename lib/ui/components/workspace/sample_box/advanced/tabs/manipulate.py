@@ -5,8 +5,7 @@ from lib.ui.preview import default_preview_args
 
 import gradio as gr
 
-
-def render_manipulate(app):
+def render_manipulate_tab(app):
   with gr.Tab('Manipulate audio'):
     UI.total_audio_length.render()
 
@@ -16,5 +15,3 @@ def render_manipulate(app):
     UI.cut_audio_specs.render().submit(**default_preview_args)
 
     render_cut_audio()
-
-
