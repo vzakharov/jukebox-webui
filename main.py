@@ -2,7 +2,6 @@ import hashlib
 import os
 import sys
 import urllib.request
-from datetime import timedelta, timezone
 
 import gradio as gr
 from jukebox.sample import load_prompts
@@ -14,6 +13,7 @@ from lib.model.params import hps, set_hyperparams
 from lib.ui.app_layout import app_layout
 from lib.ui.on_load import on_load
 from lib.ui.UI import UI
+from lib.utils import read, set_browser_timezone
 from params import GITHUB_SHA, base_path, debug_gradio, share_gradio
 from lib.ui.components.sidebar.sidebar import render_sidebar
 from lib.ui.components.getting_started import render_getting_started
@@ -54,26 +54,6 @@ with app_layout() as app:
     render_getting_started()
     render_workspace(app)
 
-  # TODO: Don't forget to remove this line before publishing the app
-  frontend_on_load_url = f'https://cdn.jsdelivr.net/gh/vzakharov/jukebox-webui@{GITHUB_SHA}/frontend-on-load.js'
-  with urllib.request.urlopen(frontend_on_load_url) as response:
-    frontend_on_load_js = response.read().decode('utf-8')
-
-    try:
-      old_frontend_on_load_md5 = frontend_on_load_md5
-    except NameError:
-      old_frontend_on_load_md5 = None
-
-    frontend_on_load_md5 = hashlib.md5(frontend_on_load_js.encode('utf-8')).hexdigest()
-    print(f'Loaded frontend-on-load.js from {response.geturl()}, md5: {frontend_on_load_md5}')
-
-    if frontend_on_load_md5 != old_frontend_on_load_md5:
-      print('(New version)')
-    else:
-      print('(Same version as during the previous run)')
-
-    # print(frontend_on_load_js)
-
   app.load(
     on_load,
     inputs = [ gr.Textbox(visible=False), gr.Textbox(visible=False), gr.Textbox(visible=False) ],
@@ -82,19 +62,8 @@ with app_layout() as app:
       UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
     ],
     api_name = 'initialize',
-    _js = frontend_on_load_js,
-    # _js = """
-    # // (insert manually for debugging)
-    # """,
+    _js = read('frontend-on-load.js')
   )
-
-  # Also load browser's time zone offset on app load
-  def set_browser_timezone(offset):
-    global browser_timezone
-
-    print('Browser time zone offset:', offset)
-    browser_timezone = timezone(timedelta(minutes = -offset))
-    print('Browser time zone:', browser_timezone)
 
   app.load(
     inputs = gr.Number( visible = False ),

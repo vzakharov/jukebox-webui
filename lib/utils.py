@@ -1,3 +1,4 @@
+from datetime import timedelta, timezone
 import re
 import subprocess
 from main import browser_timezone
@@ -35,4 +36,16 @@ def get_gpu_memory_usage():
     ['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader'],
     encoding='utf-8'
   ).strip()
+
+def read(filename):
+  with open(filename, 'r') as f:
+    return f.read()
+
+
+def set_browser_timezone(offset):
+  global browser_timezone
+
+  print('Browser time zone offset:', offset)
+  browser_timezone = timezone(timedelta(minutes = -offset))
+  print('Browser time zone:', browser_timezone)
 

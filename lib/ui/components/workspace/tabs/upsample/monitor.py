@@ -1,7 +1,6 @@
 from lib.ui.UI import UI
 from lib.upsampling.Upsampling import Upsampling
 
-
 def monitor_upsampling_status():
     UI.upsampling_refresher.render().change(
       inputs = [ UI.upsampling_refresher, UI.upsampling_audio_refresher ],

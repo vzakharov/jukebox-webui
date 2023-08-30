@@ -11,7 +11,6 @@ from .on_change import handle_upsampling_status_change
 from .on_click import handle_upsampling_button_click
 from .what_is import what_is_upsampling_markdown
 
-
 def render_upsample_tab(app):
     
   with gr.Tab('Upsample'):
@@ -51,5 +50,4 @@ def render_upsample_tab(app):
 
     # When it changes regardless of the session, e.g. also at page refresh, update the various relevant UI elements, start the refresher, etc.
     handle_upsampling_status_change()
-
 
