@@ -1,5 +1,6 @@
 import gradio as gr
 
+from lib.app import app
 from lib.ui.components.workspace.sample_box.upsampling.init_args import \
     upsample_button_click_args
 from lib.ui.UI import UI
@@ -11,7 +12,8 @@ from .on_change import handle_upsampling_status_change
 from .on_click import handle_upsampling_button_click
 from .what_is import what_is_upsampling_markdown
 
-def render_upsample_tab(app):
+
+def render_upsample_tab():
     
   with gr.Tab('Upsample'):
     

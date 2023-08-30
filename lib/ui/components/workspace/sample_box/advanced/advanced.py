@@ -5,11 +5,11 @@ from .tabs.manipulate import render_manipulate_tab
 
 import gradio as gr
 
-def render_advanced(app):
+def render_advanced():
 
   with gr.Accordion( 'Advanced', open = False ):    
 
-    render_manipulate_tab(app)
+    render_manipulate_tab()
 
     render_rename_tab()
 

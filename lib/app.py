@@ -2,8 +2,7 @@ from params import DEV_MODE, GITHUB_SHA
 
 import gradio as gr
 
-def app_layout():
-    return gr.Blocks(
+app = gr.Blocks(
   css = """
     .gr-button {
       /* add margin to the button */

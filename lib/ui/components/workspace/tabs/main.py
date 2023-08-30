@@ -1,16 +1,19 @@
+import gradio as gr
+
+from lib.app import app
 from lib.navigation.get_sample_filename import get_sample_filename
 from lib.navigation.get_sibling_samples import get_sibling_samples
 from lib.navigation.refresh_siblings import refresh_siblings
-from lib.ui.UI import UI
-from lib.ui.components.workspace.first_generation import render_first_generation
+from lib.ui.components.workspace.first_generation import \
+    render_first_generation
 from lib.ui.components.workspace.sample_box.sample_box import render_sample_box
 from lib.ui.components.workspace.sample_tree import render_sample_tree
 from lib.ui.js.update_url import update_url_js
 from lib.ui.preview import default_preview_args, preview_inputs
+from lib.ui.UI import UI
 
-import gradio as gr
 
-def render_main_workspace_tab(app):
+def render_main_workspace_tab():
     with gr.Tab('Workspace'):
       with gr.Column():
         render_first_generation()
@@ -58,6 +61,6 @@ def render_main_workspace_tab(app):
           _js = 'comma_separated => Ji.addUpsamplingMarkers( comma_separated.split(",").map( parseFloat ) )'
         )
 
-        render_sample_box(app)
+        render_sample_box()
 
       UI.generation_progress.render()

@@ -1,5 +1,6 @@
 import gradio as gr
 
+from lib.app import app
 from lib.ui.html.play_pause import play_pause_button
 from lib.ui.preview import get_preview_args
 from lib.ui.UI import UI
@@ -8,7 +9,8 @@ from .advanced.advanced import render_advanced
 from .compose_row import render_compose_row
 from .upsampling.state import render_upsampling_accordion
 
-def render_sample_box(app):
+
+def render_sample_box():
   with UI.sample_box.render():
 
     show_or_hide_upsampling_elements_args, upsample_button_click_args = render_upsampling_accordion()
@@ -34,7 +36,7 @@ def render_sample_box(app):
     gr.HTML(play_pause_button)
 
     render_compose_row()
-    render_advanced(app)
+    render_advanced()
 
   return upsample_button_click_args
 

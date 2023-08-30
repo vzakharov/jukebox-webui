@@ -7,14 +7,14 @@ from .tabs.main import render_main_workspace_tab
 from .tabs.prime import render_prime_tab
 from .tabs.panic.panic import render_panic_tab
 
-def render_workspace(app):
+def render_workspace():
   with UI.workspace_column.render():
 
-    render_main_workspace_tab(app)
+    render_main_workspace_tab()
 
     render_prime_tab()
 
-    render_upsample_tab(app)
+    render_upsample_tab()
 
     render_panic_tab()
 
