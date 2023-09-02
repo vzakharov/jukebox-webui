@@ -1,6 +1,6 @@
 import gradio as gr
 
-from lib.audio.convert_audio_to_sample import convert_audio_to_sample
+from lib.audio.convert_audio_to_sample import to_sample
 from lib.audio.utils import trim_primed_audio
 from lib.ui.elements.first import primed_audio, primed_audio, primed_audio, primed_audio, primed_audio, prime_timestamp, first_generation_row, prime_timestamp, prime_timestamp
 from lib.ui.elements.general import project_name
@@ -40,7 +40,7 @@ def render_prime_tab():
     prime_button.click(
       inputs = [ project_name, primed_audio, sec_to_trim_primed_audio, show_leafs_only ],
       outputs = [ sample_tree, prime_button, prime_timestamp, first_generation_row ], # UI.prime_timestamp is updated to the current time to force tab change
-      fn = convert_audio_to_sample,
+      fn = to_sample,
       api_name = 'convert-wav-to-sample'
     )
 
