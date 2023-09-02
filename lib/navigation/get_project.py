@@ -1,5 +1,5 @@
 from lib.model.params import hps
-import lib.navigation.utils
+from lib.navigation.utils import inputs_by_name
 from UI.first import first_generation_row
 from UI.metas import artist, genre, lyrics
 from UI.general import create_project_box, settings_box
@@ -56,16 +56,17 @@ def get_project(project_name, routed_sample_id):
 
         # Go through all the settings and set the value for settings_out_dict where the key is the element itself
         for key, value in loaded_settings.items():
-          if key in lib.navigation.utils.inputs_by_name and lib.navigation.utils.inputs_by_name[key] in project_settings:
+          if key in inputs_by_name and inputs_by_name[key] in project_settings:
 
-            input = lib.navigation.utils.inputs_by_name[key]
+            input = inputs_by_name[key]
 
             # If the value is an integer (i) but the element is an instance of gr.components.Radio or gr.components.Dropdown, take the i-th item from the choices
             if isinstance(value, int) and isinstance(input, (gr.components.Radio, gr.components.Dropdown)):
               print(f'Converting {key} value {value} to {input.choices[value]}')
               value = input.choices[value]
 
-            settings_out_dict[getattr(UI, key)] = value
+            # settings_out_dict[getattr(UI, key)] = value
+            settings_out_dict[input] = value
 
           else:
             print(f'Warning: {key} is not a valid project setting')

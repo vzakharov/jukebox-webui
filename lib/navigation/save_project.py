@@ -1,6 +1,6 @@
 import yaml
 
-import lib.navigation.utils as UI
+from .utils import input_names
 from UI.project import project_settings, project_settings
 from params import base_path
 
@@ -19,7 +19,7 @@ def save_project(project_name, *project_input_values):
   settings = {}
 
   for i in range(len(project_settings)):
-    settings[UI.input_names[project_settings[i]]] = project_input_values[i]
+    settings[input_names[project_settings[i]]] = project_input_values[i]
 
   # print(f'Settings: {settings}')
 
