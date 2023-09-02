@@ -2,8 +2,8 @@ import random
 
 import torch as t
 
-from lib.navigation.get_first_free_index import get_first_free_index
-from lib.navigation.utils import get_prefix
+from .get_first_free_index import get_first_free_index
+from .utils import get_prefix
 from params import base_path
 
 def name_generations(project_name, parent_sample_id, n_samples, zs):
