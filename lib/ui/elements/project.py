@@ -1,9 +1,9 @@
 import gradio as gr
 
-from lib.ui.elements.metas import artist, genre, lyrics
-from lib.ui.elements.navigation import sample_tree, show_leafs_only
-from lib.ui.elements.preview import just_the_last_n_sec
-from lib.ui.elements.upsampling import genre_center_channel, genre_left_channel, genre_right_channel
+from .metas import artist, genre, lyrics
+from .navigation import sample_tree, show_leafs_only
+from .preview import just_the_last_n_sec
+from .upsampling import genre_center_channel, genre_left_channel, genre_right_channel
 
 n_samples = gr.Slider(
   label = 'Number of samples',

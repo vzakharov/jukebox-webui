@@ -7,7 +7,6 @@ from lib.ui.preview import default_preview_args
 from lib.ui.elements.preview import cut_audio_specs
 from lib.ui.elements.project import total_audio_length
 
-
 def render_manipulate_tab():
   with gr.Tab('Manipulate audio'):
     total_audio_length.render()

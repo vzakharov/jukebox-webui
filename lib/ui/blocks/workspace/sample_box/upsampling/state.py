@@ -16,7 +16,6 @@ from .init_args import upsample_button_click_args
 from .manipulation import render_manipulation_column
 from .refresher import render_refresher
 
-
 def render_upsampling_accordion():
 
   with upsampling_accordion.render():

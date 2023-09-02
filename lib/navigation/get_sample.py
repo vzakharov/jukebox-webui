@@ -23,7 +23,6 @@ from .get_children import get_children
 from .get_parent import get_parent
 from .get_sample_filename import get_sample_filename
 
-
 def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_rendering=4, combine_levels=True, invert_center=False, force_reload=False):
 
   global hps

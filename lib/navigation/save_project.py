@@ -6,7 +6,6 @@ from params import base_path
 
 from .utils import is_new, loaded_settings
 
-
 def save_project(project_name, *project_input_values):
 
   if is_new(project_name):

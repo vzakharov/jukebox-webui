@@ -1,9 +1,9 @@
-from lib.utils import seconds_to_tokens
-from .decode_short import decode_short
-
-
 import numpy as np
+from .overlaps import add_left_overlap, add_right_overlap
 
+from lib.utils import seconds_to_tokens
+
+from .decode_short import decode_short
 
 def decode(z, level):
 
@@ -21,46 +21,8 @@ def decode(z, level):
     is_last_chunk = overflow > 0
     if is_last_chunk:
       chunk_size -= overflow
-      # print(f'Last chunk, reduced chunk_size from {chunk_size + overflow} to {chunk_size} tokens')
 
-    left_overlap_z = z[ :, i:i+overlap_size ]
-    # print(f'Left overlap (tokens): {left_overlap_z.shape[1]}')
-    left_overlap = decode_short(left_overlap_z)
-    # print(f'Left overlap (quants): {left_overlap.shape[1]}')
-
-    def fade(overlap, direction):
-      # To fade in, we need to add 1/4 of the overlap as silence, 2/4 of the overlap as a linear ramp, and 1/4 of the overlap as full volume
-      is_fade_in = direction == 'in'
-      overlap_quants = overlap.shape[1]
-      silence_quants = int( overlap_quants / 4 )
-      ramp_quants = int( overlap_quants / 2 )
-      if is_fade_in:
-        overlap[:, :silence_quants, :] = 0
-      else:
-        overlap[:, -silence_quants:, :] = 0
-      start = 0 if is_fade_in else 1
-      overlap[:, silence_quants:-silence_quants, :] *= np.linspace(start, 1 - start, ramp_quants).reshape(1, -1, 1)
-      return overlap
-
-    if wav is not None:
-      # Fade in the left overlap and add it to the existing wav if it's not empty (i.e. if this is not the first chunk)
-      left_overlap = fade(left_overlap, 'in')
-      # print(f'Faded in left overlap')
-      # # Show as plot
-      # plt.plot(left_overlap[0, :, 0])
-      # plt.show()
-
-      wav[ :, -left_overlap.shape[1]: ] += left_overlap
-      # print(f'Added left overlap to existing wav:')
-      # # Plot the resulting (faded-in + previous fade-out) overlap
-      # plt.plot(wav[0, -left_overlap.shape[1]:, 0])
-      # plt.show()
-
-      print(f'Added left overlap to wav, overall shape now: {wav.shape}')
-
-    else:
-      wav = left_overlap
-      print(f'Created wav with left overlap')
+    wav = add_left_overlap(wav, z, overlap_size, i)
 
     # We'll also won't need right overlap for the last chunk
     main_chunk_z = z[ :, i+overlap_size: i+chunk_size-overlap_size if not is_last_chunk else i+chunk_size ]
@@ -80,21 +42,7 @@ def decode(z, level):
 
     # Fade out the right overlap, unless this is the last chunk
     if not is_last_chunk:
-      right_overlap_z = z[ :, i+chunk_size-overlap_size:i+chunk_size ]
-      # print(f'Right overlap (tokens): {right_overlap_z.shape[1]}')
-
-      right_overlap = decode_short(right_overlap_z)
-      # print(f'Right overlap (quants): {right_overlap.shape[1]}')
-
-      right_overlap = fade(right_overlap, 'out')
-      # print(f'Faded out right overlap')
-      # # Show as plot
-      # plt.plot(right_overlap[0, :, 0])
-      # plt.show()
-
-      # Add the right overlap to the existing wav
-      wav = np.concatenate([ wav, right_overlap ], axis=1)
-      # print(f'Added right overlap to wav, overall shape now: {wav.shape}')
+      wav = add_right_overlap(wav, z, chunk_size, overlap_size, i)
 
     else:
       print(f'Last chunk, not adding right overlap')

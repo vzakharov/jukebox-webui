@@ -4,7 +4,7 @@ import gradio as gr
 import yaml
 
 from lib.model.params import hps
-from lib.navigation.utils import inputs_by_name
+from .utils import inputs_by_name
 from lib.ui.elements.first import first_generation_row
 from lib.ui.elements.general import create_project_box, settings_box
 from lib.ui.elements.main import workspace_column
@@ -22,7 +22,6 @@ from params import base_path
 
 from .get_samples import get_samples
 from .utils import is_new, loaded_settings
-
 
 def get_project(project_name, routed_sample_id):
 

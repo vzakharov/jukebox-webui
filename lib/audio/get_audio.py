@@ -1,5 +1,6 @@
-from lib.audio.decode_short import decode_short
-from lib.audio.decode import decode
+from .decode_short import decode_short
+from .decode import decode
+from .to_stereo import to_stereo
 from .cut import cut_z
 from lib.model.params import hps
 from lib.navigation.utils import get_zs
@@ -58,43 +59,11 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
 
     # upsample_rendering of 0, 1 or 2 means we just need to pick one of the samples
     if stereo_rendering < 3:
-
       wav = wav[stereo_rendering, :, 0]
 
     # upsample_rendering of 3 means we need to convert the audio to stereo, putting sample 0 to the left, 1 to the center, and 2 to the right
     # 4 means we also want to add a delay of 20 ms for the left and 40 ms for the right channel
-
     else:
-
-      # def to_stereo(wav, stereo_delay_ms=0):
-      def to_stereo(wav, stereo_delay_ms=0, invert_center=False):
-
-        # A stereo wav is of form (sample_length + double the delay, 2)
-        delay_quants = int( stereo_delay_ms * hps.sr / 1000 )
-        stereo = np.zeros((wav.shape[1] + 2 * delay_quants, 2))
-        # First let's convert the wav to [n_quants, n_samples] by getting rid of the last dimension and transposing the rest
-        wav = wav[:, :, 0].T
-        # print(f'Converted wav to shape {wav.shape}')
-        # Take sample 0 for left channel (delayed once), 1 for both channels (non-delayed), and sample 2 for right channel (delayed twice)
-        if delay_quants:
-          stereo[ delay_quants: -delay_quants, 0 ] = wav[ :, 0 ]
-          stereo[ 2 * delay_quants:, 1 ] = wav[ :, 2 ]
-          stereo[ : -2 * delay_quants, 0 ] += wav[ :, 1 ]
-          stereo[ : -2 * delay_quants, 1 ] += wav[ :, 1 ]
-        else:
-          stereo[ :, 0 ] = wav[ :, 0 ] + wav[ :, 1 ]
-          stereo[ :, 1 ] = wav[ :, 2 ] + wav[ :, 1 ]
-
-        if invert_center:
-          stereo[ :, 1 ] *= -1
-
-        # Now we have max amplitude of 2, so we need to divide by 2
-        stereo /= 2
-
-        # print(f'Converted to stereo with delay {stereo_delay_ms} ms, current shape: {stereo.shape}, max/min amplitudes: {np.max(stereo)}/{np.min(stereo)}')
-
-        return stereo
-
       wav = to_stereo(wav, 20 if stereo_rendering == 4 else 0, invert_center)
 
   upsampled_lengths = [ 0, 0 ]
