@@ -3,6 +3,8 @@
 # This Python script is used to convert absolute imports to relative imports in a Python project.
 # It recursively traverses through all the Python files in the specified directory and its subdirectories.
 # For each Python file, it identifies all the import statements and modifies them from absolute to relative.
+# The script only converts imports from the current directory or its descendants, it does not handle 
+# imports from parent directories or unrelated directories (i.e., it doesn't do the `from ....../something` conversions).
 # This is particularly useful when you want to make your Python modules/packages portable or when you are
 # restructuring your project and need to update the import paths.
 #
