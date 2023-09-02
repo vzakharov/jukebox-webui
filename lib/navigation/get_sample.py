@@ -2,7 +2,7 @@ from lib.audio.get_audio import get_audio
 from .get_children import get_children
 from .get_parent import get_parent
 from .get_sample_filename import get_sample_filename
-from lib.ui.UI import UI
+import lib.ui.UI as UI
 from lib.model.params import hps
 from params import base_path
 

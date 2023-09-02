@@ -1,6 +1,6 @@
 from lib.lists import get_list
 from lib.navigation.save_project import save_project
-from lib.ui.UI import UI
+import lib.ui.UI as UI
 
 import gradio as gr
 

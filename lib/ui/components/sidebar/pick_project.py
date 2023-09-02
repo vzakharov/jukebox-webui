@@ -1,5 +1,5 @@
 from lib.navigation.get_project import get_project
-from lib.ui.UI import UI
+import lib.ui.UI as UI
 
 def render_pick_project():
   UI.project_name.render().change(

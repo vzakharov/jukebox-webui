@@ -1,5 +1,5 @@
 from lib.model.generate import generate
-from lib.ui.UI import UI
+import lib.ui.UI as UI
 from lib.ui.utils import HIDE, SHOW
 
 import gradio as gr

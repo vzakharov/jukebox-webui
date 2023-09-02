@@ -1,5 +1,5 @@
 from lib.navigation.utils import backup_sample, get_zs, save_zs
-from lib.ui.UI import UI
+import lib.ui.UI as UI
 
 import gradio as gr
 

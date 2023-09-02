@@ -1,4 +1,4 @@
-from lib.ui.UI import UI
+import lib.ui.UI as UI
 from .init_args import upsample_button_click_args
 from .manipulation import render_manipulation_column
 from .refresher import render_refresher

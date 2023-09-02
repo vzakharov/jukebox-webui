@@ -4,7 +4,7 @@ import gradio as gr
 
 from lib.navigation.get_samples import get_samples
 from lib.navigation.name_generations import name_generations
-from lib.ui.UI import UI
+import lib.ui.UI as UI
 from main import device, priors, top_prior
 from params import total_duration
 

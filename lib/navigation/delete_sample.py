@@ -1,4 +1,4 @@
-from lib.ui.UI import UI
+import lib.ui.UI as UI
 from .utils import get_siblings
 from params import base_path
 

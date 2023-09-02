@@ -1,4 +1,4 @@
-from lib.ui.UI import UI
+import lib.ui.UI as UI
 from lib.upsampling.Upsampling import Upsampling
 
 def monitor_upsampling_status():

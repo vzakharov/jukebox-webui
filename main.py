@@ -11,7 +11,7 @@ from lib.on_app_load import on_app_load
 from lib.ui.components.getting_started import render_getting_started
 from lib.ui.components.sidebar.sidebar import render_sidebar
 from lib.ui.components.workspace.workspace import render_workspace
-from lib.ui.UI import UI
+import lib.ui.UI as UI
 from params import base_path, debug_gradio, share_gradio
 
 print("Launch arguments:", sys.argv)
