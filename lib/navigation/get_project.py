@@ -1,7 +1,7 @@
 from lib.model.params import hps
 from .get_samples import get_samples
 from .utils import is_new
-import lib.ui.UI as UI
+import lib.ui.components as UI
 from .utils import loaded_settings
 from params import base_path
 

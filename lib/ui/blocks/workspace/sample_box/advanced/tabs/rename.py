@@ -1,5 +1,5 @@
 from lib.navigation.rename_sample import rename_sample
-import lib.ui.UI as UI
+import lib.ui.components as UI
 
 import gradio as gr
 

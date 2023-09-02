@@ -1,4 +1,4 @@
-import lib.ui.UI as UI
+import lib.ui.components as UI
 
 import gradio as gr
 

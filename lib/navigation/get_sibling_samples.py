@@ -1,6 +1,6 @@
 from .get_sample import get_sample
 from .utils import get_siblings
-import lib.ui.UI as UI
+import lib.ui.components as UI
 
 def get_sibling_samples(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center):
   print(f'Updating sibling samples for {sample_id}...')

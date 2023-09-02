@@ -1,6 +1,6 @@
 
 
-import lib.ui.UI as UI
+import lib.ui.components as UI
 from .tabs.upsample.upsample import render_upsample_tab
 
 from .tabs.main import render_main_workspace_tab

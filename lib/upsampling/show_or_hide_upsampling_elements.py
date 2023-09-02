@@ -1,6 +1,6 @@
 # Only show the upsampling elements if there are upsampled versions of the picked sample
 from lib.navigation.utils import get_zs
-import lib.ui.UI as UI
+import lib.ui.components as UI
 from .utils import get_levels
 
 import gradio as gr

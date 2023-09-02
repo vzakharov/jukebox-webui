@@ -1,5 +1,5 @@
 from lib.navigation.create_project import create_project
-import lib.ui.UI as UI
+import lib.ui.components as UI
 from lib.utils import convert_name
 
 import gradio as gr
