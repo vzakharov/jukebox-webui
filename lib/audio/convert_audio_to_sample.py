@@ -2,7 +2,7 @@ from lib.model.params import hps
 from lib.navigation.get_samples import get_samples
 from lib.navigation.get_first_free_index import get_first_free_index
 import UI.navigation as UI
-import UI.first
+from UI.first import prime_timestamp, first_generation_row
 from lib.ui.utils import HIDE
 from main import device, priors, top_prior
 from params import base_path
@@ -78,6 +78,6 @@ def convert_audio_to_sample(project_name, audio, sec_to_trim_primed_audio, show_
       choices = get_samples(project_name, show_leafs_only),
       value = primed_sample_id
     ),
-    UI.first.prime_timestamp: datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'),
-    UI.first.first_generation_row: HIDE,
+    prime_timestamp: datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f'),
+    first_generation_row: HIDE,
   }

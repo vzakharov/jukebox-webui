@@ -1,12 +1,12 @@
 import gradio as gr
 
-import UI.general
-import UI.main
-import UI.metas
-import UI.misc
-import UI.navigation
-import UI.project
-import UI.upsampling
+from UI.general import project_name
+from UI.main import main_window
+from UI.metas import artist, genre_dropdown
+from UI.misc import getting_started_column, separate_tab_warning, separate_tab_link
+from UI.navigation import routed_sample_id
+from UI.project import 
+from UI.upsampling import genre_left_channel, genre_center_channel, genre_right_channel
 
 from .app import app
 from .ui.on_load import on_load
@@ -18,10 +18,10 @@ def on_app_load():
     on_load,
     inputs = [ gr.Textbox(visible=False), gr.Textbox(visible=False), gr.Textbox(visible=False) ],
     outputs = [
-      UI.general.project_name, UI.navigation.routed_sample_id,
-      UI.metas.artist, UI.metas.genre_dropdown,
-      UI.misc.getting_started_column, UI.misc.separate_tab_warning, UI.misc.separate_tab_link, UI.main.main_window,
-      UI.upsampling.genre_left_channel, UI.upsampling.genre_center_channel, UI.upsampling.genre_right_channel
+      project_name, routed_sample_id,
+      artist, genre_dropdown,
+      getting_started_column, separate_tab_warning, separate_tab_link, main_window,
+      genre_left_channel, genre_center_channel, genre_right_channel
     ],
     api_name = 'initialize',
     _js = read('frontend-on-load.js')

@@ -1,7 +1,7 @@
 import yaml
 
 import lib.navigation.utils as UI
-import UI.project
+from UI.project import project_settings, project_settings
 from params import base_path
 
 from .utils import is_new, loaded_settings
@@ -18,8 +18,8 @@ def save_project(project_name, *project_input_values):
   # Go through all UI attributes and add the ones that are in the project settings to a dictionary
   settings = {}
 
-  for i in range(len(UI.project.project_settings)):
-    settings[UI.input_names[UI.project.project_settings[i]]] = project_input_values[i]
+  for i in range(len(project_settings)):
+    settings[UI.input_names[project_settings[i]]] = project_input_values[i]
 
   # print(f'Settings: {settings}')
 

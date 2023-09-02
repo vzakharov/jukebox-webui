@@ -1,13 +1,13 @@
 from lib.model.params import hps
 import lib.navigation.utils
-import UI.first
-import UI.metas
-import UI.general
-import UI.misc
-import UI.navigation
-import UI.project
-import UI.upsampling
-import UI.main
+from UI.first import first_generation_row
+from UI.metas import artist, genre, lyrics
+from UI.general import create_project_box, settings_box
+from UI.misc import getting_started_column
+from UI.navigation import sample_tree, show_leafs_only, show_leafs_only, sample_tree, sample_tree, sample_box, sample_tree_row
+from UI.project import generation_length, temperature, n_samples, project_settings
+from UI.upsampling import genre_for_upsampling_left_channel, genre_for_upsampling_center_channel, genre_for_upsampling_right_channel
+from UI.main import workspace_column
 from .get_samples import get_samples
 from .utils import is_new
 import lib.ui.components as UI
@@ -27,16 +27,16 @@ def get_project(project_name, routed_sample_id):
 
   # Start with default values for project settings
   settings_out_dict = {
-    UI.metas.artist: 'Unknown',
-    UI.metas.genre: 'Unknown',
-    UI.metas.lyrics: '',
-    UI.project.generation_length: 1,
-    UI.project.temperature: 0.98,
-    UI.project.n_samples: 2,
-    UI.navigation.sample_tree: None,
-    UI.upsampling.genre_for_upsampling_left_channel: 'Unknown',
-    UI.upsampling.genre_for_upsampling_center_channel: 'Unknown',
-    UI.upsampling.genre_for_upsampling_right_channel: 'Unknown',
+    artist: 'Unknown',
+    genre: 'Unknown',
+    lyrics: '',
+    generation_length: 1,
+    temperature: 0.98,
+    n_samples: 2,
+    sample_tree: None,
+    genre_for_upsampling_left_channel: 'Unknown',
+    genre_for_upsampling_center_channel: 'Unknown',
+    genre_for_upsampling_right_channel: 'Unknown',
   }
 
   samples = []
@@ -57,7 +57,7 @@ def get_project(project_name, routed_sample_id):
 
         # Go through all the settings and set the value for settings_out_dict where the key is the element itself
         for key, value in loaded_settings.items():
-          if key in lib.navigation.utils.inputs_by_name and lib.navigation.utils.inputs_by_name[key] in UI.project.project_settings:
+          if key in lib.navigation.utils.inputs_by_name and lib.navigation.utils.inputs_by_name[key] in project_settings:
 
             input = lib.navigation.utils.inputs_by_name[key]
 
@@ -77,29 +77,29 @@ def get_project(project_name, routed_sample_id):
       yaml.dump({'last_project': project_name}, f)
       print('Saved to settings.yaml')
 
-    settings_out_dict[ UI.misc.getting_started_column ] = gr.update(
+    settings_out_dict[ getting_started_column ] = gr.update(
       visible = False
     )
 
-    samples = get_samples(project_name, settings_out_dict[ UI.navigation.show_leafs_only ] if UI.navigation.show_leafs_only in settings_out_dict else False)
+    samples = get_samples(project_name, settings_out_dict[ show_leafs_only ] if show_leafs_only in settings_out_dict else False)
 
     sample = routed_sample_id or (
       (
-        settings_out_dict[ UI.navigation.sample_tree ] or samples[0]
+        settings_out_dict[ sample_tree ] or samples[0]
       ) if len(samples) > 0 else None
     )
 
-    settings_out_dict[ UI.navigation.sample_tree ] = gr.update(
+    settings_out_dict[ sample_tree ] = gr.update(
       choices = samples,
       value = sample
     )
 
   return {
-    UI.general.create_project_box: gr.update( visible = is_this_new ),
-    UI.general.settings_box: gr.update( visible = not is_this_new ),
-    UI.main.workspace_column: gr.update( visible = not is_this_new  ),
-    UI.navigation.sample_box: gr.update( visible = sample is not None ),
-    UI.first.first_generation_row: gr.update( visible = len(samples) == 0 ),
-    UI.navigation.sample_tree_row: gr.update( visible = len(samples) > 0 ),
+    create_project_box: gr.update( visible = is_this_new ),
+    settings_box: gr.update( visible = not is_this_new ),
+    workspace_column: gr.update( visible = not is_this_new  ),
+    sample_box: gr.update( visible = sample is not None ),
+    first_generation_row: gr.update( visible = len(samples) == 0 ),
+    sample_tree_row: gr.update( visible = len(samples) > 0 ),
     **settings_out_dict
   }

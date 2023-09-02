@@ -3,8 +3,8 @@ import gradio as gr
 from lib.app import app
 from lib.ui.blocks.workspace.sample_box.upsampling.init_args import \
     upsample_button_click_args
-import UI.navigation
-import UI.upsampling
+from UI.navigation import picked_sample, picked_sample
+from UI.upsampling import sample_to_upsample, sample_to_upsample, upsample_button, upsampling_running, upsampling_triggered_by_button
 from lib.upsampling.Upsampling import Upsampling
 
 from .genres_for_upsampling import render_genres_for_upsampling
@@ -21,12 +21,12 @@ def render_upsample_tab():
     with gr.Accordion('What is this?', open = False):
       gr.Markdown(what_is_upsampling_markdown)
 
-    UI.upsampling.sample_to_upsample.render()
+    sample_to_upsample.render()
 
     # Change the sample to upsample when a sample is picked
-    UI.navigation.picked_sample.change(
-      inputs = UI.navigation.picked_sample,
-      outputs = UI.upsampling.sample_to_upsample,
+    picked_sample.change(
+      inputs = picked_sample,
+      outputs = sample_to_upsample,
       fn = lambda x: x,
     )
 
@@ -36,16 +36,16 @@ def render_upsample_tab():
     # It will do so after waiting for 10 seconds (using js). After finishing, it will update itself again, causing the process to repeat.
     monitor_upsampling_status()
 
-    UI.upsampling.upsample_button.render().click( **upsample_button_click_args )
+    upsample_button.render().click( **upsample_button_click_args )
 
     # During app load, set upsampling_running and upsampling_stopping according to Upsampling.running
     app.load(
       inputs = None,
-      outputs = UI.upsampling.upsampling_running,
+      outputs = upsampling_running,
       fn = lambda: Upsampling.running,
     )
 
-    UI.upsampling.upsampling_triggered_by_button.render()
+    upsampling_triggered_by_button.render()
 
     # When upsampling_running changes via the button, run the upsampling process
     handle_upsampling_button_click()

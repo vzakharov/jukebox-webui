@@ -1,15 +1,15 @@
-import UI.metas
-import UI.general
-import UI.upsampling
+from UI.metas import artist, lyrics
+from UI.general import project_name
+from UI.upsampling import upsampling_running, upsampling_triggered_by_button, sample_to_upsample, genre_left_channel, genre_center_channel, genre_right_channel, kill_runtime_once_done
 from lib.upsampling.start_upsampling import start_upsampling
 
 def handle_upsampling_button_click():
-  UI.upsampling.upsampling_running.render().change(
+  upsampling_running.render().change(
     inputs = [
-      UI.upsampling.upsampling_triggered_by_button,
-      UI.general.project_name, UI.upsampling.sample_to_upsample, UI.metas.artist, UI.metas.lyrics,
-      UI.upsampling.genre_left_channel, UI.upsampling.genre_center_channel, UI.upsampling.genre_right_channel,
-      UI.upsampling.kill_runtime_once_done
+      upsampling_triggered_by_button,
+      project_name, sample_to_upsample, artist, lyrics,
+      genre_left_channel, genre_center_channel, genre_right_channel,
+      kill_runtime_once_done
     ],
     outputs = None,
     fn = lambda triggered_by_button, *args: start_upsampling( *args ) if triggered_by_button else None,

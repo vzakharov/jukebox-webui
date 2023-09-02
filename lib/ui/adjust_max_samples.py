@@ -2,8 +2,8 @@ import subprocess
 
 import gradio as gr
 
-import UI.project
-import UI.preview
+from UI.project import max_n_samples, max_n_samples, n_samples, total_audio_length, total_audio_length, max_n_samples
+from UI.preview import 
 
 from lib.app import app
 
@@ -33,9 +33,9 @@ def set_max_n_samples( total_audio_length ):
   return max_n_samples
 
 def adjust_max_samples():
-  UI.project.max_n_samples.render().change(
-    inputs = UI.project.max_n_samples,
-    outputs = UI.project.n_samples,
+  max_n_samples.render().change(
+    inputs = max_n_samples,
+    outputs = n_samples,
     fn = lambda max_n_samples: gr.update(
       maximum = max_n_samples,
       # value = min( n_samples, max_n_samples ),
@@ -43,9 +43,9 @@ def adjust_max_samples():
   )
 
   # Do this on audio length change and app load
-  for handler in [ UI.project.total_audio_length.change, app.load ]:
+  for handler in [ total_audio_length.change, app.load ]:
     handler(
-      inputs = UI.project.total_audio_length,
-      outputs = UI.project.max_n_samples,
+      inputs = total_audio_length,
+      outputs = max_n_samples,
       fn = set_max_n_samples,
     )

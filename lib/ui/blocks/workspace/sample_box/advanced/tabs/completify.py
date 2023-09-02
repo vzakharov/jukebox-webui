@@ -3,7 +3,7 @@ import UI.navigation as UI
 
 import gradio as gr
 
-import UI.general
+from UI.general import project_name
 
 def completify(project_name, sample_id):
   zs = get_zs(project_name, sample_id, True)
@@ -20,6 +20,6 @@ def render_completify_tab():
     completify_button = gr.Button('Completify')
     completify_button.click(
       completify,
-      [ UI.general.project_name, UI.picked_sample ],
+      [ project_name, UI.picked_sample ],
       gr.Button('Completify')
     )

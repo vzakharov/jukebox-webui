@@ -10,11 +10,11 @@ import librosa
 import numpy as np
 import yaml
 
-import UI.audio
-import UI.navigation
-import UI.project
-import UI.sample
-import UI.upsampling
+from UI.audio import current_chunks
+from UI.navigation import sample_box, picked_sample_updated
+from UI.project import total_audio_length
+from UI.sample import go_to_children, go_to_parent
+from UI.upsampling import upsampled_lengths
 from lib.audio.get_audio import get_audio
 from lib.model.params import hps
 from params import base_path
@@ -128,18 +128,18 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
   print(f'Files to send: {chunk_filenames}')
 
   return {
-    UI.audio.current_chunks: chunk_filenames,
-    UI.project.total_audio_length: total_audio_length,
-    UI.sample.go_to_children: gr.update(
+    current_chunks: chunk_filenames,
+    total_audio_length: total_audio_length,
+    go_to_children: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
     ),
-    UI.sample.go_to_parent: gr.update(
+    go_to_parent: gr.update(
       visible = get_parent(project_name, sample_id) is not None
     ),
-    UI.navigation.sample_box: gr.update(
+    sample_box: gr.update(
       visible = True
     ),
-    UI.upsampling.upsampled_lengths: ','.join([str(length) for length in upsampled_lengths]),
+    upsampled_lengths: ','.join([str(length) for length in upsampled_lengths]),
     # Random number for picked sample updated flag
-    UI.navigation.picked_sample_updated: random.random(),
+    picked_sample_updated: random.random(),
   }

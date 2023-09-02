@@ -8,8 +8,8 @@ import yaml
 import os
 import re
 
-import UI.misc
-import UI.main
+from UI.misc import separate_tab_warning, separate_tab_link
+from UI.main import main_window
 
 def on_load( href, query_string, error_message ):
 
@@ -18,11 +18,11 @@ def on_load( href, query_string, error_message ):
     print(f'Error message from the client (for debugging only; you can ignore this): {error_message}')
 
     return {
-      UI.misc.separate_tab_warning: gr.update(
+      separate_tab_warning: gr.update(
         visible = True,
       ),
-      UI.misc.separate_tab_link: href,
-      UI.main.main_window: gr.update(
+      separate_tab_link: href,
+      main_window: gr.update(
         visible = False,
       ),
     }

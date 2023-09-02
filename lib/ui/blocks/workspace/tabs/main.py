@@ -8,11 +8,11 @@ from lib.ui.blocks.workspace.first_generation import \
     render_first_generation
 from lib.ui.blocks.workspace.sample_box.sample_box import render_sample_box
 from lib.ui.blocks.workspace.sample_tree import render_sample_tree
-import UI.audio
-import UI.general
-import UI.misc
-import UI.navigation
-import UI.upsampling
+from UI.audio import sibling_chunks, current_chunks, sibling_chunks
+from UI.general import project_name
+from UI.misc import generation_progress
+from UI.navigation import picked_sample, sample_tree, sample_tree, picked_sample, picked_sample, picked_sample_updated
+from UI.upsampling import upsampled_lengths, upsampled_lengths
 from lib.ui.js.update_url import update_url_js
 from lib.ui.preview import default_preview_args, preview_inputs
 
@@ -22,11 +22,11 @@ def render_main_workspace_tab():
         render_first_generation()
         render_sample_tree()
 
-        UI.navigation.picked_sample.render()
+        picked_sample.render()
 
-        UI.navigation.sample_tree.change(
-          inputs = [ UI.general.project_name, UI.navigation.sample_tree ],
-          outputs = UI.navigation.picked_sample,
+        sample_tree.change(
+          inputs = [ project_name, sample_tree ],
+          outputs = picked_sample,
           fn = refresh_siblings,
           api_name = 'get-siblings'
         )
@@ -39,25 +39,25 @@ def render_main_workspace_tab():
           api_name = 'get-sample-filename'
         )
 
-        UI.navigation.picked_sample.change(
+        picked_sample.change(
           **default_preview_args,
           api_name = 'get-sample',
           _js = update_url_js
         )
 
         # When the picked sample is updated, update all the others too (UI.sibling_chunks) by calling get_sample for each sibling
-        UI.navigation.picked_sample_updated.render().change(
+        picked_sample_updated.render().change(
           inputs = [ *preview_inputs ],
-          outputs = UI.audio.sibling_chunks,
+          outputs = sibling_chunks,
           fn = get_sibling_samples,
           api_name = 'get-sibling-samples',
         )
 
-        UI.audio.current_chunks.render()
-        UI.audio.sibling_chunks.render()
+        current_chunks.render()
+        sibling_chunks.render()
 
-        UI.upsampling.upsampled_lengths.render().change(
-          inputs = UI.upsampling.upsampled_lengths,
+        upsampled_lengths.render().change(
+          inputs = upsampled_lengths,
           outputs = None,
           fn = None,
           # Split by comma and turn into floats and add wavesurfer markers for each (first clear all the markers)
@@ -66,4 +66,4 @@ def render_main_workspace_tab():
 
         render_sample_box()
 
-      UI.misc.generation_progress.render()
+      generation_progress.render()

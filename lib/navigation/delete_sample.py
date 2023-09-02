@@ -1,4 +1,4 @@
-import UI.navigation
+from UI.navigation import picked_sample, sample_box
 from .utils import get_siblings
 from params import base_path
 
@@ -29,11 +29,11 @@ def delete_sample(project_name, sample_id, confirm):
     else:
       print(f'No {filename}{extension} found')
   return {
-    UI.navigation.picked_sample: gr.update(
+    picked_sample: gr.update(
       choices = siblings,
       value = new_sibling_to_use,
     ),
-    UI.navigation.sample_box: gr.update(
+    sample_box: gr.update(
       visible = len(siblings) > 0
     ),
   }
