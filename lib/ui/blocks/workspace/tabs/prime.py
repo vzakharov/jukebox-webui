@@ -1,6 +1,6 @@
 import gradio as gr
 
-from lib.audio.convert_audio_to_sample import to_sample
+from lib.audio.to_sample import to_sample
 from lib.audio.utils import trim_primed_audio
 from lib.ui.elements.first import primed_audio, primed_audio, primed_audio, primed_audio, primed_audio, prime_timestamp, first_generation_row, prime_timestamp, prime_timestamp
 from lib.ui.elements.general import project_name
