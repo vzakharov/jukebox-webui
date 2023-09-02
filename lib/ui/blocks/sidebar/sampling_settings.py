@@ -1,49 +1,23 @@
-from lib.lists import get_list
-from lib.navigation.save_project import save_project
 
 import gradio as gr
 
-import random
-from lib.ui.elements.project import generation_params, generation_discard_window, project_settings, project_settings
-from lib.ui.elements.metas import artist, genre_dropdown, genre
+from lib.navigation.save_project import save_project
+from lib.ui.elements.general import project_name, settings_box
+from lib.ui.elements.metas import artist, genre, genre_dropdown
+from lib.ui.elements.project import (generation_discard_window,
+                                     generation_params, project_settings)
 
-from lib.ui.elements.general import settings_box, project_name
+from .artist import render_artist
+
 
 def render_sampling_settings():
+  
   with settings_box.render():
     
     for component in generation_params:
       # For artist, also add a search button and a randomize button
       if component == artist:
-        with gr.Row():
-          component.render()
-
-          def filter_artists(filter):
-            artists = get_list('artist')
-
-            if filter:
-              artists = [ artist for artist in artists if filter.lower() in artist.lower() ]
-              artist = artists[0]
-            else:
-              # random artist
-              artist = random.choice(artists)
-
-            return gr.update(
-              choices = artists,
-              value = artist
-            )
-
-          artist_filter = gr.Textbox(
-            label = '🔍',
-            placeholder = 'Empty for 🎲',
-          )
-
-          artist_filter.submit(
-            inputs = artist_filter,
-            outputs = artist,
-            fn = filter_artists,
-            api_name = 'filter-artists'
-          )
+        render_artist()
 
       elif component == genre:
         genre_dropdown.render().change(

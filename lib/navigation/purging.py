@@ -2,7 +2,7 @@ import os
 import subprocess
 from .get_parent import get_parent
 from .get_samples import get_samples
-from .utils import get_zs_filename
+from .zs import get_zs_filename
 
 import torch as t
 

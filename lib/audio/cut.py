@@ -1,4 +1,5 @@
-from lib.navigation.utils import backup_sample, get_zs, save_zs
+from lib.navigation.zs import get_zs, save_zs
+from lib.navigation.utils import backup_sample
 
 from .cut_single_spec import cut_single_spec
 

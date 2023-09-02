@@ -1,4 +1,4 @@
-from lib.navigation.utils import get_zs
+from lib.navigation.zs import get_zs
 from lib.navigation.get_parent import get_parent
 from main import keep_upsampling_after_restart
 

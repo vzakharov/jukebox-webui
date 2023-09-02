@@ -2,7 +2,7 @@ import torch as t
 from jukebox.utils.torch_utils import empty_cache
 
 from lib.model.params import hps
-from lib.navigation.utils import get_zs
+from lib.navigation.zs import get_zs
 from lib.utils import seconds_to_tokens, tokens_to_seconds
 from params import base_path
 

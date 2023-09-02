@@ -1,6 +1,7 @@
 import torch as t
+from lib.navigation.zs import get_zs
 
-from lib.navigation.utils import get_project_name_from_sample_id, get_zs
+from lib.navigation.utils import get_project_name_from_sample_id
 from lib.utils import seconds_to_tokens
 
 
