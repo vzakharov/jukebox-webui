@@ -54,4 +54,3 @@ with app:
 
   app.launch( share = share_gradio, debug = debug_gradio )
 
-workspace_column = gr.Column( scale = 3, visible = False )

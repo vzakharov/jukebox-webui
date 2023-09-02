@@ -15,6 +15,8 @@ def rewrite_file(filename, module_regex):
     usages = re.findall(module + r'\.(\w+)', source)
     print(f'Found usages: {usages}')
 
+    usages = list(dict.fromkeys(usages))
+
     source = re.sub(r'import ' + module + r'(?!\s+as)', 'from ' + module + ' import ' + ', '.join(usages), source)
 
     for usage in usages:

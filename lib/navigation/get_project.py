@@ -6,11 +6,10 @@ from UI.general import create_project_box, settings_box
 from UI.misc import getting_started_column
 from UI.navigation import sample_tree, show_leafs_only, show_leafs_only, sample_tree, sample_tree, sample_box, sample_tree_row
 from UI.project import generation_length, temperature, n_samples, project_settings
-from UI.upsampling import genre_for_upsampling_left_channel, genre_for_upsampling_center_channel, genre_for_upsampling_right_channel
+from UI.upsampling import genre_left_channel, genre_center_channel, genre_right_channel
 from UI.main import workspace_column
 from .get_samples import get_samples
 from .utils import is_new
-import lib.ui.components as UI
 from .utils import loaded_settings
 from params import base_path
 
@@ -34,9 +33,9 @@ def get_project(project_name, routed_sample_id):
     temperature: 0.98,
     n_samples: 2,
     sample_tree: None,
-    genre_for_upsampling_left_channel: 'Unknown',
-    genre_for_upsampling_center_channel: 'Unknown',
-    genre_for_upsampling_right_channel: 'Unknown',
+    genre_left_channel: 'Unknown',
+    genre_center_channel: 'Unknown',
+    genre_right_channel: 'Unknown',
   }
 
   samples = []

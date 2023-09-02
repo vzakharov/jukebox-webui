@@ -4,7 +4,7 @@ import gradio as gr
 
 from lib.navigation.get_samples import get_samples
 from lib.navigation.name_generations import name_generations
-import UI.misc as UI
+from UI.misc import generation_progress
 from UI.navigation import sample_tree
 from main import device, priors, top_prior
 from params import total_duration
@@ -44,6 +44,6 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
       choices = get_samples(project_name, show_leafs_only),
       value = last_generated_id
     ),
-    UI.generation_progress: f'Generation completed at {datetime.now().strftime("%H:%M:%S")}'
+    generation_progress: f'Generation completed at {datetime.now().strftime("%H:%M:%S")}'
   }
 

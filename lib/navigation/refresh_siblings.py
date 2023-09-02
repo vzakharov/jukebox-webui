@@ -1,5 +1,5 @@
 from .utils import get_siblings
-import UI.navigation as UI
+from UI.navigation import picked_sample
 from lib.ui.utils import HIDE
 
 import gradio as gr
@@ -8,7 +8,7 @@ def refresh_siblings(project_name, sample_id):
 
   if not sample_id:
     return {
-      UI.picked_sample: HIDE
+      picked_sample: HIDE
     }
 
   # print(f'Getting siblings for {sample_id}...')

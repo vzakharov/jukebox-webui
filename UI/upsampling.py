@@ -5,7 +5,7 @@ upsampling_accordion = gr.Accordion(
   open = False
   # visible = False
 )
-UPSAMPLING_LEVEL_NAMES = [ 'Raw', 'Midsampled', 'Upsampled' ]
+level_names = [ 'Raw', 'Midsampled', 'Upsampled' ]
 upsampling_level = gr.Dropdown(
   label = 'Upsampling level',
   choices = [ 'Raw' ],
@@ -49,7 +49,7 @@ kill_runtime_once_done = gr.Checkbox(
 upsample_button = gr.Button('Start upsampling', variant="primary", elem_id='upsample-button')
 upsampling_status = gr.Markdown('Upsampling progress will be shown here', visible = False)
 # Note: for some reason, Gradio doesn't monitor programmatic changes to a checkbox, so we use a number instead
-upsampling_audio_refresher = gr.Number( value = 0, visible = False )
+audio_refresher = gr.Number( value = 0, visible = False )
 upsampling_refresher = gr.Number( value = 0, visible = False )
 upsampling_running = gr.Number( visible = False )
 upsampling_triggered_by_button = gr.Checkbox( visible = False, value = False )

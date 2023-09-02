@@ -1,5 +1,5 @@
 from lib.model.generate import generate
-import UI.misc as UI
+from UI.misc import generation_progress
 from UI.first import first_generation_row, first_generation_row, first_generation_row
 from UI.general import project_name
 from UI.navigation import sample_tree, show_leafs_only, sample_tree, sample_tree_row, sample_tree_row
@@ -19,7 +19,7 @@ def render_first_generation():
 
         gr.Button('Generate initial samples', variant = "primary" ).click(
               inputs = [ project_name, sample_tree, show_leafs_only, *generation_params ],
-              outputs = [ sample_tree, first_generation_row, sample_tree_row, UI.generation_progress ],
+              outputs = [ sample_tree, first_generation_row, sample_tree_row, generation_progress ],
               fn = lambda *args: {
                 **generate(*args),
                 first_generation_row: HIDE,

@@ -1,5 +1,5 @@
 from lib.navigation.purging import prepare_purge_list, purge_samples
-import UI.general as UI
+from UI.general import project_name
 
 import gradio as gr
 
@@ -15,14 +15,14 @@ def render_purge_tab():
     )
 
     gr.Button('Prepare purge list').click(
-      inputs = [ UI.project_name ],
+      inputs = [ project_name ],
       outputs = purge_list,
       fn = prepare_purge_list,
       api_name = 'prepare-purge-list'
     )
 
     gr.Button('Purge samples').click(
-      inputs = [ UI.project_name, purge_list ],
+      inputs = [ project_name, purge_list ],
       outputs = purge_list,
       fn = purge_samples,
       api_name = 'purge-samples'

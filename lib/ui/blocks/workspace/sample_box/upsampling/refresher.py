@@ -1,15 +1,15 @@
-import UI.upsampling as UI
+from UI.upsampling import audio_refresher
 from lib.ui.preview import default_preview_args
 from lib.upsampling.Upsampling import Upsampling
 
 def render_refresher(show_or_hide_upsampling_elements_args):
-  UI.upsampling_audio_refresher.render()
+  audio_refresher.render()
 
   def reset_audio_refresher():
     Upsampling.should_refresh_audio = False
 
   [
-    UI.upsampling_audio_refresher.change( **action ) for action in [
+    audio_refresher.change( **action ) for action in [
       default_preview_args,
       show_or_hide_upsampling_elements_args,
       dict(

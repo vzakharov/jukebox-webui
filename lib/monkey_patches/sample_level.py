@@ -1,5 +1,5 @@
 from lib.utils import as_local_hh_mm
-import UI.upsampling as UI
+from UI.upsampling import level_names
 from lib.upsampling.Upsampling import Upsampling
 from main import sample_id_to_restart_upsampling_with
 
@@ -60,7 +60,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
       Upsampling.eta = datetime.now() + Upsampling.time_remaining
 
-      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{ UI.UPSAMPLING_LEVEL_NAMES[2-level] }** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
+      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{ level_names[2-level] }** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
 
       # Print the status with an hourglass emoji in front of it
       print(f'\n\n⏳ {Upsampling.status_markdown}\n\n')

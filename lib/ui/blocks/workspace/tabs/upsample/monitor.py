@@ -1,14 +1,14 @@
-from UI.upsampling import upsampling_refresher, upsampling_refresher, upsampling_audio_refresher, upsampling_refresher, upsampling_status, upsampling_audio_refresher, upsampling_status, upsampling_refresher, upsampling_audio_refresher
+from UI.upsampling import upsampling_refresher, audio_refresher, upsampling_status
 from lib.upsampling.Upsampling import Upsampling
 
 def monitor_upsampling_status():
     upsampling_refresher.render().change(
-      inputs = [ upsampling_refresher, upsampling_audio_refresher ],
-      outputs = [ upsampling_refresher, upsampling_status, upsampling_audio_refresher ],
+      inputs = [ upsampling_refresher, audio_refresher ],
+      outputs = [ upsampling_refresher, upsampling_status, audio_refresher ],
       fn = lambda refresher, audio_refresher: {
         upsampling_status: Upsampling.status_markdown,
         upsampling_refresher: refresher + 1,
-        upsampling_audio_refresher: audio_refresher + 1 if Upsampling.should_refresh_audio else audio_refresher
+        refresher: audio_refresher + 1 if Upsampling.should_refresh_audio else audio_refresher
       },
       _js = """
         async ( ...args ) => {
