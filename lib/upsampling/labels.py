@@ -5,11 +5,10 @@ from jukebox.utils.torch_utils import empty_cache
 
 from lib.model.load import load_top_prior
 from lib.model.params import hps
-from lib.upsampling.Upsampling import Upsampling
+from .Upsampling import Upsampling
 from params import base_path
 
 from .Upsampling import Upsampling
-
 
 def prepare_labels(project_name):
   labels_path = f'{base_path}/{project_name}/{project_name}.labels'

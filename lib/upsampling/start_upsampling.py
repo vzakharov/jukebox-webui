@@ -5,7 +5,7 @@ import torch as t
 from jukebox.sample import upsample
 
 from lib.model.params import hps
-from lib.upsampling.labels import get_labels
+from .labels import get_labels
 from main import priors, top_prior
 from params import base_path
 

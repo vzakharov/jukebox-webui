@@ -1,9 +1,7 @@
 from .Upsampling import Upsampling
 from .utils import get_first_upsampled_ancestor_zs
 
-
 import torch as t
-
 
 def get_zs_from_ancestor_if_any(project_name, sample_id):
     for i in range( len(Upsampling.zs) ):

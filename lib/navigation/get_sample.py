@@ -1,27 +1,18 @@
-import glob
 import hashlib
 import os
-import random
-import subprocess
-from datetime import datetime, timedelta
 
-import gradio as gr
-import librosa
-import numpy as np
 import yaml
 
-from lib.ui.elements.audio import current_chunks
-from lib.ui.elements.navigation import sample_box, picked_sample_updated
-from lib.ui.elements.project import total_audio_length
-from lib.ui.elements.sample import go_to_children, go_to_parent
-from lib.ui.elements.upsampling import upsampled_lengths
-from lib.audio.get_audio import get_audio
 from lib.model.params import hps
+from lib.ui.elements.project import total_audio_length
+from lib.ui.elements.upsampling import upsampled_lengths
 from params import base_path
 
-from .get_children import get_children
-from .get_parent import get_parent
 from .get_sample_filename import get_sample_filename
+from .get_sample_return_data import get_sample_return_data
+from .reload_sample import reload_sample
+from .split_into_chunks import split_into_chunks
+
 
 def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_rendering=4, combine_levels=True, invert_center=False, force_reload=False):
 
@@ -39,6 +30,7 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
 
   # Make sure all 3 of wav, mp3 and yaml exist
   if not force_reload:
+
     for ext in [ 'wav', 'mp3', 'yaml' ]:
       if not os.path.isfile(f'{filename}.{ext}'):
         force_reload = True
@@ -46,50 +38,7 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
 
   if force_reload:
 
-    print('Nope, rendering...')
-
-    # First, let's delete any old files that have the same name but a different hash (because these are now obsolete)
-    for f in glob.glob(f'{filename_without_hash}.*'):
-      print(f'(Deleting now-obsolete cached file {f})')
-      os.remove(f)
-
-    if last_n_sec:
-      last_n_sec = -last_n_sec
-    # (Because get_audio, called below, accepts "preview_sec", whose positive value means "preview the first n seconds", but we want to preview the last n seconds)
-
-    wav, total_audio_length, upsampled_lengths = get_audio(project_name, sample_id, cut_out, last_n_sec, None, upsample_rendering, combine_levels, invert_center)
-    # (level is None, which means "the highest level that is available", i.e. 2)
-
-    if not os.path.exists(os.path.dirname(filename)):
-      os.makedirs(os.path.dirname(filename))
-
-    librosa.output.write_wav(f'{filename}.wav', np.asfortranarray(wav), hps.sr)
-
-    # Add metadata (total audio length, upsampled lengths) to a yaml with the same name as the wav file
-    with open(f'{filename}.yaml', 'w') as f:
-      yaml.dump({
-        'total_audio_length': total_audio_length,
-        'upsampled_lengths': upsampled_lengths
-      }, f)
-
-    # Convert to mp3
-    subprocess.run(['ffmpeg', '-y', '-i', f'{filename}.wav', '-acodec', 'libmp3lame', '-ab', '320k', f'{filename}.mp3'])
-
-    # If there are more than 30 files in the rendered folder (i.e. more than 10 samples), delete the ones older than 1 day
-    file_count_limit = 30
-    files = glob.glob(f'{base_path}/{project_name}/rendered/*')
-    if len(files) > file_count_limit:
-      removed_count = 0
-      failed_count = 0
-      for f in files:
-        try:
-          if datetime.now() - datetime.fromtimestamp(os.path.getmtime(f)) > timedelta(days=1):
-            os.remove(f)
-            removed_count += 1
-        except Exception as e:
-          print(f'Could not remove {f}: {e}')
-          failed_count += 1
-      print(f'Deleted {removed_count} of {removed_count + failed_count} old files')
+    reload_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center, filename, filename_without_hash)
 
   else:
     print('Yep, using it.')
@@ -102,43 +51,6 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
       upsampled_lengths = metadata['upsampled_lengths']
       print(f'(Also loaded metadata: {metadata})')
 
-  chunk_filenames = []
+  chunk_filenames = split_into_chunks(filename)
 
-  # If the mp3 size is > certain sie, we'll need to send it back in chunks, so we divide the mp3 into as many chunks as needed
-  file_size = os.path.getsize(f'{filename}.mp3')
-  file_limit = 300000
-
-  if file_size > file_limit:
-    print(f'MP3 file size is {file_size} bytes, splitting into chunks...')
-    file_content = open(f'{filename}.mp3', 'rb').read()
-    for i in range(0, file_size, file_limit):
-      # Place the chunk file in tmp/[filename without path] [range].mp3_chunk
-      # Create the tmp folder if it doesn't exist
-      if not os.path.exists(f'tmp'):
-        os.makedirs(f'tmp')
-      chunk_filename = f'tmp/{os.path.basename(filename)}{i}-{i+file_limit} .mp3_chunk'
-      with open(chunk_filename, 'wb') as f:
-        f.write(file_content[i:i+file_limit])
-        print(f'Wrote bytes {i}-{i+file_limit} to {chunk_filename}')
-      chunk_filenames.append(chunk_filename)
-  else:
-    chunk_filenames = [f'{filename}.mp3']
-
-  print(f'Files to send: {chunk_filenames}')
-
-  return {
-    current_chunks: chunk_filenames,
-    total_audio_length: total_audio_length,
-    go_to_children: gr.update(
-      visible = len(get_children(project_name, sample_id)) > 0
-    ),
-    go_to_parent: gr.update(
-      visible = get_parent(project_name, sample_id) is not None
-    ),
-    sample_box: gr.update(
-      visible = True
-    ),
-    upsampled_lengths: ','.join([str(length) for length in upsampled_lengths]),
-    # Random number for picked sample updated flag
-    picked_sample_updated: random.random(),
-  }
+  return get_sample_return_data(project_name, sample_id, total_audio_length, upsampled_lengths, chunk_filenames)
