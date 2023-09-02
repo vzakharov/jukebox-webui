@@ -1,15 +1,13 @@
-import lib.ui.components.metas
-import lib.ui.components.general
-import lib.ui.components.upsampling
+import lib.ui.components as UI
 from lib.upsampling.start_upsampling import start_upsampling
 
 def handle_upsampling_button_click():
-  lib.ui.components.upsampling.upsampling_running.render().change(
+  UI.upsampling_running.render().change(
     inputs = [
-      lib.ui.components.upsampling.upsampling_triggered_by_button,
-      lib.ui.components.general.project_name, lib.ui.components.upsampling.sample_to_upsample, lib.ui.components.metas.artist, lib.ui.components.metas.lyrics,
-      lib.ui.components.upsampling.genre_for_upsampling_left_channel, lib.ui.components.upsampling.genre_for_upsampling_center_channel, lib.ui.components.upsampling.genre_for_upsampling_right_channel,
-      lib.ui.components.upsampling.kill_runtime_once_done
+      UI.upsampling_triggered_by_button,
+      UI.project_name, UI.sample_to_upsample, UI.artist, UI.lyrics,
+      UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel,
+      UI.kill_runtime_once_done
     ],
     outputs = None,
     fn = lambda triggered_by_button, *args: start_upsampling( *args ) if triggered_by_button else None,

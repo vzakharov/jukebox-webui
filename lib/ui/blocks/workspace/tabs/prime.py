@@ -2,9 +2,7 @@ import gradio as gr
 
 from lib.audio.convert_audio_to_sample import convert_audio_to_sample
 from lib.audio.utils import trim_primed_audio
-import lib.ui.components.first
-import lib.ui.components.general
-import lib.ui.components.navigation
+import lib.ui.components as UI
 
 def render_prime_tab():
   with gr.Tab('Prime'):
@@ -14,11 +12,11 @@ def render_prime_tab():
       value = 'microphone'
     )
 
-    lib.ui.components.first.primed_audio.render()
+    UI.primed_audio.render()
 
     primed_audio_source.change(
       inputs = primed_audio_source,
-      outputs = lib.ui.components.first.primed_audio,
+      outputs = UI.primed_audio,
       fn = lambda source: gr.update( source = source ),
     )
 
@@ -27,8 +25,8 @@ def render_prime_tab():
     )
 
     sec_to_trim_primed_audio.submit(
-      inputs = [ lib.ui.components.first.primed_audio, sec_to_trim_primed_audio ],
-      outputs = lib.ui.components.first.primed_audio,
+      inputs = [ UI.primed_audio, sec_to_trim_primed_audio ],
+      outputs = UI.primed_audio,
       fn = trim_primed_audio
     )
 
@@ -38,14 +36,14 @@ def render_prime_tab():
     )
 
     prime_button.click(
-      inputs = [ lib.ui.components.general.project_name, lib.ui.components.first.primed_audio, sec_to_trim_primed_audio, lib.ui.components.navigation.show_leafs_only ],
-      outputs = [ lib.ui.components.navigation.sample_tree, prime_button, lib.ui.components.first.prime_timestamp, lib.ui.components.first.first_generation_row ], # UI.prime_timestamp is updated to the current time to force tab change
+      inputs = [ UI.project_name, UI.primed_audio, sec_to_trim_primed_audio, UI.show_leafs_only ],
+      outputs = [ UI.sample_tree, prime_button, UI.prime_timestamp, UI.first_generation_row ], # UI.prime_timestamp is updated to the current time to force tab change
       fn = convert_audio_to_sample,
       api_name = 'convert-wav-to-sample'
     )
 
-    lib.ui.components.first.prime_timestamp.render().change(
-      inputs = lib.ui.components.first.prime_timestamp, outputs = None, fn = None,
+    UI.prime_timestamp.render().change(
+      inputs = UI.prime_timestamp, outputs = None, fn = None,
       _js =
         # Find a button inside a div inside another div with class 'tabs', the button having 'Workspace' as text, and click it -- all this in the shadow DOM.
         # Gosh, this is ugly.

@@ -1,12 +1,8 @@
 from lib.audio.get_audio import get_audio
-import lib.ui.components.audio
-import lib.ui.components.navigation
-import lib.ui.components.sample
-import lib.ui.components.upsampling
 from .get_children import get_children
 from .get_parent import get_parent
 from .get_sample_filename import get_sample_filename
-import lib.ui.components.preview as UI
+import lib.ui.components as UI
 from lib.model.params import hps
 from params import base_path
 
@@ -126,18 +122,18 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
   print(f'Files to send: {chunk_filenames}')
 
   return {
-    lib.ui.components.audio.current_chunks: chunk_filenames,
+    UI.current_chunks: chunk_filenames,
     UI.total_audio_length: total_audio_length,
-    lib.ui.components.sample.go_to_children_button: gr.update(
+    UI.go_to_children_button: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
     ),
-    lib.ui.components.sample.go_to_parent_button: gr.update(
+    UI.go_to_parent_button: gr.update(
       visible = get_parent(project_name, sample_id) is not None
     ),
-    lib.ui.components.navigation.sample_box: gr.update(
+    UI.sample_box: gr.update(
       visible = True
     ),
-    lib.ui.components.upsampling.upsampled_lengths: ','.join([str(length) for length in upsampled_lengths]),
+    UI.upsampled_lengths: ','.join([str(length) for length in upsampled_lengths]),
     # Random number for picked sample updated flag
-    lib.ui.components.navigation.picked_sample_updated: random.random(),
+    UI.picked_sample_updated: random.random(),
   }

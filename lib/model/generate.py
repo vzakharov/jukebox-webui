@@ -4,8 +4,7 @@ import gradio as gr
 
 from lib.navigation.get_samples import get_samples
 from lib.navigation.name_generations import name_generations
-import lib.ui.components.misc as UI
-import lib.ui.components.navigation
+import lib.ui.components as UI
 from main import device, priors, top_prior
 from params import total_duration
 
@@ -40,7 +39,7 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   last_generated_id = name_generations(project_name, parent_sample_id, n_samples, zs)
 
   return {
-    lib.ui.components.navigation.sample_tree: gr.update(
+    UI.sample_tree: gr.update(
       choices = get_samples(project_name, show_leafs_only),
       value = last_generated_id
     ),

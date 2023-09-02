@@ -1,13 +1,4 @@
 from lib.model.params import hps
-import lib.navigation.utils
-import lib.ui.components.first
-import lib.ui.components.metas
-import lib.ui.components.general
-import lib.ui.components.misc
-import lib.ui.components.navigation
-import lib.ui.components.project
-import lib.ui.components.upsampling
-import lib.ui.components.main
 from .get_samples import get_samples
 from .utils import is_new
 import lib.ui.components as UI
@@ -27,16 +18,16 @@ def get_project(project_name, routed_sample_id):
 
   # Start with default values for project settings
   settings_out_dict = {
-    lib.ui.components.metas.artist: 'Unknown',
-    lib.ui.components.metas.genre: 'Unknown',
-    lib.ui.components.metas.lyrics: '',
-    lib.ui.components.project.generation_length: 1,
-    lib.ui.components.project.temperature: 0.98,
-    lib.ui.components.project.n_samples: 2,
-    lib.ui.components.navigation.sample_tree: None,
-    lib.ui.components.upsampling.genre_for_upsampling_left_channel: 'Unknown',
-    lib.ui.components.upsampling.genre_for_upsampling_center_channel: 'Unknown',
-    lib.ui.components.upsampling.genre_for_upsampling_right_channel: 'Unknown',
+    UI.artist: 'Unknown',
+    UI.genre: 'Unknown',
+    UI.lyrics: '',
+    UI.generation_length: 1,
+    UI.temperature: 0.98,
+    UI.n_samples: 2,
+    UI.sample_tree: None,
+    UI.genre_for_upsampling_left_channel: 'Unknown',
+    UI.genre_for_upsampling_center_channel: 'Unknown',
+    UI.genre_for_upsampling_right_channel: 'Unknown',
   }
 
   samples = []
@@ -57,9 +48,9 @@ def get_project(project_name, routed_sample_id):
 
         # Go through all the settings and set the value for settings_out_dict where the key is the element itself
         for key, value in loaded_settings.items():
-          if key in lib.navigation.utils.inputs_by_name and lib.navigation.utils.inputs_by_name[key] in lib.ui.components.project.project_settings:
+          if key in UI.inputs_by_name and UI.inputs_by_name[key] in UI.project_settings:
 
-            input = lib.navigation.utils.inputs_by_name[key]
+            input = UI.inputs_by_name[key]
 
             # If the value is an integer (i) but the element is an instance of gr.components.Radio or gr.components.Dropdown, take the i-th item from the choices
             if isinstance(value, int) and isinstance(input, (gr.components.Radio, gr.components.Dropdown)):
@@ -77,29 +68,29 @@ def get_project(project_name, routed_sample_id):
       yaml.dump({'last_project': project_name}, f)
       print('Saved to settings.yaml')
 
-    settings_out_dict[ lib.ui.components.misc.getting_started_column ] = gr.update(
+    settings_out_dict[ UI.getting_started_column ] = gr.update(
       visible = False
     )
 
-    samples = get_samples(project_name, settings_out_dict[ lib.ui.components.navigation.show_leafs_only ] if lib.ui.components.navigation.show_leafs_only in settings_out_dict else False)
+    samples = get_samples(project_name, settings_out_dict[ UI.show_leafs_only ] if UI.show_leafs_only in settings_out_dict else False)
 
     sample = routed_sample_id or (
       (
-        settings_out_dict[ lib.ui.components.navigation.sample_tree ] or samples[0]
+        settings_out_dict[ UI.sample_tree ] or samples[0]
       ) if len(samples) > 0 else None
     )
 
-    settings_out_dict[ lib.ui.components.navigation.sample_tree ] = gr.update(
+    settings_out_dict[ UI.sample_tree ] = gr.update(
       choices = samples,
       value = sample
     )
 
   return {
-    lib.ui.components.general.create_project_box: gr.update( visible = is_this_new ),
-    lib.ui.components.general.settings_box: gr.update( visible = not is_this_new ),
-    lib.ui.components.main.workspace_column: gr.update( visible = not is_this_new  ),
-    lib.ui.components.navigation.sample_box: gr.update( visible = sample is not None ),
-    lib.ui.components.first.first_generation_row: gr.update( visible = len(samples) == 0 ),
-    lib.ui.components.navigation.sample_tree_row: gr.update( visible = len(samples) > 0 ),
+    UI.create_project_box: gr.update( visible = is_this_new ),
+    UI.settings_box: gr.update( visible = not is_this_new ),
+    UI.workspace_column: gr.update( visible = not is_this_new  ),
+    UI.sample_box: gr.update( visible = sample is not None ),
+    UI.first_generation_row: gr.update( visible = len(samples) == 0 ),
+    UI.sample_tree_row: gr.update( visible = len(samples) > 0 ),
     **settings_out_dict
   }

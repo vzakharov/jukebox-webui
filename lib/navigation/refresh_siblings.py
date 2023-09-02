@@ -1,5 +1,5 @@
 from .utils import get_siblings
-import lib.ui.components.navigation as UI
+import lib.ui.components as UI
 from lib.ui.utils import HIDE
 
 import gradio as gr

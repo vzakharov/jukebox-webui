@@ -1,4 +1,4 @@
-import lib.ui.components.navigation
+import lib.ui.components as UI
 from .utils import get_siblings
 from params import base_path
 
@@ -29,11 +29,11 @@ def delete_sample(project_name, sample_id, confirm):
     else:
       print(f'No {filename}{extension} found')
   return {
-    lib.ui.components.navigation.picked_sample: gr.update(
+    UI.picked_sample: gr.update(
       choices = siblings,
       value = new_sibling_to_use,
     ),
-    lib.ui.components.navigation.sample_box: gr.update(
+    UI.sample_box: gr.update(
       visible = len(siblings) > 0
     ),
   }
