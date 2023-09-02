@@ -8,9 +8,9 @@ from lib.app import app
 from lib.model.load import load_model
 from lib.model.params import hps
 from lib.on_app_load import on_app_load
-from lib.ui.components.getting_started import render_getting_started
-from lib.ui.components.sidebar.sidebar import render_sidebar
-from lib.ui.components.workspace.workspace import render_workspace
+from lib.ui.blocks.getting_started import render_getting_started
+from lib.ui.blocks.sidebar.sidebar import render_sidebar
+from lib.ui.blocks.workspace.workspace import render_workspace
 import lib.ui.UI as UI
 from params import base_path, debug_gradio, share_gradio
 

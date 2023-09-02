@@ -1,7 +1,7 @@
 import gradio as gr
 
 from lib.app import app
-from lib.ui.components.workspace.sample_box.upsampling.init_args import \
+from lib.ui.blocks.workspace.sample_box.upsampling.init_args import \
     upsample_button_click_args
 import lib.ui.UI as UI
 from lib.upsampling.Upsampling import Upsampling
