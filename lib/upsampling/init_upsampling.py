@@ -21,7 +21,7 @@ def init_upsampling(project_name, sample_id, kill_runtime_once_done):
 
   Upsampling.upsamplers = [ make_prior(setup_hparams(prior, dict()), vqvae, 'cpu') for prior in priors[:-1] ]
 
-  Upsampling.params = [
+  Upsampling.kwargs = [
     dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
     dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),
     None

@@ -5,13 +5,16 @@ class Upsampling:
   project = None
   sample_id = None
 
+  hps = None
+  prior = None
+
   running = False
   zs = None
   level = None
   metas = None
   labels = None
   priors = None
-  params = None
+  kwargs = None
 
   windows = []
   window_index = 0

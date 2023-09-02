@@ -1,18 +1,16 @@
 import os
 import signal
-from lib.utils import as_local_hh_mm
-from lib.ui.elements.upsampling import level_names
-from lib.upsampling.Upsampling import Upsampling
-from main import sample_id_to_restart_upsampling_with
-
-import torch as t
-from jukebox.sample import sample_single_window
-from jukebox.utils.sample_utils import get_starts
-
 from datetime import datetime
 
+from jukebox.utils.sample_utils import get_starts
+
 from lib.upsampling.restart_upsampling import restart_upsampling
+from lib.upsampling.Upsampling import Upsampling
+from main import sample_id_to_restart_upsampling_with
 from params import base_path
+
+from .upsample_from import upsample_from
+
 
 def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
 
@@ -23,6 +21,8 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
 
   Upsampling.zs = zs
   Upsampling.level = level
+  Upsampling.prior = prior
+  Upsampling.kwargs = sampling_kwargs
 
   print(f"Sampling level {level}")
   # Remember current time
@@ -38,7 +38,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
     Upsampling.windows = [ start for start in Upsampling.windows if start + prior.n_ctx > already_upsampled ]
 
   if len(Upsampling.windows) == 0:
-    print(f'No windows to upsample at level {level}')
+    print(f'No windows to upsample at level {Upsampling.level}')
   else:
     print(f'Upsampling {len(Upsampling.windows)} windows, from {Upsampling.windows[0]} to {Upsampling.windows[-1]+prior.n_ctx}')
 
@@ -46,7 +46,8 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
     for start in Upsampling.windows:
 
       if Upsampling.stop:
-        print(f'Upsampling stopped for level {level}')
+        
+        print(f'Upsampling stopped for level {Upsampling.level}')
         if Upsampling.level == 0:
           Upsampling.stop = False
         Upsampling.running = False
@@ -57,28 +58,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
 
         break
 
-      Upsampling.window_start_time = datetime.now()
-      Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
-      Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
-      Upsampling.eta = datetime.now() + Upsampling.time_remaining
-
-      Upsampling.status_markdown = f'Upsampling **window { Upsampling.window_index+1 } of { len(Upsampling.windows) }** for the **{ level_names[2-level] }** level.\n\nEstimated level completion: **{ as_local_hh_mm(Upsampling.eta) }** your time.'
-
-      # Print the status with an hourglass emoji in front of it
-      print(f'\n\n⏳ {Upsampling.status_markdown}\n\n')
-
-      Upsampling.zs = sample_single_window(Upsampling.zs, labels, sampling_kwargs, level, prior, start, hps)
-
-      # Only update time_per_window we've sampled at least 2 windows (as the first window can take either a long or short time due to its size)
-      if Upsampling.window_index > 1:
-        Upsampling.time_per_window = datetime.now() - Upsampling.window_start_time
-
-      path = f'{base_path}/{Upsampling.project}/{Upsampling.sample_id}.z'
-      print(f'Saving upsampled z to {path}')
-      t.save(Upsampling.zs, path)
-      print('Done.')
-      Upsampling.should_refresh_audio = True
-      Upsampling.window_index += 1
+      upsample_from(start)
 
   if level == 0:
     Upsampling.running = False

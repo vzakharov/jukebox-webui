@@ -51,4 +51,4 @@ def start_upsampling(project_name, sample_id, artist, lyrics, genre_left, genre_
 
   t.save(Upsampling.zs, filename)
 
-  Upsampling.zs = upsample(Upsampling.zs, Upsampling.labels, Upsampling.params, Upsampling.priors, Upsampling.hps)
+  Upsampling.zs = upsample(Upsampling.zs, Upsampling.labels, Upsampling.kwargs, Upsampling.priors, Upsampling.hps)
