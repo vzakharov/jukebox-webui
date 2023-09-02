@@ -3,7 +3,7 @@ import gradio as gr
 from lib.app import app
 from lib.ui.html.play_pause import play_pause_button
 from lib.ui.preview import get_preview_args
-import lib.ui.UI as UI
+import lib.ui.components as UI
 
 from .advanced.advanced import render_advanced
 from .compose_row import render_compose_row

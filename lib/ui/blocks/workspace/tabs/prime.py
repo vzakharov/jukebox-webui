@@ -2,7 +2,7 @@ import gradio as gr
 
 from lib.audio.convert_audio_to_sample import convert_audio_to_sample
 from lib.audio.utils import trim_primed_audio
-import lib.ui.UI as UI
+import lib.ui.components as UI
 
 def render_prime_tab():
   with gr.Tab('Prime'):

@@ -1,5 +1,5 @@
 from lib.utils import as_local_hh_mm
-import lib.ui.UI as UI
+import lib.ui.components as UI
 from lib.upsampling.Upsampling import Upsampling
 from main import sample_id_to_restart_upsampling_with
 
