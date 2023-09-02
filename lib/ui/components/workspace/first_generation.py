@@ -1,4 +1,4 @@
-from lib.generate import generate
+from lib.model.generate import generate
 from lib.ui.UI import UI
 from lib.ui.utils import HIDE, SHOW
 

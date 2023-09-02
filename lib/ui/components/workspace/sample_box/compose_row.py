@@ -1,4 +1,4 @@
-from lib.generate import generate
+from lib.model.generate import generate
 from lib.navigation.delete_sample import delete_sample
 from lib.navigation.get_children import get_children
 from lib.navigation.get_parent import get_parent
