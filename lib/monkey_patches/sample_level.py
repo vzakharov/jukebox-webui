@@ -3,10 +3,9 @@ import signal
 from datetime import datetime
 
 from jukebox.utils.sample_utils import get_starts
+from lib.monkey_patches.upsample_window import upsample_window2
 
-from lib.upsampling.restart_upsampling import restart_upsampling
 from lib.upsampling.Upsampling import Upsampling
-from main import sample_id_to_restart_upsampling_with
 from params import base_path
 
 from .upsample_window import upsample_window
@@ -45,20 +44,8 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
     Upsampling.window_index = 0
     for start in Upsampling.windows:
 
-      if Upsampling.stop:
-        
-        print(f'Upsampling stopped for level {Upsampling.level}')
-        if Upsampling.level == 0:
-          Upsampling.stop = False
-        Upsampling.running = False
-
-        if sample_id_to_restart_upsampling_with is not None:
-          print(f'Upsampling will be restarted for sample {sample_id_to_restart_upsampling_with}')
-          restart_upsampling(sample_id_to_restart_upsampling_with)
-
+      if upsample_window(start) == 'break':
         break
-
-      upsample_window(start)
 
   if level == 0:
     Upsampling.running = False
@@ -67,3 +54,4 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
       os.kill(os.getpid(), signal.SIGKILL)
 
   return Upsampling.zs
+

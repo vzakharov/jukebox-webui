@@ -5,11 +5,26 @@ from jukebox.sample import sample_single_window
 
 from lib.ui.elements.upsampling import level_names
 from lib.upsampling.Upsampling import Upsampling
+from lib.upsampling.restart_upsampling import restart_upsampling
 from lib.utils import as_local_hh_mm
+from main import sample_id_to_restart_upsampling_with
 from params import base_path
 
-
 def upsample_window(start):
+
+  if Upsampling.stop:
+
+    print(f'Upsampling stopped for level {Upsampling.level}')
+    if Upsampling.level == 0:
+      Upsampling.stop = False
+    Upsampling.running = False
+
+    if sample_id_to_restart_upsampling_with is not None:
+      print(f'Upsampling will be restarted for sample {sample_id_to_restart_upsampling_with}')
+      restart_upsampling(sample_id_to_restart_upsampling_with)
+
+    return 'break'
+  
   Upsampling.window_start_time = datetime.now()
   Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
   Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining

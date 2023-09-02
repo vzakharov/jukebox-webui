@@ -23,7 +23,7 @@ if '--no-load' in sys.argv:
 
 else:
 
-  device, browser_timezone, keep_upsampling_after_restart, vqvae, priors, top_prior = load_model(hps)
+  device, browser_timezone, keep_upsampling_after_restart, vqvae, priors, top_prior, sample_id_to_restart_upsampling_with = load_model(hps)
 
 # If the base folder doesn't exist, create it
 if not os.path.isdir(base_path):
