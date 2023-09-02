@@ -14,7 +14,6 @@ from .params import (chunk_size, hps, lower_batch_size, lower_level_chunk_size,
                      raw_to_tokens)
 from .prepare_zs import prepare_zs
 
-
 def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length, discard_window):
 
   print(f'Generating {n_samples} sample(s) of {generation_length} sec each for project {project_name}...')
@@ -46,5 +45,4 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
     ),
     UI.generation_progress: f'Generation completed at {datetime.now().strftime("%H:%M:%S")}'
   }
-
 
