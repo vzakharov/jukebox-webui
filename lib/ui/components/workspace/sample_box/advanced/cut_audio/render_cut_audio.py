@@ -1,4 +1,4 @@
-from lib.cut import cut_audio
+from lib.audio.cut import cut_audio
 from lib.ui.UI import UI
 from .how_to import how_to_cut_audio_markdown
 from lib.ui.preview import default_preview_args

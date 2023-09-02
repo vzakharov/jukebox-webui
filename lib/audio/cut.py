@@ -1,5 +1,5 @@
-from .navigation.utils import get_project_name_from_sample_id, get_zs
-from .utils import seconds_to_tokens
+from ..navigation.utils import backup_sample, get_project_name_from_sample_id, get_zs, save_zs
+from ..utils import seconds_to_tokens
 
 import torch as t
 

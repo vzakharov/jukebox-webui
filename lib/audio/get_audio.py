@@ -1,4 +1,4 @@
-from lib.cut import cut_z
+from lib.audio.cut import cut_z
 from lib.model.params import hps
 from lib.navigation.utils import get_zs
 from lib.upsampling.utils import get_levels
