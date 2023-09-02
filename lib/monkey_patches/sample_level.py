@@ -9,7 +9,7 @@ from lib.upsampling.Upsampling import Upsampling
 from main import sample_id_to_restart_upsampling_with
 from params import base_path
 
-from .upsample_from import upsample_from
+from .upsample_window import upsample_window
 
 
 def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
@@ -58,7 +58,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
 
         break
 
-      upsample_from(start)
+      upsample_window(start)
 
   if level == 0:
     Upsampling.running = False

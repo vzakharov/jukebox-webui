@@ -9,7 +9,7 @@ from lib.utils import as_local_hh_mm
 from params import base_path
 
 
-def upsample_from(start):
+def upsample_window(start):
   Upsampling.window_start_time = datetime.now()
   Upsampling.windows_remaining = len(Upsampling.windows) - Upsampling.window_index
   Upsampling.time_remaining = Upsampling.time_per_window * Upsampling.windows_remaining
