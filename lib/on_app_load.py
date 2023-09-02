@@ -5,7 +5,6 @@ from UI.main import main_window
 from UI.metas import artist, genre_dropdown
 from UI.misc import getting_started_column, separate_tab_warning, separate_tab_link
 from UI.navigation import routed_sample_id
-from UI.project import 
 from UI.upsampling import genre_left_channel, genre_center_channel, genre_right_channel
 
 from .app import app

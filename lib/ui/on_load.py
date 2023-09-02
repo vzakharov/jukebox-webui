@@ -1,15 +1,21 @@
-from lib.lists import get_list
-from lib.navigation.get_projects import get_projects
-from params import base_path
+import os
+import re
 
 import gradio as gr
 import yaml
 
-import os
-import re
-
-from UI.misc import separate_tab_warning, separate_tab_link
+from lib.lists import get_list
+from lib.navigation.get_projects import get_projects
+from params import base_path
+from UI.general import project_name
 from UI.main import main_window
+from UI.metas import artist, genre_dropdown
+from UI.misc import (getting_started_column, separate_tab_link,
+                     separate_tab_warning)
+from UI.navigation import routed_sample_id
+from UI.upsampling import (genre_center_channel, genre_left_channel,
+                           genre_right_channel)
+
 
 def on_load( href, query_string, error_message ):
 
@@ -60,33 +66,33 @@ def on_load( href, query_string, error_message ):
     sample_id = None
 
   return {
-    UI.project_name: gr.update(
+    project_name: gr.update(
       choices = projects,
       value = project_name,
     ),
-    UI.routed_sample_id: sample_id,
-    UI.artist: gr.update(
+    routed_sample_id: sample_id,
+    artist: gr.update(
       choices = get_list('artist'),
     ),
-    UI.genre_dropdown: gr.update(
+    genre_dropdown: gr.update(
       choices = get_list('genre'),
     ),
-    UI.getting_started_column: gr.update(
+    getting_started_column: gr.update(
       visible = len(projects) == 1
     ),
-    UI.separate_tab_warning: gr.update(
+    separate_tab_warning: gr.update(
       visible = False
     ),
-    UI.main_window: gr.update(
+    main_window: gr.update(
       visible = True
     ),
-    UI.genre_for_upsampling_left_channel: gr.update(
+    genre_left_channel: gr.update(
       choices = get_list('genre')
     ),
-    UI.genre_for_upsampling_center_channel: gr.update(
+    genre_center_channel: gr.update(
       choices = get_list('genre'),
     ),
-    UI.genre_for_upsampling_right_channel: gr.update(
+    genre_right_channel: gr.update(
       choices = get_list('genre'),
     ),
   }

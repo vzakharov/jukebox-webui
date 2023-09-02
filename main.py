@@ -11,8 +11,9 @@ from lib.on_app_load import on_app_load
 from lib.ui.blocks.getting_started import render_getting_started
 from lib.ui.blocks.sidebar.sidebar import render_sidebar
 from lib.ui.blocks.workspace.workspace import render_workspace
-from UI.misc import browser_timezone, separate_tab_warning, separate_tab_link, separate_tab_link, main_window
 from params import base_path, debug_gradio, share_gradio
+from UI.misc import (browser_timezone, main_window, separate_tab_link,
+                     separate_tab_warning)
 
 print("Launch arguments:", sys.argv)
 

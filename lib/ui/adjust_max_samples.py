@@ -2,10 +2,8 @@ import subprocess
 
 import gradio as gr
 
-from UI.project import max_n_samples, max_n_samples, n_samples, total_audio_length, total_audio_length, max_n_samples
-from UI.preview import 
-
 from lib.app import app
+from UI.project import max_n_samples, n_samples, total_audio_length
 
 def set_max_n_samples( total_audio_length ):
 
