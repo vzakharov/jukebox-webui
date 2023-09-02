@@ -1,17 +1,21 @@
 from lib.lists import get_list
 from lib.navigation.save_project import save_project
-import lib.ui.components as UI
 
 import gradio as gr
 
 import random
+import lib.ui.components.project
+import lib.ui.components.misc
+import lib.ui.components.metas
+
+import lib.ui.components.general
 
 def render_sampling_settings():
-  with UI.settings_box.render():
+  with lib.ui.components.general.settings_box.render():
     
-    for component in UI.generation_params:
+    for component in lib.ui.components.project.generation_params:
         # For artist, also add a search button and a randomize button
-      if component == UI.artist:
+      if component == lib.ui.components.metas.artist:
         with gr.Row():
           component.render()
 
@@ -37,22 +41,22 @@ def render_sampling_settings():
 
           artist_filter.submit(
               inputs = artist_filter,
-              outputs = UI.artist,
+              outputs = lib.ui.components.metas.artist,
               fn = filter_artists,
               api_name = 'filter-artists'
             )
 
-      elif component == UI.genre:
-        UI.genre_dropdown.render().change(
-            inputs = [ UI.genre, UI.genre_dropdown ],
-            outputs = UI.genre,
+      elif component == lib.ui.components.metas.genre:
+        lib.ui.components.misc.genre_dropdown.render().change(
+            inputs = [ lib.ui.components.metas.genre, lib.ui.components.misc.genre_dropdown ],
+            outputs = lib.ui.components.metas.genre,
             # Add after a space, if not empty
             fn = lambda genre, genre_dropdown: ( genre + ' ' if genre else '' ) + genre_dropdown,
           )
 
         component.render()
 
-      elif component == UI.generation_discard_window:
+      elif component == lib.ui.components.project.generation_discard_window:
         component.render()
 
         with gr.Accordion( 'What is this?', open = False ):
@@ -64,9 +68,9 @@ def render_sampling_settings():
       else:
         component.render()
 
-    for component in UI.project_settings:
+    for component in lib.ui.components.project.project_settings:
         # Whenever a project setting is changed, save all the settings to settings.yaml in the project folder
-      inputs = [ UI.project_name, *UI.project_settings ]
+      inputs = [ lib.ui.components.general.project_name, *lib.ui.components.project.project_settings ]
 
         # Use the "blur" method if available, otherwise use "change"
       handler_name = 'blur' if hasattr(component, 'blur') else 'change'

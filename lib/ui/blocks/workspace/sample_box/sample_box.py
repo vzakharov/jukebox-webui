@@ -1,9 +1,10 @@
 import gradio as gr
 
 from lib.app import app
+import lib.ui.components.audio
+import lib.ui.components.navigation
 from lib.ui.html.play_pause import play_pause_button
 from lib.ui.preview import get_preview_args
-import lib.ui.components as UI
 
 from .advanced.advanced import render_advanced
 from .compose_row import render_compose_row
@@ -11,7 +12,7 @@ from .upsampling.state import render_upsampling_accordion
 
 
 def render_sample_box():
-  with UI.sample_box.render():
+  with lib.ui.components.navigation.sample_box.render():
 
     show_or_hide_upsampling_elements_args, upsample_button_click_args = render_upsampling_accordion()
 
@@ -27,8 +28,8 @@ def render_sample_box():
     )
 
     for element in [
-      UI.audio_waveform,
-      UI.audio_timeline
+      lib.ui.components.audio.audio_waveform,
+      lib.ui.components.audio.audio_timeline
     ]:
       element.render()
 
