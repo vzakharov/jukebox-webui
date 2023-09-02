@@ -18,14 +18,6 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
   print(f'Generating audio for {project_name}/{sample_id} (level {level}, stereo rendering {stereo_rendering}, combine levels {should_combine_levels})')
   print(f'Cut: {cut_audio}, preview: {preview_sec}')
 
-  # Get current GPU memory usage. If it's above 12GB, empty the cache
-  memory = t.cuda.memory_allocated()
-  print(f'GPU memory usage is {memory / 1e9:.1f} GB')
-  if t.cuda.memory_allocated() > 12e9:
-    print('GPU memory usage is above 12GB, clearing the cache')
-    empty_cache()
-    print(f'GPU memory usage is now {t.cuda.memory_allocated() / 1e9:1f} GB')
-
   global base_path, hps
 
   zs = get_zs(project_name, sample_id, seek_upsampled=True)
