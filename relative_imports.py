@@ -19,7 +19,18 @@ import re
 import ast
 import argparse
 
+import ast
+
 def get_imports(source):
+  """
+  Given a source code string, returns a generator that yields the names of all imported modules.
+
+  Args:
+    source (str): The source code string to parse.
+
+  Yields:
+    str: The name of an imported module.
+  """
   tree = ast.parse(source)
   for node in tree.body:
     if isinstance(node, ast.Import):
@@ -28,7 +39,19 @@ def get_imports(source):
     elif isinstance(node, ast.ImportFrom):
       yield node.module
 
+import re
+
 def replace_imports(file_path, relative_path):
+  """
+  Replaces imports in a Python file with relative imports.
+
+  Args:
+    file_path (str): The path to the Python file to modify.
+    relative_path (str): The relative path to the package containing the imports to replace.
+
+  Returns:
+    None
+  """
   with open(file_path, 'r') as file:
     source = file.read()
   imports = list(get_imports(source))
@@ -38,7 +61,18 @@ def replace_imports(file_path, relative_path):
   with open(file_path, 'w') as file:
     file.write(source)
 
+import os
+
 def process_directory(path):
+  """
+  Recursively walks through a directory and its subdirectories, finds all Python files, and replaces their imports with relative imports.
+
+  Args:
+    path (str): The path to the directory to process.
+
+  Returns:
+    None
+  """
   for root, dirs, files in os.walk(path):
     for file in files:
       if file.endswith('.py'):
