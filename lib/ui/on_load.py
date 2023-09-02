@@ -1,5 +1,4 @@
 from lib.lists import get_list
-from .UI import UI
 from lib.navigation.get_projects import get_projects
 from params import base_path
 
@@ -9,6 +8,9 @@ import yaml
 import os
 import re
 
+import UI.misc
+import UI.main
+
 def on_load( href, query_string, error_message ):
 
   if error_message:
@@ -16,11 +18,11 @@ def on_load( href, query_string, error_message ):
     print(f'Error message from the client (for debugging only; you can ignore this): {error_message}')
 
     return {
-      UI.separate_tab_warning: gr.update(
+      UI.misc.separate_tab_warning: gr.update(
         visible = True,
       ),
-      UI.separate_tab_link: href,
-      UI.main_window: gr.update(
+      UI.misc.separate_tab_link: href,
+      UI.main.main_window: gr.update(
         visible = False,
       ),
     }

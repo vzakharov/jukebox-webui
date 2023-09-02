@@ -1,7 +1,7 @@
 
 import gradio as gr
 
-import lib.ui.components.upsampling
+import UI.upsampling
 
 def render_genres_for_upsampling():
   with gr.Accordion('Genres for upsampling (optional)', open = False):
@@ -13,7 +13,7 @@ def render_genres_for_upsampling():
       ''')
 
     with gr.Row():
-      for input in [ lib.ui.components.upsampling.genre_for_upsampling_left_channel, lib.ui.components.upsampling.genre_for_upsampling_center_channel, lib.ui.components.upsampling.genre_for_upsampling_right_channel ]:
+      for input in [ UI.upsampling.genre_left_channel, UI.upsampling.genre_center_channel, UI.upsampling.genre_right_channel ]:
         input.render()
 
-    lib.ui.components.upsampling.kill_runtime_once_done.render()
+    UI.upsampling.kill_runtime_once_done.render()

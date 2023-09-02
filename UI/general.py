@@ -2,7 +2,6 @@
 
 import gradio as gr
 
-
 project_name = gr.Dropdown(
   label = 'Project'
 )

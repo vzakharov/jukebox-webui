@@ -41,7 +41,6 @@ def read(filename):
   with open(filename, 'r') as f:
     return f.read()
 
-
 def set_browser_timezone(offset):
   global browser_timezone
 

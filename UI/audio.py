@@ -1,6 +1,5 @@
 import gradio as gr
 
-
 current_chunks = gr.File(
   elem_id = 'current-chunks',
   type = 'binary',

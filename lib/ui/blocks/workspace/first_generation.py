@@ -1,15 +1,15 @@
 from lib.model.generate import generate
-import lib.ui.components.misc as UI
-import lib.ui.components.first
-import lib.ui.components.general
-import lib.ui.components.navigation
-import lib.ui.components.project
+import UI.misc as UI
+import UI.first
+import UI.general
+import UI.navigation
+import UI.project
 from lib.ui.utils import HIDE, SHOW
 
 import gradio as gr
 
 def render_first_generation():
-    with lib.ui.components.first.first_generation_row.render():
+    with UI.first.first_generation_row.render():
       with gr.Column():
         gr.Markdown("""
               To start composing, you need to generate the first batch of samples. You can:
@@ -18,11 +18,11 @@ def render_first_generation():
             """)
 
         gr.Button('Generate initial samples', variant = "primary" ).click(
-              inputs = [ lib.ui.components.general.project_name, lib.ui.components.navigation.sample_tree, lib.ui.components.navigation.show_leafs_only, *lib.ui.components.project.generation_params ],
-              outputs = [ lib.ui.components.navigation.sample_tree, lib.ui.components.first.first_generation_row, lib.ui.components.navigation.sample_tree_row, UI.generation_progress ],
+              inputs = [ UI.general.project_name, UI.navigation.sample_tree, UI.navigation.show_leafs_only, *UI.project.generation_params ],
+              outputs = [ UI.navigation.sample_tree, UI.first.first_generation_row, UI.navigation.sample_tree_row, UI.generation_progress ],
               fn = lambda *args: {
                 **generate(*args),
-                lib.ui.components.first.first_generation_row: HIDE,
-                lib.ui.components.navigation.sample_tree_row: SHOW,
+                UI.first.first_generation_row: HIDE,
+                UI.navigation.sample_tree_row: SHOW,
               }
             )

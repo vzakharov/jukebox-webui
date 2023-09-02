@@ -1,10 +1,16 @@
-from .ui.UI import UI
+import gradio as gr
+
+import UI.general
+import UI.main
+import UI.metas
+import UI.misc
+import UI.navigation
+import UI.project
+import UI.upsampling
+
+from .app import app
 from .ui.on_load import on_load
 from .utils import read, set_browser_timezone
-from .app import app
-
-
-import gradio as gr
 
 
 def on_app_load():
@@ -12,8 +18,10 @@ def on_app_load():
     on_load,
     inputs = [ gr.Textbox(visible=False), gr.Textbox(visible=False), gr.Textbox(visible=False) ],
     outputs = [
-      UI.project_name, UI.routed_sample_id, UI.artist, UI.genre_dropdown, UI.getting_started_column, UI.separate_tab_warning, UI.separate_tab_link, UI.main_window,
-      UI.genre_for_upsampling_left_channel, UI.genre_for_upsampling_center_channel, UI.genre_for_upsampling_right_channel
+      UI.general.project_name, UI.navigation.routed_sample_id,
+      UI.metas.artist, UI.metas.genre_dropdown,
+      UI.misc.getting_started_column, UI.misc.separate_tab_warning, UI.misc.separate_tab_link, UI.main.main_window,
+      UI.upsampling.genre_left_channel, UI.upsampling.genre_center_channel, UI.upsampling.genre_right_channel
     ],
     api_name = 'initialize',
     _js = read('frontend-on-load.js')

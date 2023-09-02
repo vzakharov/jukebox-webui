@@ -3,10 +3,8 @@ from .params import hps, lower_batch_size, lower_level_chunk_size
 from lib.utils import seconds_to_tokens
 from main import top_prior
 
-
 import torch as t
 from jukebox.sample import sample_partial_window
-
 
 def generate_zs(zs, generation_length, temperature=0.99, discard_window=0, discarded_zs=None):
 

@@ -1,6 +1,5 @@
 import gradio as gr
 
-
 upsampling_accordion = gr.Accordion(
   label = 'Upsampling',
   open = False
@@ -12,13 +11,13 @@ upsampling_level = gr.Dropdown(
   choices = [ 'Raw' ],
   value = 'Raw',
 )
-upsample_rendering = gr.Dropdown(
+render_mode = gr.Dropdown(
   label = 'Render...',
   type = 'index',
   choices = [ 'Channel 1', 'Channel 2', 'Channel 3', 'Pseudo-stereo', 'Pseudo-stereo with delay' ],
   value = 'Pseudo-stereo',
 )
-combine_upsampling_levels = gr.Checkbox(
+combine_levels = gr.Checkbox(
   label = 'Combine levels',
   value = True
 )
@@ -34,13 +33,13 @@ sample_to_upsample = gr.Textbox(
   placeholder = 'Choose a sample in the Workspace tab first',
   interactive = False,
 )
-genre_for_upsampling_left_channel = gr.Dropdown(
+genre_left_channel = gr.Dropdown(
   label = 'Genre for upsampling (left channel)'
 )
-genre_for_upsampling_center_channel = gr.Dropdown(
+genre_center_channel = gr.Dropdown(
   label = 'Genre for upsampling (center channel)'
 )
-genre_for_upsampling_right_channel = gr.Dropdown(
+genre_right_channel = gr.Dropdown(
   label = 'Genre for upsampling (right channel)'
 )
 kill_runtime_once_done = gr.Checkbox(

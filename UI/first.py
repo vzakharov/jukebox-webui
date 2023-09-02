@@ -1,7 +1,6 @@
 from datetime import datetime
 import gradio as gr
 
-
 primed_audio = gr.Audio(
   label = 'Audio to start from (optional)',
   source = 'microphone'

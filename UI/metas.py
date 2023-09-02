@@ -3,7 +3,6 @@
 ## Metas (artist, genre, lyrics)
 import gradio as gr
 
-
 artist = gr.Dropdown(
   label = 'Artist'
 )

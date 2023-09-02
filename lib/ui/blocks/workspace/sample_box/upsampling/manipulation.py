@@ -1,4 +1,4 @@
-import lib.ui.components.upsampling
+import UI.upsampling
 from lib.ui.preview import default_preview_args
 
 import gradio as gr
@@ -15,14 +15,14 @@ def render_manipulation_column():
     #   ]
     # )
     with gr.Row():
-      lib.ui.components.upsampling.upsample_rendering.render().change(
-              **default_preview_args,
-            )
+      UI.upsampling.render_mode.render().change(
+        **default_preview_args,
+      )
 
-      lib.ui.components.upsampling.combine_upsampling_levels.render().change(
-              **default_preview_args,
-            )
+      UI.upsampling.combine_levels.render().change(
+        **default_preview_args,
+      )
 
-      lib.ui.components.upsampling.invert_center_channel.render().change(
-              **default_preview_args,
-            )
+      UI.upsampling.invert_center_channel.render().change(
+        **default_preview_args,
+      )

@@ -11,7 +11,7 @@ from lib.on_app_load import on_app_load
 from lib.ui.blocks.getting_started import render_getting_started
 from lib.ui.blocks.sidebar.sidebar import render_sidebar
 from lib.ui.blocks.workspace.workspace import render_workspace
-import lib.ui.components.misc
+import UI.misc
 from params import base_path, debug_gradio, share_gradio
 
 print("Launch arguments:", sys.argv)
@@ -28,26 +28,22 @@ else:
 if not os.path.isdir(base_path):
   os.makedirs(base_path)
 
-main_window = gr.Row(
-  visible = False
-)
-
 with app:
 
-  lib.ui.components.misc.browser_timezone.render()
+  UI.misc.browser_timezone.render()
 
   # Render an invisible checkbox group to enable loading list of projects via API
   define_get_projects_api()
 
-  with lib.ui.components.misc.separate_tab_warning.render():
+  with UI.misc.separate_tab_warning.render():
 
-    lib.ui.components.misc.separate_tab_link.render()
+    UI.misc.separate_tab_link.render()
 
-    gr.Button('Click here to open the UI', variant = 'primary' ).click( inputs = lib.ui.components.misc.separate_tab_link, outputs = None, fn = None,
+    gr.Button('Click here to open the UI', variant = 'primary' ).click( inputs = UI.misc.separate_tab_link, outputs = None, fn = None,
       _js = "link => window.open(link, '_blank')"
     )
   
-  with lib.ui.components.misc.main_window.render():
+  with UI.misc.main_window.render():
 
     render_sidebar()
     render_getting_started()

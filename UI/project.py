@@ -1,10 +1,9 @@
 import gradio as gr
 
-from lib.ui.components.metas import artist, genre, lyrics
-from lib.ui.components.navigation import sample_tree, show_leafs_only
-from lib.ui.components.preview import preview_just_the_last_n_sec
-from lib.ui.components.upsampling import genre_for_upsampling_center_channel, genre_for_upsampling_left_channel, genre_for_upsampling_right_channel
-
+from UI.metas import artist, genre, lyrics
+from UI.navigation import sample_tree, show_leafs_only
+from UI.preview import just_the_last_n_sec
+from UI.upsampling import genre_center_channel, genre_left_channel, genre_right_channel
 
 n_samples = gr.Slider(
   label = 'Number of samples',
@@ -35,6 +34,12 @@ generation_discard_window = gr.Slider(
 )
 generation_params = [ artist, genre, lyrics, n_samples, temperature, generation_length, generation_discard_window ]
 project_settings = [
-  *generation_params, sample_tree, show_leafs_only, preview_just_the_last_n_sec,
-  genre_for_upsampling_left_channel, genre_for_upsampling_center_channel, genre_for_upsampling_right_channel
+  *generation_params, sample_tree, show_leafs_only, just_the_last_n_sec,
+  genre_left_channel, genre_center_channel, genre_right_channel
 ]
+total_audio_length = gr.Number(
+  label = 'Total audio length, sec',
+  elem_id = 'total-audio-length',
+  interactive = False,
+  visible = False
+)

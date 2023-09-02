@@ -1,4 +1,4 @@
-import lib.ui.components.upsampling as UI
+import UI.upsampling as UI
 from lib.ui.preview import default_preview_args
 from lib.upsampling.Upsampling import Upsampling
 

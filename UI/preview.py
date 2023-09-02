@@ -1,13 +1,6 @@
 import gradio as gr
 
-
-total_audio_length = gr.Number(
-  label = 'Total audio length, sec',
-  elem_id = 'total-audio-length',
-  interactive = False,
-  visible = False
-)
-preview_just_the_last_n_sec = gr.Number(
+just_the_last_n_sec = gr.Number(
   label = 'Preview the last ... seconds',
   elem_id = 'preview-last-n-sec'
 )
