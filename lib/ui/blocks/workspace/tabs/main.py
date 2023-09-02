@@ -10,7 +10,7 @@ from lib.ui.blocks.workspace.sample_box.sample_box import render_sample_box
 from lib.ui.blocks.workspace.sample_tree import render_sample_tree
 from lib.ui.js.update_url import update_url_js
 from lib.ui.preview import default_preview_args, preview_inputs
-import lib.ui.components as UI
+import lib.ui.UI as UI
 
 
 def render_main_workspace_tab():

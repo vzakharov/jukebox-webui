@@ -1,5 +1,5 @@
 from .utils import is_new
-import lib.ui.components as UI
+import lib.ui.UI as UI
 from .utils import loaded_settings
 from params import base_path
 

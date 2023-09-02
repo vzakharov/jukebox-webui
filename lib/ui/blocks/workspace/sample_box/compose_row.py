@@ -2,7 +2,7 @@ from lib.model.generate import generate
 from lib.navigation.delete_sample import delete_sample
 from lib.navigation.get_children import get_children
 from lib.navigation.get_parent import get_parent
-import lib.ui.components as UI
+import lib.ui.UI as UI
 
 import gradio as gr
 

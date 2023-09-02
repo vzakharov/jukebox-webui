@@ -1,4 +1,4 @@
-import lib.ui.components as UI
+import lib.ui.UI as UI
 from lib.upsampling.start_upsampling import start_upsampling
 
 def handle_upsampling_button_click():

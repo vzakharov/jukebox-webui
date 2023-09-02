@@ -1,4 +1,4 @@
-import lib.ui.components as UI
+import lib.ui.UI as UI
 from lib.ui.adjust_max_samples import adjust_max_samples
 from lib.ui.blocks.workspace.sample_box.advanced.cut_audio.render_cut_audio import render_cut_audio
 from lib.ui.preview import default_preview_args

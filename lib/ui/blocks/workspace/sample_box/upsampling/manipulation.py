@@ -1,4 +1,4 @@
-import lib.ui.components as UI
+import lib.ui.UI as UI
 from lib.ui.preview import default_preview_args
 
 import gradio as gr

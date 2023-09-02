@@ -1,4 +1,4 @@
-import lib.ui.components as UI
+import lib.ui.UI as UI
 from lib.ui.js.confirm_upsampling import confirm_upsampling_js
 
 import os
