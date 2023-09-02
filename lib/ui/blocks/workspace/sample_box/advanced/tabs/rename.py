@@ -2,8 +2,8 @@ from lib.navigation.rename_sample import rename_sample
 
 import gradio as gr
 
-from UI.general import project_name
-from UI.navigation import picked_sample, show_leafs_only, sample_tree
+from lib.ui.elements.general import project_name
+from lib.ui.elements.navigation import picked_sample, show_leafs_only, sample_tree
 
 def render_rename_tab():
   with gr.Tab('Rename sample'):

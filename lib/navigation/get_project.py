@@ -1,22 +1,28 @@
-from lib.model.params import hps
-from lib.navigation.utils import inputs_by_name
-from UI.first import first_generation_row
-from UI.metas import artist, genre, lyrics
-from UI.general import create_project_box, settings_box
-from UI.misc import getting_started_column
-from UI.navigation import sample_tree, show_leafs_only, show_leafs_only, sample_tree, sample_tree, sample_box, sample_tree_row
-from UI.project import generation_length, temperature, n_samples, project_settings
-from UI.upsampling import genre_left_channel, genre_center_channel, genre_right_channel
-from UI.main import workspace_column
-from .get_samples import get_samples
-from .utils import is_new
-from .utils import loaded_settings
-from params import base_path
+import os
 
 import gradio as gr
 import yaml
 
-import os
+from lib.model.params import hps
+from lib.navigation.utils import inputs_by_name
+from lib.ui.elements.first import first_generation_row
+from lib.ui.elements.general import create_project_box, settings_box
+from lib.ui.elements.main import workspace_column
+from lib.ui.elements.metas import artist, genre, lyrics
+from lib.ui.elements.misc import getting_started_column
+from lib.ui.elements.navigation import (sample_tree, sample_tree_row,
+                                        show_leafs_only)
+from lib.ui.elements.project import (generation_length, n_samples,
+                                     project_settings, temperature)
+from lib.ui.elements.sample import sample_box
+from lib.ui.elements.upsampling import (genre_center_channel,
+                                        genre_left_channel,
+                                        genre_right_channel)
+from params import base_path
+
+from .get_samples import get_samples
+from .utils import is_new, loaded_settings
+
 
 def get_project(project_name, routed_sample_id):
 

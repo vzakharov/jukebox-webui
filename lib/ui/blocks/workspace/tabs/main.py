@@ -8,11 +8,11 @@ from lib.ui.blocks.workspace.first_generation import \
     render_first_generation
 from lib.ui.blocks.workspace.sample_box.sample_box import render_sample_box
 from lib.ui.blocks.workspace.sample_tree import render_sample_tree
-from UI.audio import sibling_chunks, current_chunks, sibling_chunks
-from UI.general import project_name
-from UI.misc import generation_progress
-from UI.navigation import picked_sample, sample_tree, sample_tree, picked_sample, picked_sample, picked_sample_updated
-from UI.upsampling import upsampled_lengths, upsampled_lengths
+from lib.ui.elements.audio import sibling_chunks, current_chunks, sibling_chunks
+from lib.ui.elements.general import project_name
+from lib.ui.elements.misc import generation_progress
+from lib.ui.elements.navigation import picked_sample, sample_tree, sample_tree, picked_sample, picked_sample, picked_sample_updated
+from lib.ui.elements.upsampling import upsampled_lengths, upsampled_lengths
 from lib.ui.js.update_url import update_url_js
 from lib.ui.preview import default_preview_args, preview_inputs
 

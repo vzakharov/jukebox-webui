@@ -1,8 +1,8 @@
 from lib.model.params import hps
 from lib.navigation.get_samples import get_samples
 from lib.navigation.get_first_free_index import get_first_free_index
-from UI.navigation import sample_tree
-from UI.first import prime_timestamp, first_generation_row
+from lib.ui.elements.navigation import sample_tree
+from lib.ui.elements.first import prime_timestamp, first_generation_row
 from lib.ui.utils import HIDE
 from main import device, priors, top_prior
 from params import base_path

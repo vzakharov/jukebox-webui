@@ -1,7 +1,7 @@
 import os
 import signal
 from lib.utils import as_local_hh_mm
-from UI.upsampling import level_names
+from lib.ui.elements.upsampling import level_names
 from lib.upsampling.Upsampling import Upsampling
 from main import sample_id_to_restart_upsampling_with
 

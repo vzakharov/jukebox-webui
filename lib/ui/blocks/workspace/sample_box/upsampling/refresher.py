@@ -1,4 +1,4 @@
-from UI.upsampling import audio_refresher
+from lib.ui.elements.upsampling import audio_refresher
 from lib.ui.preview import default_preview_args
 from lib.upsampling.Upsampling import Upsampling
 

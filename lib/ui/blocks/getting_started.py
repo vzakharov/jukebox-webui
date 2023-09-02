@@ -1,4 +1,4 @@
-from UI.misc import getting_started_column
+from lib.ui.elements.misc import getting_started_column
 
 import gradio as gr
 

@@ -1,9 +1,9 @@
 from lib.navigation.utils import backup_sample, get_zs, save_zs
-from UI.navigation import picked_sample
+from lib.ui.elements.navigation import picked_sample
 
 import gradio as gr
 
-from UI.general import project_name
+from lib.ui.elements.general import project_name
 
 def completify(project_name, sample_id):
   zs = get_zs(project_name, sample_id, True)

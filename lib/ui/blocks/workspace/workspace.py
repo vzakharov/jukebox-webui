@@ -1,6 +1,6 @@
 
 
-from UI.main import workspace_column
+from lib.ui.elements.main import workspace_column
 from .tabs.upsample.upsample import render_upsample_tab
 
 from .tabs.main import render_main_workspace_tab

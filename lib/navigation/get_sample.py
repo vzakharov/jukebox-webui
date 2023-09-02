@@ -10,11 +10,11 @@ import librosa
 import numpy as np
 import yaml
 
-from UI.audio import current_chunks
-from UI.navigation import sample_box, picked_sample_updated
-from UI.project import total_audio_length
-from UI.sample import go_to_children, go_to_parent
-from UI.upsampling import upsampled_lengths
+from lib.ui.elements.audio import current_chunks
+from lib.ui.elements.navigation import sample_box, picked_sample_updated
+from lib.ui.elements.project import total_audio_length
+from lib.ui.elements.sample import go_to_children, go_to_parent
+from lib.ui.elements.upsampling import upsampled_lengths
 from lib.audio.get_audio import get_audio
 from lib.model.params import hps
 from params import base_path

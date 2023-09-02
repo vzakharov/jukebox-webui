@@ -3,8 +3,8 @@ import gradio as gr
 from lib.app import app
 from lib.ui.blocks.workspace.sample_box.upsampling.init_args import \
     upsample_button_click_args
-from UI.navigation import picked_sample, picked_sample
-from UI.upsampling import sample_to_upsample, sample_to_upsample, upsample_button, upsampling_running, upsampling_triggered_by_button
+from lib.ui.elements.navigation import picked_sample, picked_sample
+from lib.ui.elements.upsampling import sample_to_upsample, sample_to_upsample, upsample_button, upsampling_running, upsampling_triggered_by_button
 from lib.upsampling.Upsampling import Upsampling
 
 from .genres_for_upsampling import render_genres_for_upsampling

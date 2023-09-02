@@ -3,7 +3,7 @@ import gradio as gr
 
 import random
 
-from UI.upsampling import upsampling_running, upsampling_status, upsample_button, continue_upsampling_button, upsampling_refresher, upsampling_status, upsample_button, continue_upsampling_button, upsampling_refresher
+from lib.ui.elements.upsampling import upsampling_running, upsampling_status, upsample_button, continue_upsampling_button, upsampling_refresher, upsampling_status, upsample_button, continue_upsampling_button, upsampling_refresher
 
 def handle_upsampling_status_change():
   upsampling_running.change(

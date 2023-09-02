@@ -1,4 +1,4 @@
-from UI.audio import current_chunks, sibling_chunks
+from lib.ui.elements.audio import current_chunks, sibling_chunks
 from .get_sample import get_sample
 from .utils import get_siblings
 

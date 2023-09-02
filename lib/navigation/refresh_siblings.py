@@ -1,5 +1,5 @@
 from .utils import get_siblings
-from UI.navigation import picked_sample
+from lib.ui.elements.navigation import picked_sample
 from lib.ui.utils import HIDE
 
 import gradio as gr

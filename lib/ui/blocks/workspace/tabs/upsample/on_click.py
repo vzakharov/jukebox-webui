@@ -1,6 +1,6 @@
-from UI.metas import artist, lyrics
-from UI.general import project_name
-from UI.upsampling import upsampling_running, upsampling_triggered_by_button, sample_to_upsample, genre_left_channel, genre_center_channel, genre_right_channel, kill_runtime_once_done
+from lib.ui.elements.metas import artist, lyrics
+from lib.ui.elements.general import project_name
+from lib.ui.elements.upsampling import upsampling_running, upsampling_triggered_by_button, sample_to_upsample, genre_left_channel, genre_center_channel, genre_right_channel, kill_runtime_once_done
 from lib.upsampling.start_upsampling import start_upsampling
 
 def handle_upsampling_button_click():

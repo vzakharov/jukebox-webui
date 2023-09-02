@@ -5,10 +5,10 @@ from lib.upsampling.show_or_hide_continue_upsampling import \
     show_or_hide_continue_upsampling
 from lib.upsampling.show_or_hide_upsampling_elements import \
     show_or_hide_upsampling_elements
-from UI.general import project_name
-from UI.navigation import picked_sample
-from UI.project import total_audio_length
-from UI.upsampling import (continue_upsampling_button, upsampling_accordion,
+from lib.ui.elements.general import project_name
+from lib.ui.elements.navigation import picked_sample
+from lib.ui.elements.project import total_audio_length
+from lib.ui.elements.upsampling import (continue_upsampling_button, upsampling_accordion,
                            upsampling_level, upsampling_running,
                            upsampling_status)
 

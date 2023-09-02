@@ -1,9 +1,9 @@
 from lib.model.generate import generate
-from UI.misc import generation_progress
-from UI.first import first_generation_row, first_generation_row, first_generation_row
-from UI.general import project_name
-from UI.navigation import sample_tree, show_leafs_only, sample_tree, sample_tree_row, sample_tree_row
-from UI.project import generation_params
+from lib.ui.elements.misc import generation_progress
+from lib.ui.elements.first import first_generation_row, first_generation_row, first_generation_row
+from lib.ui.elements.general import project_name
+from lib.ui.elements.navigation import sample_tree, show_leafs_only, sample_tree, sample_tree_row, sample_tree_row
+from lib.ui.elements.project import generation_params
 from lib.ui.utils import HIDE, SHOW
 
 import gradio as gr

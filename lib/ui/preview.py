@@ -1,12 +1,12 @@
 import gradio as gr
 
-from UI.audio import current_chunks
-from UI.general import project_name
-from UI.navigation import picked_sample, picked_sample_updated
-from UI.preview import cut_audio_specs, just_the_last_n_sec
-from UI.project import total_audio_length
-from UI.sample import go_to_children, go_to_parent, sample_box
-from UI.upsampling import combine_levels, invert_center_channel, render_mode, upsampled_lengths
+from lib.ui.elements.audio import current_chunks
+from lib.ui.elements.general import project_name
+from lib.ui.elements.navigation import picked_sample, picked_sample_updated
+from lib.ui.elements.preview import cut_audio_specs, just_the_last_n_sec
+from lib.ui.elements.project import total_audio_length
+from lib.ui.elements.sample import go_to_children, go_to_parent, sample_box
+from lib.ui.elements.upsampling import combine_levels, invert_center_channel, render_mode, upsampled_lengths
 
 from lib.navigation.get_sample import get_sample
 

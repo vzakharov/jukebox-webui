@@ -7,13 +7,13 @@ import yaml
 from lib.lists import get_list
 from lib.navigation.get_projects import get_projects
 from params import base_path
-from UI.general import project_name
-from UI.main import main_window
-from UI.metas import artist, genre_dropdown
-from UI.misc import (getting_started_column, separate_tab_link,
+from lib.ui.elements.general import project_name
+from lib.ui.elements.main import main_window
+from lib.ui.elements.metas import artist, genre_dropdown
+from lib.ui.elements.misc import (getting_started_column, separate_tab_link,
                      separate_tab_warning)
-from UI.navigation import routed_sample_id
-from UI.upsampling import (genre_center_channel, genre_left_channel,
+from lib.ui.elements.navigation import routed_sample_id
+from lib.ui.elements.upsampling import (genre_center_channel, genre_left_channel,
                            genre_right_channel)
 
 

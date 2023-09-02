@@ -1,4 +1,4 @@
-from UI.upsampling import render_mode, combine_levels, invert_center_channel
+from lib.ui.elements.upsampling import render_mode, combine_levels, invert_center_channel
 from lib.ui.preview import default_preview_args
 
 import gradio as gr

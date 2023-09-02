@@ -4,10 +4,10 @@ from lib.navigation.save_project import save_project
 import gradio as gr
 
 import random
-from UI.project import generation_params, generation_discard_window, project_settings, project_settings
-from UI.metas import artist, genre_dropdown, genre
+from lib.ui.elements.project import generation_params, generation_discard_window, project_settings, project_settings
+from lib.ui.elements.metas import artist, genre_dropdown, genre
 
-from UI.general import settings_box, project_name
+from lib.ui.elements.general import settings_box, project_name
 
 def render_sampling_settings():
   with settings_box.render():

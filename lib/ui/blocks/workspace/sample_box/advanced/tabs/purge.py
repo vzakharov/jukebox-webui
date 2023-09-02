@@ -1,5 +1,5 @@
 from lib.navigation.purging import prepare_purge_list, purge_samples
-from UI.general import project_name
+from lib.ui.elements.general import project_name
 
 import gradio as gr
 

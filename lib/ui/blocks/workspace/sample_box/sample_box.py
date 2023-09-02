@@ -1,8 +1,8 @@
 import gradio as gr
 
 from lib.app import app
-from UI.audio import audio_waveform, audio_timeline
-from UI.navigation import sample_box
+from lib.ui.elements.audio import audio_waveform, audio_timeline
+from lib.ui.elements.navigation import sample_box
 from lib.ui.html.play_pause import play_pause_button
 from lib.ui.preview import get_preview_args
 

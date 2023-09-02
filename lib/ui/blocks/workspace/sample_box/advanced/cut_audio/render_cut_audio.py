@@ -1,7 +1,7 @@
 from lib.audio.cut import cut_audio
-from UI.general import project_name
-from UI.navigation import picked_sample
-from UI.preview import cut_audio_preview_button, cut_audio_specs, cut_audio_specs, cut_audio_preview_button, cut_audio_apply_button, cut_audio_apply_button, cut_audio_specs, cut_audio_specs, just_the_last_n_sec
+from lib.ui.elements.general import project_name
+from lib.ui.elements.navigation import picked_sample
+from lib.ui.elements.preview import cut_audio_preview_button, cut_audio_specs, cut_audio_specs, cut_audio_preview_button, cut_audio_apply_button, cut_audio_apply_button, cut_audio_specs, cut_audio_specs, just_the_last_n_sec
 from .how_to import how_to_cut_audio_markdown
 from lib.ui.preview import default_preview_args
 

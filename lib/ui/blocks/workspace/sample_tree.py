@@ -2,8 +2,8 @@ from lib.navigation.get_samples import get_samples
 
 import gradio as gr
 
-from UI.general import project_name
-from UI.navigation import sample_tree_row, routed_sample_id, sample_tree, show_leafs_only, show_leafs_only, show_leafs_only, sample_tree
+from lib.ui.elements.general import project_name
+from lib.ui.elements.navigation import sample_tree_row, routed_sample_id, sample_tree, show_leafs_only, show_leafs_only, show_leafs_only, sample_tree
 
 def render_sample_tree():
     with sample_tree_row.render():

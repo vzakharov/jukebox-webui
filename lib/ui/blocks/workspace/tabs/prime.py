@@ -2,9 +2,9 @@ import gradio as gr
 
 from lib.audio.convert_audio_to_sample import convert_audio_to_sample
 from lib.audio.utils import trim_primed_audio
-from UI.first import primed_audio, primed_audio, primed_audio, primed_audio, primed_audio, prime_timestamp, first_generation_row, prime_timestamp, prime_timestamp
-from UI.general import project_name
-from UI.navigation import show_leafs_only, sample_tree
+from lib.ui.elements.first import primed_audio, primed_audio, primed_audio, primed_audio, primed_audio, prime_timestamp, first_generation_row, prime_timestamp, prime_timestamp
+from lib.ui.elements.general import project_name
+from lib.ui.elements.navigation import show_leafs_only, sample_tree
 
 def render_prime_tab():
   with gr.Tab('Prime'):

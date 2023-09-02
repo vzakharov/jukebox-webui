@@ -1,11 +1,11 @@
 import gradio as gr
 
-from UI.general import project_name
-from UI.main import main_window
-from UI.metas import artist, genre_dropdown
-from UI.misc import getting_started_column, separate_tab_warning, separate_tab_link
-from UI.navigation import routed_sample_id
-from UI.upsampling import genre_left_channel, genre_center_channel, genre_right_channel
+from lib.ui.elements.general import project_name
+from lib.ui.elements.main import main_window
+from lib.ui.elements.metas import artist, genre_dropdown
+from lib.ui.elements.misc import getting_started_column, separate_tab_warning, separate_tab_link
+from lib.ui.elements.navigation import routed_sample_id
+from lib.ui.elements.upsampling import genre_left_channel, genre_center_channel, genre_right_channel
 
 from .app import app
 from .ui.on_load import on_load

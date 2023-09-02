@@ -1,7 +1,7 @@
 import yaml
 
 from .utils import input_names
-from UI.project import project_settings, project_settings
+from lib.ui.elements.project import project_settings, project_settings
 from params import base_path
 
 from .utils import is_new, loaded_settings

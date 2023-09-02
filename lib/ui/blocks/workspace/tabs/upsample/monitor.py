@@ -1,4 +1,4 @@
-from UI.upsampling import upsampling_refresher, audio_refresher, upsampling_status
+from lib.ui.elements.upsampling import upsampling_refresher, audio_refresher, upsampling_status
 from lib.upsampling.Upsampling import Upsampling
 
 def monitor_upsampling_status():

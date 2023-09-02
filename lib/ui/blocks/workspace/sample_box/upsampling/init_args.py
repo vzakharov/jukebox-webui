@@ -1,4 +1,4 @@
-from UI.upsampling import upsampling_running, upsampling_running, upsampling_triggered_by_button, upsampling_running, upsampling_triggered_by_button
+from lib.ui.elements.upsampling import upsampling_running, upsampling_running, upsampling_triggered_by_button, upsampling_running, upsampling_triggered_by_button
 from lib.ui.js.confirm_upsampling import confirm_upsampling_js
 
 import os

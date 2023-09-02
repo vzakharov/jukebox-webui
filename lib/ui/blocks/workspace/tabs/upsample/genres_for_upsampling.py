@@ -1,7 +1,7 @@
 
 import gradio as gr
 
-from UI.upsampling import genre_left_channel, genre_center_channel, genre_right_channel, kill_runtime_once_done
+from lib.ui.elements.upsampling import genre_left_channel, genre_center_channel, genre_right_channel, kill_runtime_once_done
 
 def render_genres_for_upsampling():
   with gr.Accordion('Genres for upsampling (optional)', open = False):
