@@ -1,6 +1,6 @@
-from lib.navigation.utils import is_new
+from .utils import is_new
 from lib.ui.UI import UI
-from lib.navigation.utils import loaded_settings
+from .utils import loaded_settings
 from params import base_path
 
 import yaml

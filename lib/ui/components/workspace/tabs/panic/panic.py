@@ -1,4 +1,4 @@
-from lib.ui.components.workspace.tabs.panic.dev import render_dev_accordion
+from .dev import render_dev_accordion
 
 import gradio as gr
 from jukebox.utils.torch_utils import empty_cache

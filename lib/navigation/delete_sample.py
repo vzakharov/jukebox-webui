@@ -1,5 +1,5 @@
 from lib.ui.UI import UI
-from lib.navigation.utils import get_siblings
+from .utils import get_siblings
 from params import base_path
 
 import gradio as gr

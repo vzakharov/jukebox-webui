@@ -1,7 +1,7 @@
 # Show the continue upsampling markdown only if the current level's length in tokens is less than the total audio length
 # Also update the upsampling button to say "Continue upsampling" instead of "Upsample"
 from lib.navigation.utils import get_zs
-from lib.upsampling.utils import get_levels
+from .utils import get_levels
 from lib.utils import tokens_to_seconds
 
 import gradio as gr

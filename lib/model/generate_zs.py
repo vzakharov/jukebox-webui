@@ -1,5 +1,5 @@
-from lib.model.calculate_metas import labels
-from lib.model.params import hps, lower_batch_size, lower_level_chunk_size
+from .calculate_metas import labels
+from .params import hps, lower_batch_size, lower_level_chunk_size
 from lib.utils import seconds_to_tokens
 from main import top_prior
 

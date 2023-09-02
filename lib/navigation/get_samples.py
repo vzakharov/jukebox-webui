@@ -1,4 +1,4 @@
-from lib.navigation.get_children import get_children
+from .get_children import get_children
 from params import base_path
 
 import os

@@ -2,7 +2,7 @@ from datetime import timedelta, timezone
 import re
 import subprocess
 from main import browser_timezone
-from lib.model.params import chunk_size, hps, raw_to_tokens
+from .model.params import chunk_size, hps, raw_to_tokens
 
 def as_local_hh_mm(dt, include_seconds = False):
   return dt.astimezone(browser_timezone).strftime('%H:%M:%S' if include_seconds else '%H:%M')

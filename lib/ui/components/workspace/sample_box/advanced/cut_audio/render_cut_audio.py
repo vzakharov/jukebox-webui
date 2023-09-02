@@ -1,6 +1,6 @@
 from lib.cut import cut_audio
 from lib.ui.UI import UI
-from lib.ui.components.workspace.sample_box.advanced.cut_audio.how_to import how_to_cut_audio_markdown
+from .how_to import how_to_cut_audio_markdown
 from lib.ui.preview import default_preview_args
 
 import gradio as gr

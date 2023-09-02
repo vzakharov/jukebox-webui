@@ -1,5 +1,5 @@
-from lib.upsampling.Upsampling import Upsampling
-from lib.upsampling.utils import get_first_upsampled_ancestor_zs
+from .Upsampling import Upsampling
+from .utils import get_first_upsampled_ancestor_zs
 from main import load_top_prior, priors, top_prior, vqvae
 
 import torch as t

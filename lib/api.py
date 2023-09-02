@@ -1,4 +1,4 @@
-from lib.navigation.get_projects import get_projects
+from .navigation.get_projects import get_projects
 
 import gradio as gr
 

@@ -1,8 +1,8 @@
 import os
 import subprocess
-from lib.navigation.get_parent import get_parent
-from lib.navigation.get_samples import get_samples
-from lib.navigation.utils import get_zs_filename
+from .get_parent import get_parent
+from .get_samples import get_samples
+from .utils import get_zs_filename
 
 import torch as t
 

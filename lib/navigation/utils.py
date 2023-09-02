@@ -1,9 +1,9 @@
 import os
 import shutil
 from datetime import datetime
-from lib.navigation.get_children import get_children
-from lib.navigation.get_parent import get_parent
-from lib.navigation.get_projects import get_projects
+from .get_children import get_children
+from .get_parent import get_parent
+from .get_projects import get_projects
 from lib.upsampling.utils import get_first_upsampled_ancestor_zs, is_upsampled
 import torch as t
 from params import base_path

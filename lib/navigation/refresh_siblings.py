@@ -1,4 +1,4 @@
-from lib.navigation.utils import get_siblings
+from .utils import get_siblings
 from lib.ui.UI import UI
 from lib.ui.utils import HIDE
 

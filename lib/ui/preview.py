@@ -1,6 +1,6 @@
 from lib.navigation.get_sample import get_sample
 import gradio as gr
-from lib.ui.UI import UI
+from .UI import UI
 
 preview_inputs = [
     UI.project_name, UI.picked_sample, UI.cut_audio_specs, UI.preview_just_the_last_n_sec,

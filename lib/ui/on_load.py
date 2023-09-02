@@ -1,5 +1,5 @@
 from lib.lists import get_list
-from lib.ui.UI import UI
+from .UI import UI
 from lib.navigation.get_projects import get_projects
 from params import base_path
 

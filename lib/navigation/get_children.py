@@ -1,5 +1,5 @@
-from lib.navigation.get_custom_parents import get_custom_parents
-from lib.navigation.utils import get_prefix
+from .get_custom_parents import get_custom_parents
+from .utils import get_prefix
 from params import base_path
 
 import os

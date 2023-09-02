@@ -3,7 +3,7 @@ import subprocess
 import gradio as gr
 
 from lib.app import app
-from lib.ui.UI import UI
+from .UI import UI
 
 def set_max_n_samples( total_audio_length, n_samples ):
   max_n_samples_by_gpu_and_duration = {

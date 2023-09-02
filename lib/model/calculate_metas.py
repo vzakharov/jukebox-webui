@@ -1,4 +1,4 @@
-from lib.model.params import hps
+from .params import hps
 from main import device, top_prior
 
 calculated_metas = {}

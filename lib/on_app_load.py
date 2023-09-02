@@ -1,7 +1,7 @@
-from lib.ui.UI import UI
-from lib.ui.on_load import on_load
-from lib.utils import read, set_browser_timezone
-from lib.app import app
+from .ui.UI import UI
+from .ui.on_load import on_load
+from .utils import read, set_browser_timezone
+from .app import app
 
 
 import gradio as gr

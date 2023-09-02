@@ -1,4 +1,4 @@
-from lib.upsampling.Upsampling import Upsampling
+from .Upsampling import Upsampling
 
 def request_to_stop_upsampling():
   if Upsampling.running:

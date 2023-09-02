@@ -1,4 +1,4 @@
-from lib.navigation.get_custom_parents import get_custom_parents
+from .get_custom_parents import get_custom_parents
 from params import base_path
 
 def get_parent(project_name, sample_id):
