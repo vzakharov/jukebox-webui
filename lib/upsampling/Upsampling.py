@@ -27,3 +27,5 @@ class Upsampling:
 
   stop = False
   kill_runtime_once_done = False
+
+  upsamplers = None
