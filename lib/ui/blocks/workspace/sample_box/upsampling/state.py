@@ -1,15 +1,21 @@
-from UI.general import project_name, project_name
-from UI.navigation import picked_sample, picked_sample, picked_sample, picked_sample
-from UI.preview import 
-from UI.upsampling import upsampling_accordion, upsampling_level, upsampling_running, upsampling_status, upsampling_level, upsampling_running, upsampling_running, continue_upsampling_button, continue_upsampling_button, upsampling_status
+import gradio as gr
+
+from lib.ui.preview import default_preview_args
+from lib.upsampling.show_or_hide_continue_upsampling import \
+    show_or_hide_continue_upsampling
+from lib.upsampling.show_or_hide_upsampling_elements import \
+    show_or_hide_upsampling_elements
+from UI.general import project_name
+from UI.navigation import picked_sample
+from UI.project import total_audio_length
+from UI.upsampling import (continue_upsampling_button, upsampling_accordion,
+                           upsampling_level, upsampling_running,
+                           upsampling_status)
+
 from .init_args import upsample_button_click_args
 from .manipulation import render_manipulation_column
 from .refresher import render_refresher
-from lib.upsampling.show_or_hide_continue_upsampling import show_or_hide_continue_upsampling
-from lib.upsampling.show_or_hide_upsampling_elements import show_or_hide_upsampling_elements
-from lib.ui.preview import default_preview_args
 
-import gradio as gr
 
 def render_upsampling_accordion():
 
@@ -33,7 +39,7 @@ def render_upsampling_accordion():
       render_manipulation_column()
 
     picked_sample.change(
-      inputs = [ project_name, picked_sample, UI.project.total_audio_length, upsampling_running ],
+      inputs = [ project_name, picked_sample, total_audio_length, upsampling_running ],
       outputs = continue_upsampling_button,
       fn = show_or_hide_continue_upsampling,
     )

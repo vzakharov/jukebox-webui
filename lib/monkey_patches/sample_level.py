@@ -1,3 +1,5 @@
+import os
+import signal
 from lib.utils import as_local_hh_mm
 from UI.upsampling import level_names
 from lib.upsampling.Upsampling import Upsampling
@@ -81,7 +83,7 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
   if level == 0:
     Upsampling.running = False
     if Upsampling.kill_runtime_once_done:
-      print('Killing runtime')
-      runtime.unassign()
+      print('Killing process')
+      os.kill(os.getpid(), signal.SIGKILL)
 
   return Upsampling.zs
