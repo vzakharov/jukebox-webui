@@ -1,6 +1,8 @@
 import os
 import shutil
 from datetime import datetime
+
+import gradio as gr
 from .get_children import get_children
 from .get_parent import get_parent
 from .get_projects import get_projects
@@ -71,3 +73,5 @@ def is_ancestor(project_name, potential_ancestor, potential_descendant):
     return False
 
 loaded_settings = {}
+input_names = { input: name for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
+inputs_by_name = { name: input for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }

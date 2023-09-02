@@ -1,6 +1,6 @@
+import lib.ui.components.audio
 from .get_sample import get_sample
 from .utils import get_siblings
-import lib.ui.components as UI
 
 def get_sibling_samples(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center):
   print(f'Updating sibling samples for {sample_id}...')
@@ -9,11 +9,11 @@ def get_sibling_samples(project_name, sample_id, cut_out, last_n_sec, upsample_r
     if sibling_id == sample_id:
       continue
     sibling_sample = get_sample(project_name, sibling_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center)
-    sibling_sample_files = sibling_sample[UI.current_chunks]
+    sibling_sample_files = sibling_sample[lib.ui.components.audio.current_chunks]
     # breakpoint()
     print(f'Adding sibling {sibling_id} with files {sibling_sample_files}')
     sibling_files.extend(sibling_sample_files)
     print(f'Totally {len(sibling_files)} sibling files')
   return {
-    UI.sibling_chunks: sibling_files
+    lib.ui.components.audio.sibling_chunks: sibling_files
   }

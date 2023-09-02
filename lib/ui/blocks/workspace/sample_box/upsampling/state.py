@@ -1,4 +1,7 @@
-import lib.ui.components as UI
+import lib.ui.components.general
+import lib.ui.components.navigation
+import lib.ui.components.preview
+import lib.ui.components.upsampling
 from .init_args import upsample_button_click_args
 from .manipulation import render_manipulation_column
 from .refresher import render_refresher
@@ -10,36 +13,36 @@ import gradio as gr
 
 def render_upsampling_accordion():
 
-  with UI.upsampling_accordion.render():
+  with lib.ui.components.upsampling.upsampling_accordion.render():
     with gr.Row():
       
       with gr.Column():
-        UI.upsampling_level.render().change(
+        lib.ui.components.upsampling.upsampling_level.render().change(
           **default_preview_args,
         )
 
         show_or_hide_upsampling_elements_args = dict(
-          inputs = [ UI.project_name, UI.picked_sample, UI.upsampling_running ],
-          outputs = [ UI.upsampling_status, UI.upsampling_level ],
+          inputs = [ lib.ui.components.general.project_name, lib.ui.components.navigation.picked_sample, lib.ui.components.upsampling.upsampling_running ],
+          outputs = [ lib.ui.components.upsampling.upsampling_status, lib.ui.components.upsampling.upsampling_level ],
           fn = show_or_hide_upsampling_elements,
         )
 
-        UI.picked_sample.change( **show_or_hide_upsampling_elements_args )
-        UI.upsampling_running.change( **show_or_hide_upsampling_elements_args )
+        lib.ui.components.navigation.picked_sample.change( **show_or_hide_upsampling_elements_args )
+        lib.ui.components.upsampling.upsampling_running.change( **show_or_hide_upsampling_elements_args )
 
       render_manipulation_column()
 
-    UI.picked_sample.change(
-      inputs = [ UI.project_name, UI.picked_sample, UI.total_audio_length, UI.upsampling_running ],
-      outputs = UI.continue_upsampling_button,
+    lib.ui.components.navigation.picked_sample.change(
+      inputs = [ lib.ui.components.general.project_name, lib.ui.components.navigation.picked_sample, lib.ui.components.preview.total_audio_length, lib.ui.components.upsampling.upsampling_running ],
+      outputs = lib.ui.components.upsampling.continue_upsampling_button,
       fn = show_or_hide_continue_upsampling,
     )
 
-    UI.continue_upsampling_button.render().click( **upsample_button_click_args )
+    lib.ui.components.upsampling.continue_upsampling_button.render().click( **upsample_button_click_args )
 
     render_refresher(show_or_hide_upsampling_elements_args)
 
-  UI.upsampling_status.render()
+  lib.ui.components.upsampling.upsampling_status.render()
   
   return show_or_hide_upsampling_elements_args, upsample_button_click_args
 
