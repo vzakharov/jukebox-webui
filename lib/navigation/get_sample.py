@@ -1,25 +1,28 @@
-from lib.audio.get_audio import get_audio
-import UI.audio
-import UI.navigation
-import UI.sample
-import UI.upsampling
-from .get_children import get_children
-from .get_parent import get_parent
-from .get_sample_filename import get_sample_filename
-from lib.model.params import hps
-from params import base_path
-
-import gradio as gr
-import librosa
-import numpy as np
-import yaml
-
 import glob
 import hashlib
 import os
 import random
 import subprocess
 from datetime import datetime, timedelta
+
+import gradio as gr
+import librosa
+import numpy as np
+import yaml
+
+import UI.audio
+import UI.navigation
+import UI.project
+import UI.sample
+import UI.upsampling
+from lib.audio.get_audio import get_audio
+from lib.model.params import hps
+from params import base_path
+
+from .get_children import get_children
+from .get_parent import get_parent
+from .get_sample_filename import get_sample_filename
+
 
 def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_rendering=4, combine_levels=True, invert_center=False, force_reload=False):
 
