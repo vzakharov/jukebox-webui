@@ -51,17 +51,12 @@ def load_model(hps):
         print('Model already loaded.')
 
       except:
+        
         print(f'Loading vqvae and top_prior for duration {total_duration}...')
-
         vqvae, *priors = MODELS['5b_lyrics']
-
         vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
-
         load_top_prior(priors)
-
         calculated_duration = total_duration
-
-        empty_cache
 
   return device, browser_timezone, keep_upsampling_after_restart, vqvae, priors, top_prior, sample_id_to_restart_upsampling_with
 
