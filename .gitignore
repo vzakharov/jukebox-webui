@@ -1,2 +1,5 @@
 settings.json
 tmp/
+output.log
+pid.tmp
+*.pyc
