@@ -3,7 +3,7 @@ import signal
 from datetime import datetime
 
 from jukebox.utils.sample_utils import get_starts
-from lib.monkey_patches.upsample_window import upsample_window2
+from .upsample_window import upsample_window2
 
 from lib.upsampling.Upsampling import Upsampling
 from params import base_path

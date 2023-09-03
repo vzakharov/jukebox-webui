@@ -1,15 +1,19 @@
+import sys
+
 import jukebox
 from jukebox.hparams import setup_hparams
 from jukebox.make_models import MODELS, make_prior, make_vqvae
 from jukebox.utils.dist_utils import setup_dist_from_mpi
 from jukebox.utils.torch_utils import empty_cache
 
+from .params import device, hps, priors, top_prior, vqvae
 from lib.monkey_patches.load_audio import monkey_patched_load_audio
 from lib.monkey_patches.load_checkpoint import monkey_patched_load_checkpoint
 from lib.monkey_patches.sample_level import monkey_patched_sample_level
 from lib.upsampling.Upsampling import Upsampling
-from main import device, top_prior, vqvae
+from lib.upsampling.utils import keep_upsampling_after_restart
 from params import reload_all, total_duration
+
 
 def load_top_prior(priors):
   global top_prior, vqvae, device
@@ -17,13 +21,17 @@ def load_top_prior(priors):
   print('Loading top prior')
   top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
   
-def load_model(hps):
+def load_model():
+
+  global device, vqvae, priors, top_prior
+  
+  if '--no-load' in sys.argv:
+    print("🚫 Skipping model loading")
+    return
+
   rank, local_rank, device = setup_dist_from_mpi()
   print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
-  browser_timezone = None
-  keep_upsampling_after_restart = False
-  sample_id_to_restart_upsampling_with = None
 
   print('Monkey patching Jukebox methods...')
 
@@ -51,12 +59,9 @@ def load_model(hps):
         print('Model already loaded.')
 
       except:
-        
+
         print(f'Loading vqvae and top_prior for duration {total_duration}...')
         vqvae, *priors = MODELS['5b_lyrics']
         vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
         load_top_prior(priors)
         calculated_duration = total_duration
-
-  return device, browser_timezone, keep_upsampling_after_restart, vqvae, priors, top_prior, sample_id_to_restart_upsampling_with
-

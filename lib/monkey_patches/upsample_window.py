@@ -7,7 +7,7 @@ from lib.ui.elements.upsampling import level_names
 from lib.upsampling.Upsampling import Upsampling
 from lib.upsampling.restart_upsampling import restart_upsampling
 from lib.utils import as_local_hh_mm
-from main import sample_id_to_restart_upsampling_with
+from lib.upsampling.utils import sample_id_to_restart_upsampling_with
 from params import base_path
 
 def upsample_window(start):

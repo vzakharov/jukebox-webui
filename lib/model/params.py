@@ -12,3 +12,5 @@ hps.sr = 44100
 hps.levels = 3
 hps.hop_fraction = [ 0.5, 0.5, 0.125 ]
 hps.sample_length = int(total_duration * hps.sr // raw_to_tokens) * raw_to_tokens
+
+device, vqvae, priors, top_prior = None, None, None, None

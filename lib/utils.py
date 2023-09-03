@@ -1,7 +1,7 @@
 from datetime import timedelta, timezone
 import re
 import subprocess
-from main import browser_timezone
+from .ui.utils import browser_timezone
 from .model.params import chunk_size, hps, raw_to_tokens
 
 def as_local_hh_mm(dt, include_seconds = False):
