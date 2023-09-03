@@ -6,14 +6,14 @@ from lib.navigation.get_samples import get_samples
 from lib.navigation.name_generations import name_generations
 from lib.ui.elements.misc import generation_progress
 from lib.ui.elements.navigation import sample_tree
-from .params import device, priors, top_prior
 from params import total_duration
 
 from .calculate_metas import calculate_metas, calculated_metas, labels, metas
 from .generate_zs import generate_zs
-from .params import (chunk_size, hps, lower_batch_size, lower_level_chunk_size,
-                     raw_to_tokens)
+from .params import (chunk_size, device, hps, lower_batch_size,
+                     lower_level_chunk_size, priors, raw_to_tokens, top_prior)
 from .prepare_zs import prepare_zs
+
 
 def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyrics, n_samples, temperature, generation_length, discard_window):
 
