@@ -10,8 +10,8 @@ def render_purge_tab():
     purge_list = gr.Textbox(
       label = 'Purge list',
       placeholder = 'Click the button below to prepare the list of samples to purge',
-      multiline = True,
-      disabled = True,
+      # multiline = True,
+      # disabled = True,
     )
 
     gr.Button('Prepare purge list').click(

@@ -2,14 +2,12 @@ import torch as t
 from jukebox.utils.torch_utils import empty_cache
 
 from lib.model.params import hps
-from lib.navigation.zs import get_zs
-from lib.utils import seconds_to_tokens, tokens_to_seconds
+from lib.upsampling.utils import get_upsampled_zs
+from lib.utils import tokens_to_seconds
 from params import base_path
 
-from .combine_levels import combine_levels
 from .cut import cut_z
 from .decode import decode
-from .decode_short import decode_short
 from .to_stereo import to_stereo
 
 
@@ -20,7 +18,7 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
 
   global base_path, hps
 
-  zs = get_zs(project_name, sample_id, seek_upsampled=True)
+  zs = get_upsampled_zs(project_name, sample_id)
 
   # If no level is specified, use 2 (and then go downwards if combine_levels is True)
   if level is None:
@@ -60,8 +58,10 @@ def get_audio(project_name, sample_id, cut_audio, preview_sec, level=None, stere
       wav = to_stereo(wav, 20 if stereo_rendering == 4 else 0, invert_center)
 
   upsampled_lengths = [ 0, 0 ]
-  if should_combine_levels:
 
+  if should_combine_levels:
+    
+    from .combine_levels import combine_levels
     wav = combine_levels(project_name, sample_id, cut_audio, level, stereo_rendering, invert_center, zs, seconds_to_cut_from_start, wav, upsampled_lengths)
 
   print(f'Generated audio of length {len(wav)} ({ len(wav) / hps.sr } seconds); original length: {audio_length} seconds.')

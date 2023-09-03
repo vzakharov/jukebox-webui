@@ -1,15 +1,16 @@
-from lib.model.generate import generate
-from lib.navigation.delete_sample import delete_sample
-from lib.navigation.tree import get_children
-from lib.navigation.tree import get_parent
-
 import gradio as gr
 
-from lib.ui.elements.general import project_name, project_name, project_name, project_name, project_name
-from lib.ui.elements.misc import generation_progress, generation_progress
-from lib.ui.elements.navigation import picked_sample, show_leafs_only, sample_tree, picked_sample, show_leafs_only, sample_tree, picked_sample, sample_tree, picked_sample, sample_tree, picked_sample, picked_sample, sample_box
-from lib.ui.elements.project import generation_params, generation_params
-from lib.ui.elements.sample import compose_row, go_to_parent, go_to_parent, go_to_children, go_to_children
+from lib.model.generate import generate
+from lib.navigation.delete_sample import delete_sample
+from lib.navigation.tree import get_children, get_parent
+from lib.ui.elements.general import project_name
+from lib.ui.elements.misc import generation_progress
+from lib.ui.elements.navigation import (picked_sample, sample_tree,
+                                        show_leafs_only)
+from lib.ui.elements.project import generation_params
+from lib.ui.elements.sample import (compose_row, go_to_children, go_to_parent,
+                                    sample_box)
+
 
 def render_compose_row():
   with compose_row.render():

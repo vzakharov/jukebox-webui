@@ -3,7 +3,6 @@ import signal
 from datetime import datetime
 
 from jukebox.utils.sample_utils import get_starts
-from .upsample_window import upsample_window2
 
 from lib.upsampling.Upsampling import Upsampling
 from params import base_path
@@ -21,6 +20,8 @@ def monkey_patched_sample_level(zs, labels, sampling_kwargs, level, prior, total
   Upsampling.zs = zs
   Upsampling.level = level
   Upsampling.prior = prior
+  Upsampling.labels = labels
+  Upsampling.hps = hps
   Upsampling.kwargs = sampling_kwargs
 
   print(f"Sampling level {level}")

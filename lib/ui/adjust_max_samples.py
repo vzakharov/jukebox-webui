@@ -17,7 +17,10 @@ def set_max_n_samples( total_audio_length ):
   }
 
   # Get GPU via nvidia-smi
-  gpu = subprocess.check_output( 'nvidia-smi --query-gpu=gpu_name --format=csv,noheader', shell=True ).decode('utf-8').strip()
+  try:
+    gpu = subprocess.check_output( 'nvidia-smi --query-gpu=gpu_name --format=csv,noheader', shell=True ).decode('utf-8').strip()
+  except:
+    gpu = None
 
   # The default value is 4
   max_n_samples = 4

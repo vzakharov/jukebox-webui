@@ -4,13 +4,12 @@ from datetime import datetime
 import torch as t
 from jukebox.sample import upsample
 
-from lib.model.params import hps
-from .labels import get_labels
-from lib.model.params import priors, top_prior
+from lib.model.params import hps, priors, top_prior
 from params import base_path
 
 from .get_zs_from_ancestor_if_any import get_zs_from_ancestor_if_any
-from .init_upsampling import init_upsampling, init_upsampling2
+from .init_upsampling import init_upsampling
+from .labels import get_labels
 from .Upsampling import Upsampling
 
 

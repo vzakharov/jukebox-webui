@@ -3,6 +3,7 @@ import gradio as gr
 from lib.lists import get_list
 
 from .elements.main import main_window
+from .elements.general import project_name as project_name_element
 from .elements.metas import artist, genre_dropdown
 from .elements.misc import getting_started_column, separate_tab_warning
 from .elements.navigation import routed_sample_id
@@ -12,7 +13,7 @@ from .elements.upsampling import (genre_center_channel, genre_left_channel,
 
 def initial_states(projects, project_name, sample_id):
   return {
-    project_name: gr.update(
+    project_name_element: gr.update(
       choices = projects,
       value = project_name,
     ),

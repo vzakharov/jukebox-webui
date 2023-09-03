@@ -1,6 +1,6 @@
-from lib.ui.sidebar.create_project import render_create_project
-from lib.ui.sidebar.pick_project import render_pick_project
-from lib.ui.sidebar.sampling_settings import render_sampling_settings
+from .create_project import render_create_project
+from .pick_project import render_pick_project
+from .sampling_settings import render_sampling_settings
 
 import gradio as gr
 

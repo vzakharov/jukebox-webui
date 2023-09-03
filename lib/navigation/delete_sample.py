@@ -1,4 +1,5 @@
-from lib.ui.elements.navigation import picked_sample, sample_box
+from lib.ui.elements.navigation import picked_sample
+from lib.ui.elements.sample import sample_box
 from .tree import get_siblings
 from params import base_path
 

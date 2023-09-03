@@ -1,14 +1,15 @@
 import gradio as gr
 
 from lib.app import app
-from lib.ui.elements.audio import audio_waveform, audio_timeline
-from lib.ui.elements.navigation import sample_box
+from lib.ui.elements.audio import audio_timeline, audio_waveform
+from lib.ui.elements.sample import sample_box
 from lib.ui.html.play_pause import play_pause_button
 from lib.ui.preview import get_preview_args
 
 from .advanced.advanced import render_advanced
 from .compose_row import render_compose_row
 from .upsampling.state import render_upsampling_accordion
+
 
 def render_sample_box():
   with sample_box.render():
