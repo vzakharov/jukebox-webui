@@ -3,7 +3,7 @@ import os
 import torch as t
 from jukebox.utils.torch_utils import empty_cache
 
-from lib.model.load import load_top_prior
+from lib.model.load_top_prior import load_top_prior
 from lib.model.params import hps
 from .Upsampling import Upsampling
 from params import base_path

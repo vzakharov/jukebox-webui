@@ -2,11 +2,10 @@ import sys
 
 import jukebox
 from jukebox.hparams import setup_hparams
-from jukebox.make_models import MODELS, make_prior, make_vqvae
+from jukebox.make_models import MODELS, make_vqvae
 from jukebox.utils.dist_utils import setup_dist_from_mpi
 from jukebox.utils.torch_utils import empty_cache
 
-from .params import device, hps, priors, top_prior, vqvae
 from lib.monkey_patches.load_audio import monkey_patched_load_audio
 from lib.monkey_patches.load_checkpoint import monkey_patched_load_checkpoint
 from lib.monkey_patches.sample_level import monkey_patched_sample_level
@@ -14,13 +13,10 @@ from lib.upsampling.Upsampling import Upsampling
 from lib.upsampling.utils import keep_upsampling_after_restart
 from params import reload_all, total_duration
 
+from .load_top_prior import load_top_prior
+from .params import device, hps, priors, top_prior, vqvae
 
-def load_top_prior(priors):
-  global top_prior, vqvae, device
 
-  print('Loading top prior')
-  top_prior = make_prior(setup_hparams(priors[-1], dict()), vqvae, device)
-  
 def load_model():
 
   global device, vqvae, priors, top_prior

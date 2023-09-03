@@ -1,4 +1,4 @@
-from main import vqvae
+from lib.model.params import vqvae
 
 import numpy as np
 

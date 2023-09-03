@@ -6,7 +6,7 @@ from jukebox.sample import upsample
 
 from lib.model.params import hps
 from .labels import get_labels
-from main import priors, top_prior
+from lib.model.params import priors, top_prior
 from params import base_path
 
 from .get_zs_from_ancestor_if_any import get_zs_from_ancestor_if_any

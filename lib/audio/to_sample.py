@@ -9,7 +9,7 @@ from lib.navigation.get_samples import get_samples
 from lib.ui.elements.first import first_generation_row, prime_timestamp
 from lib.ui.elements.navigation import sample_tree
 from lib.ui.utils import HIDE
-from main import priors, top_prior
+from lib.model.params import priors, top_prior
 from params import base_path
 
 from .to_x import to_x

@@ -1,7 +1,7 @@
 from .calculate_metas import labels
 from .params import hps, lower_batch_size, lower_level_chunk_size
 from lib.utils import seconds_to_tokens
-from main import top_prior
+from lib.model.params import top_prior
 
 import torch as t
 from jukebox.sample import sample_partial_window

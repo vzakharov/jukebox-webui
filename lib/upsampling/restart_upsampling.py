@@ -1,4 +1,4 @@
-from lib.model.load import load_top_prior
+from lib.model.load_top_prior import load_top_prior
 from lib.navigation.get_custom_parents import get_custom_parents
 from lib.navigation.tree import is_ancestor
 

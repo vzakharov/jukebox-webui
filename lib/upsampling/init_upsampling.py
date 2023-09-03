@@ -2,7 +2,7 @@ from jukebox.hparams import setup_hparams
 from jukebox.make_models import make_prior
 
 from lib.model.params import hps, raw_to_tokens
-from main import priors, vqvae
+from lib.model.params import priors, vqvae
 from params import base_path
 
 from .Upsampling import Upsampling

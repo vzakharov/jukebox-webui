@@ -3,7 +3,7 @@ import numpy as np
 import torch as t
 
 from lib.model.params import hps
-from main import device
+from lib.model.params import device
 
 
 def to_x(audio):
