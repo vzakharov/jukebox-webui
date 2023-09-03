@@ -46,3 +46,12 @@ def set_keep_upsampling_after_restart():
   global keep_upsampling_after_restart
 
   keep_upsampling_after_restart = True
+
+
+def get_upsampled_zs(project_name, sample_id):
+  zs = get_zs(project_name, sample_id)
+  if not is_upsampled(zs):
+    upsampled_ancestor = get_first_upsampled_ancestor_zs(project_name, sample_id)
+    if upsampled_ancestor:
+      zs[:-1] = upsampled_ancestor[:-1]
+  return zs

@@ -1,5 +1,5 @@
 from .params import hps
-from lib.model.params import device, top_prior
+from .params import device, top_prior
 
 calculated_metas = {}
 metas = None

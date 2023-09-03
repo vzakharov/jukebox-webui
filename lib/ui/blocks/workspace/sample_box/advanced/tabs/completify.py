@@ -1,13 +1,14 @@
-from lib.navigation.zs import get_zs, save_zs
-from lib.navigation.utils import backup_sample
-from lib.ui.elements.navigation import picked_sample
-
 import gradio as gr
 
+from lib.navigation.utils import backup_sample
+from lib.navigation.zs import save_zs
 from lib.ui.elements.general import project_name
+from lib.ui.elements.navigation import picked_sample
+from lib.upsampling.utils import get_upsampled_zs
+
 
 def completify(project_name, sample_id):
-  zs = get_zs(project_name, sample_id, True)
+  zs = get_upsampled_zs(project_name, sample_id)
   backup_sample(project_name, sample_id)
   save_zs(zs, project_name, sample_id)
 

@@ -6,7 +6,7 @@ from lib.navigation.get_samples import get_samples
 from lib.navigation.name_generations import name_generations
 from lib.ui.elements.misc import generation_progress
 from lib.ui.elements.navigation import sample_tree
-from lib.model.params import device, priors, top_prior
+from .params import device, priors, top_prior
 from params import total_duration
 
 from .calculate_metas import calculate_metas, calculated_metas, labels, metas
