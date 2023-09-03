@@ -1,5 +1,5 @@
-from .get_children import get_children
-from .get_parent import get_parent
+from .tree import get_children
+from .tree import get_parent
 from lib.ui.elements.audio import current_chunks
 from lib.ui.elements.navigation import picked_sample_updated
 from lib.ui.elements.sample import go_to_children, go_to_parent, sample_box

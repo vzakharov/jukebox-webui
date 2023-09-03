@@ -1,7 +1,7 @@
 from lib.model.generate import generate
 from lib.navigation.delete_sample import delete_sample
-from lib.navigation.get_children import get_children
-from lib.navigation.get_parent import get_parent
+from lib.navigation.tree import get_children
+from lib.navigation.tree import get_parent
 
 import gradio as gr
 

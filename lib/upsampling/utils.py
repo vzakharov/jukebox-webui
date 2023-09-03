@@ -1,5 +1,5 @@
 from lib.navigation.zs import get_zs
-from lib.navigation.get_parent import get_parent
+from lib.navigation.tree import get_parent
 
 def get_levels(zs):
 

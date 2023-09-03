@@ -1,5 +1,5 @@
 from lib.ui.elements.navigation import picked_sample, sample_box
-from .utils import get_siblings
+from .tree import get_siblings
 from params import base_path
 
 import gradio as gr

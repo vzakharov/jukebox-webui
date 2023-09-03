@@ -1,4 +1,4 @@
-from .utils import get_siblings
+from .tree import get_siblings
 from lib.ui.elements.navigation import picked_sample
 from lib.ui.utils import HIDE
 

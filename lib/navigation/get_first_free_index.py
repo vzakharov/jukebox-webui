@@ -1,4 +1,4 @@
-from .get_children import get_children
+from .tree import get_children
 
 def get_first_free_index(project_name, parent_sample_id = None):
   print(f'Getting first free index for {project_name}, parent {parent_sample_id}')

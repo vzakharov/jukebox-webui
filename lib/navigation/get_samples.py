@@ -1,4 +1,4 @@
-from .get_children import get_children
+from .tree import get_children
 from params import base_path
 
 import os

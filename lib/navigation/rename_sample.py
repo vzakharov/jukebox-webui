@@ -1,5 +1,5 @@
 from .get_custom_parents import get_custom_parents
-from .get_parent import get_parent
+from .tree import get_parent
 from .get_samples import get_samples
 from params import base_path
 
