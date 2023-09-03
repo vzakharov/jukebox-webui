@@ -2,9 +2,11 @@ import gradio as gr
 
 from lib.audio.to_sample import to_sample
 from lib.audio.utils import trim_primed_audio
-from lib.ui.elements.first import primed_audio, primed_audio, primed_audio, primed_audio, primed_audio, prime_timestamp, first_generation_row, prime_timestamp, prime_timestamp
+from lib.ui.elements.first import (first_generation_row, prime_timestamp,
+                                   primed_audio)
 from lib.ui.elements.general import project_name
-from lib.ui.elements.navigation import show_leafs_only, sample_tree
+from lib.ui.elements.navigation import sample_tree, show_leafs_only
+
 
 def render_prime_tab():
   with gr.Tab('Prime'):
@@ -46,14 +48,11 @@ def render_prime_tab():
 
     prime_timestamp.render().change(
       inputs = prime_timestamp, outputs = None, fn = None,
-      _js =
-        # Find a button inside a div inside another div with class 'tabs', the button having 'Workspace' as text, and click it -- all this in the shadow DOM.
-        # Gosh, this is ugly.
-        """
-          timestamp => {
-            console.log(`Timestamp changed to ${timestamp}; clicking the 'Workspace' tab`)
-            Ji.clickTabWithText('Workspace')
-            return timestamp
-          }
-        """
+      _js = """
+        timestamp => {
+          Ji.clickTabWithText('Workspace')
+          return timestamp
+        }
+      """
+      # Gosh, this is ugly.
     )

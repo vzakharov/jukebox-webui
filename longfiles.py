@@ -1,4 +1,7 @@
 import os
+import sys
+
+max_lines = int(sys.argv[1]) if len(sys.argv) > 1 else 50
 
 def count_relevant_lines(filename):
   with open(filename, 'r') as file:
@@ -6,17 +9,19 @@ def count_relevant_lines(filename):
   count = 0
   for line in lines:
     stripped = line.strip()
-    if not stripped.startswith('import') and not stripped.startswith('from') and not stripped.startswith('#'):
-      count += 1
+    if stripped:
+      if not stripped.startswith('import') and not stripped.startswith('from') and not stripped.startswith('#'):
+        count += 1
   return count
 
 file_counts = {}
+
 for root, dirs, files in os.walk('.'):
   for file in files:
     if file.endswith('.py'):
       filename = os.path.join(root, file)
       count = count_relevant_lines(filename)
-      if count > 50:
+      if count > max_lines:
         file_counts[filename] = count
 
 # Sort the dictionary by its values in descending order

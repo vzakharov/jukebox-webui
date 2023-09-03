@@ -32,7 +32,6 @@ def cut_single_spec(z, spec, level):
     print(f'Cutting out {remove} (tokens {remove_start}-{remove_end})')
 
     out_z = t.cat([out_z, z[:, :remove_start]], dim=1)
-    print(f'out_z shape: {out_z.shape}')
 
   # For the added interval, both start and end are required (but sample_id is optional, and defaults to the current sample)
   if add:
@@ -52,7 +51,6 @@ def cut_single_spec(z, spec, level):
       # (In this case we don't add the original sample, because we just want to keep the specified range)
 
     out_z = t.cat([out_z, add_z[:, add_start:add_end]], dim=1)
-    print(f'out_z shape: {out_z.shape}')
 
   if remove:
     # If we added anything, and its end was after the end of the original sample, we break
@@ -65,7 +63,6 @@ def cut_single_spec(z, spec, level):
 
     print(f'Adding the rest of the sample (tokens {remove_end}-{z.shape[1]})')
     out_z = t.cat([out_z, z[:, remove_end:]], dim = 1)
-    print(f'out_z shape: {out_z.shape}')
 
   z = out_z
   return z, out_z, False
