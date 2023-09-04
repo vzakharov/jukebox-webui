@@ -2,6 +2,8 @@ import os
 
 import gradio as gr
 
+from params import base_path, debug_gradio, share_gradio
+
 from .api import define_get_projects_api
 from .app import app
 from .model.load import load_model
@@ -11,7 +13,6 @@ from .ui.blocks.sidebar.sidebar import render_sidebar
 from .ui.blocks.workspace.workspace import render_workspace
 from .ui.elements.main import main_window
 from .ui.elements.misc import separate_tab_link, separate_tab_warning
-from params import base_path, debug_gradio, share_gradio
 
 
 def run():

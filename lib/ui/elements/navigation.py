@@ -1,6 +1,8 @@
 import gradio as gr
 
-routed_sample_id = gr.State()
+routed_sample_id = gr.State(
+  elem_id = 'routed-sample-id',
+)
 sample_tree_row = gr.Row(
   visible = False
 )
