@@ -56,3 +56,5 @@ def reload_sample(project_name, sample_id, cut_out, last_n_sec, upsample_renderi
         print(f'Could not remove {f}: {e}')
         failed_count += 1
     print(f'Deleted {removed_count} of {removed_count + failed_count} old files')
+  
+  return total_audio_length, upsampled_lengths

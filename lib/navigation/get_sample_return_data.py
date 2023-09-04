@@ -3,6 +3,8 @@ from .tree import get_parent
 from lib.ui.elements.audio import current_chunks
 from lib.ui.elements.navigation import picked_sample_updated
 from lib.ui.elements.sample import go_to_children, go_to_parent, sample_box
+from lib.ui.elements.project import total_audio_length as total_audio_length_element
+from lib.ui.elements.upsampling import upsampled_lengths as upsampled_lengths_element
 
 
 import gradio as gr
@@ -10,9 +12,9 @@ import gradio as gr
 import random
 
 def get_sample_return_data(project_name, sample_id, total_audio_length, upsampled_lengths, chunk_filenames):
-    return {
+  return {
     current_chunks: chunk_filenames,
-    total_audio_length: total_audio_length,
+    total_audio_length_element: total_audio_length,
     go_to_children: gr.update(
       visible = len(get_children(project_name, sample_id)) > 0
     ),
@@ -22,7 +24,7 @@ def get_sample_return_data(project_name, sample_id, total_audio_length, upsample
     sample_box: gr.update(
       visible = True
     ),
-    upsampled_lengths: ','.join([str(length) for length in upsampled_lengths]),
+    upsampled_lengths_element: upsampled_lengths,
     # Random number for picked sample updated flag
     picked_sample_updated: random.random(),
   }

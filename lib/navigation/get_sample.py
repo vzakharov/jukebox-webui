@@ -4,8 +4,6 @@ import os
 import yaml
 
 from lib.model.params import hps
-from lib.ui.elements.project import total_audio_length
-from lib.ui.elements.upsampling import upsampled_lengths
 from params import base_path
 
 from .get_sample_filename import get_sample_filename
@@ -38,9 +36,12 @@ def get_sample(project_name, sample_id, cut_out='', last_n_sec=None, upsample_re
 
   if force_reload:
 
-    reload_sample(project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center, filename, filename_without_hash)
+    total_audio_length, upsampled_lengths = reload_sample(
+      project_name, sample_id, cut_out, last_n_sec, upsample_rendering, combine_levels, invert_center, filename, filename_without_hash
+    )
 
   else:
+
     print('Yep, using it.')
     wav = None
 
