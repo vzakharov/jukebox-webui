@@ -8,7 +8,7 @@ from lib.ui.elements.misc import generation_progress
 from lib.ui.elements.navigation import sample_tree
 from params import total_duration
 
-from .calculate_metas import calculate_metas, calculated_metas, labels, metas
+from .calculate_metas import Metas
 from .generate_zs import generate_zs
 from .params import (chunk_size, hps, lower_batch_size, lower_level_chunk_size,
                      raw_to_tokens)
@@ -20,15 +20,13 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   print(f'Generating {n_samples} sample(s) of {generation_length} sec each for project {project_name}...')
 
   global total_duration
-  global calculated_metas
   global hps, raw_to_tokens, chunk_size, lower_batch_size, lower_level_chunk_size
-  global metas, labels
 
   hps.n_samples = n_samples
 
   # If metas or n_samples have changed, recalculate the metas
-  if calculated_metas != dict( artist = artist, genre = genre, lyrics = lyrics ) or len(metas) != n_samples:
-    calculate_metas(artist, genre, lyrics, n_samples, discard_window)
+  if Metas.calculated_for != dict( artist = artist, genre = genre, lyrics = lyrics ) or len(Metas.metas) != n_samples:
+    Metas.calculate(artist, genre, lyrics, n_samples, discard_window)
 
   print(f'Generating {generation_length} seconds for {project_name}...')
 
