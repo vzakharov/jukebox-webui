@@ -19,6 +19,7 @@ from .utils import is_new, loaded_settings
 def get_project(project_name, routed_sample_id):
 
   global base_path, loaded_settings
+  print(f'Getting project {project_name} with routed sample id {routed_sample_id}')
 
   is_this_new = is_new(project_name)
 
