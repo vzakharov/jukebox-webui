@@ -11,35 +11,48 @@ n_samples = gr.Slider(
   maximum = 5,
   step = 1
 )
+
 max_n_samples = gr.Number(
   visible = False
 )
+
 temperature = gr.Slider(
   label = 'Temperature',
   minimum = 0.9,
   maximum = 1.1,
   step = 0.005
 )
+
 generation_length = gr.Slider(
   label = 'Generation length, sec',
   minimum = 0.5,
   maximum = 10,
   step = 0.1
 )
+
 generation_discard_window = gr.Slider(
   label = 'Generation discard window, sec',
   minimum = 0,
   maximum = 200,
   step = 1
 )
+
 generation_params = [ artist, genre, lyrics, n_samples, temperature, generation_length, generation_discard_window ]
+
 project_settings = [
   *generation_params, sample_tree, show_leafs_only, just_the_last_n_sec,
   genre_left_channel, genre_center_channel, genre_right_channel
 ]
+
 total_audio_length = gr.Number(
   label = 'Total audio length, sec',
   elem_id = 'total-audio-length',
   interactive = False,
   visible = False
 )
+
+input_names = { input: name for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
+print(f'Input names: {input_names}')
+
+inputs_by_name = { name: input for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
+print(f'Inputs by name: {inputs_by_name}')

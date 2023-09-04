@@ -2,7 +2,6 @@ import os
 import shutil
 from datetime import datetime
 
-import gradio as gr
 
 from params import base_path
 
@@ -26,5 +25,3 @@ def is_new(project_name):
   return project_name == 'CREATE NEW' or not project_name
 
 loaded_settings = {}
-input_names = { input: name for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }
-inputs_by_name = { name: input for name, input in locals().items() if isinstance(input, gr.components.FormComponent) }

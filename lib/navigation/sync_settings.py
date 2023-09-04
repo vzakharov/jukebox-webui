@@ -10,7 +10,7 @@ from lib.ui.elements.project import project_settings
 from params import base_path
 
 from .get_samples import get_samples
-from .utils import inputs_by_name
+from ..ui.elements.project import inputs_by_name
 
 def sync_settings(project_name, routed_sample_id, settings_out_dict):
     print(f'Loading settings for {project_name}...')

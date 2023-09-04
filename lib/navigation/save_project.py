@@ -1,6 +1,6 @@
 import yaml
 
-from .utils import input_names
+from ..ui.elements.project import input_names
 from lib.ui.elements.project import project_settings, project_settings
 from params import base_path
 

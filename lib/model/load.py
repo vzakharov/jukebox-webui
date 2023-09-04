@@ -25,7 +25,7 @@ def load_model():
     return
 
   rank, local_rank, Model.device = setup_dist_from_mpi()
-  print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
+  print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={Model.device}')
 
 
   print('Monkey patching Jukebox methods...')
