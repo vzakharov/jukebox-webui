@@ -16,16 +16,15 @@ preview_inputs = [
 ]
 
 get_preview_args = lambda force_reload: dict(
-  inputs = [
-    *preview_inputs, gr.State(force_reload, elem_id = 'force-reload').render()
-  ],
+  inputs = preview_inputs,
   outputs = [
     sample_box, current_chunks,
     total_audio_length, upsampled_lengths,
     go_to_children, go_to_parent,
     picked_sample_updated
   ],
-  fn = get_sample,
+  fn = lambda *args: get_sample(*args, force_reload=force_reload),
 )
 
 default_preview_args = get_preview_args(False)
+reloaded_preview_args = get_preview_args(True)

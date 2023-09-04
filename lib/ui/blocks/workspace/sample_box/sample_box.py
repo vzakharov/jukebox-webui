@@ -4,7 +4,7 @@ from lib.app import app
 from lib.ui.elements.audio import audio_timeline, audio_waveform
 from lib.ui.elements.sample import sample_box
 from lib.ui.html.play_pause import play_pause_button
-from lib.ui.preview import get_preview_args
+from lib.ui.preview import reloaded_preview_args
 
 from .advanced.advanced import render_advanced
 from .compose_row import render_compose_row
@@ -20,7 +20,7 @@ def render_sample_box():
     internal_refresh_button = gr.Button('🔃', elem_id = 'internal-refresh-button', visible=False)
 
     internal_refresh_button.click(
-      **get_preview_args(force_reload = True),
+      **reloaded_preview_args
     )
 
     internal_refresh_button.click(
