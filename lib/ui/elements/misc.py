@@ -2,7 +2,9 @@
 
 import gradio as gr
 
-browser_timezone = gr.State()
+browser_timezone = gr.State(
+  elem_id = 'browser-timezone',
+)
 
 separate_tab_warning = gr.Box(
   visible = False

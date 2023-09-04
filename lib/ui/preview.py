@@ -14,9 +14,10 @@ preview_inputs = [
   project_name, picked_sample, cut_audio_specs, just_the_last_n_sec,
   render_mode, combine_levels, invert_center_channel
 ]
+
 get_preview_args = lambda force_reload: dict(
   inputs = [
-    *preview_inputs, gr.State(force_reload)
+    *preview_inputs, gr.State(force_reload, elem_id = 'force-reload').render()
   ],
   outputs = [
     sample_box, current_chunks,
