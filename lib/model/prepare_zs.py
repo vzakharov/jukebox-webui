@@ -4,6 +4,7 @@ from params import base_path
 import torch as t
 
 def prepare_zs(project_name, parent_sample_id, n_samples, discard_window):
+  discarded_zs = None
   if parent_sample_id:
     zs = t.load(f'{base_path}/{project_name}/{parent_sample_id}.z')
     print(f'Loaded parent sample {parent_sample_id} of shape {[ z.shape for z in zs ]}')
