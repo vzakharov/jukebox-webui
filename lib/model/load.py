@@ -48,16 +48,7 @@ def load_model():
 
     if not keep_upsampling_after_restart:
 
-      try:
-        vqvae, priors, top_prior
-
-        assert total_duration == calculated_duration and not reload_prior and not reload_all
-        print('Model already loaded.')
-
-      except:
-
-        print(f'Loading vqvae and top_prior for duration {total_duration}...')
-        vqvae, *priors = MODELS['5b_lyrics']
-        vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
-        load_top_prior(priors)
-        calculated_duration = total_duration
+      print(f'Loading vqvae and top_prior for duration {total_duration}...')
+      vqvae, *priors = MODELS['5b_lyrics']
+      vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
+      load_top_prior(priors)
