@@ -9,6 +9,8 @@ class Metas:
 
   def calculate(artist, genre, lyrics, n_samples, discard_window):
 
+    print(f'Recalculating metas for {artist}, {genre}, {lyrics}, {n_samples} samples, {discard_window} discard window')
+    
     if discard_window > 0:
       # If there's "---\n" in the lyrics, remove everything before and including it
       cutout = '---\n'
@@ -16,7 +18,6 @@ class Metas:
         lyrics = lyrics.split(cutout)[1]
         print(f'Lyrics after cutting: {lyrics}')
 
-      print(f'Metas or n_samples have changed, recalculating the model for {artist}, {genre}, {lyrics}, {n_samples} samples...')
 
     Metas.metas = [dict(
       artist = artist,
