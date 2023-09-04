@@ -1,5 +1,5 @@
+from .model import Model
 from .params import hps
-from .params import device, top_prior
 
 calculated_metas = {}
 metas = None
@@ -26,7 +26,7 @@ def calculate_metas(artist, genre, lyrics, n_samples, discard_window):
     lyrics = lyrics,
   )] * n_samples
 
-  labels = top_prior.labeller.get_batch_labels(metas, device)
+  labels = Model.top_prior.labeller.get_batch_labels(metas, Model.device)
 
   calculated_metas = {
     'artist': artist,

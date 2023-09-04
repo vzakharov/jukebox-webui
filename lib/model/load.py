@@ -14,18 +14,17 @@ from lib.upsampling.utils import keep_upsampling_after_restart
 from params import reload_all, total_duration
 
 from .load_top_prior import load_top_prior
-from .params import device, hps, priors, top_prior, vqvae
+from .model import Model
+from .params import hps
 
 
 def load_model():
 
-  global device, vqvae, priors, top_prior
-  
   if '--no-load' in sys.argv:
     print("🚫 Skipping model loading")
     return
 
-  rank, local_rank, device = setup_dist_from_mpi()
+  rank, local_rank, Model.device = setup_dist_from_mpi()
   print(f'Dist setup: rank={rank}, local_rank={local_rank}, device={device}')
 
 
@@ -49,6 +48,6 @@ def load_model():
     if not keep_upsampling_after_restart:
 
       print(f'Loading vqvae and top_prior for duration {total_duration}...')
-      vqvae, *priors = MODELS['5b_lyrics']
-      vqvae = make_vqvae(setup_hparams(vqvae, dict(sample_length = hps.sample_length)), device)
-      load_top_prior(priors)
+      Model.vqvae, *Model.priors = MODELS['5b_lyrics']
+      Model.vqvae = make_vqvae(setup_hparams(Model.vqvae, dict(sample_length = hps.sample_length)), Model.device)
+      load_top_prior(Model.priors)

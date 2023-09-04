@@ -10,8 +10,8 @@ from params import total_duration
 
 from .calculate_metas import calculate_metas, calculated_metas, labels, metas
 from .generate_zs import generate_zs
-from .params import (chunk_size, device, hps, lower_batch_size,
-                     lower_level_chunk_size, priors, raw_to_tokens, top_prior)
+from .params import (chunk_size, hps, lower_batch_size, lower_level_chunk_size,
+                     raw_to_tokens)
 from .prepare_zs import prepare_zs
 
 
@@ -22,7 +22,6 @@ def generate(project_name, parent_sample_id, show_leafs_only, artist, genre, lyr
   global total_duration
   global calculated_metas
   global hps, raw_to_tokens, chunk_size, lower_batch_size, lower_level_chunk_size
-  global top_prior, device, priors
   global metas, labels
 
   hps.n_samples = n_samples

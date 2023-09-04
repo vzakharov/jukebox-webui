@@ -3,7 +3,7 @@ import numpy as np
 import torch as t
 
 from lib.model.params import hps
-from lib.model.params import device
+from lib.model.model import Model
 
 
 def to_x(audio):
@@ -35,6 +35,6 @@ def to_x(audio):
   x = t.stack([t.from_numpy(x) for x in xs])
   print(f'Stacked samples to {x.shape}')
 
-  x = x.to(device, non_blocking=True)
-  print(f'Moved samples to {device}')
+  x = x.to(Model.device, non_blocking=True)
+  print(f'Moved samples to {Model.device}')
   return x

@@ -1,8 +1,8 @@
 from jukebox.hparams import setup_hparams
 from jukebox.make_models import make_prior
 
+from lib.model.model import Model
 from lib.model.params import hps, raw_to_tokens
-from lib.model.params import priors, vqvae
 from params import base_path
 
 from .Upsampling import Upsampling
@@ -19,7 +19,7 @@ def init_upsampling(project_name, sample_id, kill_runtime_once_done):
 
   Upsampling.kill_runtime_once_done = kill_runtime_once_done
 
-  Upsampling.upsamplers = [ make_prior(setup_hparams(prior, dict()), vqvae, 'cpu') for prior in priors[:-1] ]
+  Upsampling.upsamplers = [ make_prior(setup_hparams(prior, dict()), Model.vqvae, 'cpu') for prior in Model.priors[:-1] ]
 
   Upsampling.kwargs = [
     dict(temp=0.99, fp16=True, max_batch_size=16, chunk_size=32),

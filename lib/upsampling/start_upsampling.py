@@ -4,7 +4,6 @@ from datetime import datetime
 import torch as t
 from jukebox.sample import upsample
 
-from lib.model.params import hps, priors, top_prior
 from params import base_path
 
 from .get_zs_from_ancestor_if_any import get_zs_from_ancestor_if_any
@@ -14,8 +13,6 @@ from .Upsampling import Upsampling
 
 
 def start_upsampling(project_name, sample_id, artist, lyrics, genre_left, genre_center, genre_right, kill_runtime_once_done=False):
-
-  global hps, top_prior, priors
 
   genres = [genre_left, genre_center, genre_right]
 

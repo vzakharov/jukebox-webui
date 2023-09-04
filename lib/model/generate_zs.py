@@ -1,10 +1,12 @@
-from .calculate_metas import labels
-from .params import hps, lower_batch_size, lower_level_chunk_size
-from lib.utils import seconds_to_tokens
-from .params import top_prior
-
 import torch as t
 from jukebox.sample import sample_partial_window
+
+from lib.utils import seconds_to_tokens
+
+from .calculate_metas import labels
+from .model import Model
+from .params import hps, lower_batch_size, lower_level_chunk_size
+
 
 def generate_zs(zs, generation_length, temperature=0.99, discard_window=0, discarded_zs=None):
 
@@ -15,7 +17,7 @@ def generate_zs(zs, generation_length, temperature=0.99, discard_window=0, disca
   )
 
   print(f'zs: {[ z.shape for z in zs ]}')
-  zs = sample_partial_window(zs, labels, sampling_kwargs, 2, top_prior, tokens_to_sample, hps)
+  zs = sample_partial_window(zs, labels, sampling_kwargs, 2, Model.top_prior, tokens_to_sample, hps)
   print(f'Generated zs of shape {[ z.shape for z in zs ]}')
 
   if discard_window > 0:

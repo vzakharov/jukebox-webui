@@ -3,13 +3,13 @@ from datetime import datetime
 import gradio as gr
 import torch as t
 
+from lib.model.model import Model
 from lib.model.params import hps
 from lib.navigation.get_first_free_index import get_first_free_index
 from lib.navigation.get_samples import get_samples
 from lib.ui.elements.first import first_generation_row, prime_timestamp
 from lib.ui.elements.navigation import sample_tree
 from lib.ui.utils import HIDE
-from lib.model.params import priors, top_prior
 from params import base_path
 
 from .to_x import to_x
@@ -39,7 +39,7 @@ def to_sample(project_name, audio, sec_to_trim_primed_audio, show_leafs_only):
 
   x = to_x(audio)
 
-  zs = top_prior.encode( x, start_level=0, end_level=len(priors), bs_chunks=x.shape[0] )
+  zs = Model.top_prior.encode( x, start_level=0, end_level=len(Model.priors), bs_chunks=x.shape[0] )
   print(f'Encoded audio to zs of shape {[ z.shape for z in zs ]}')
 
   primed_sample_id = f'{project_name}-{get_first_free_index(project_name)}'
