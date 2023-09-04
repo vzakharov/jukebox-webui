@@ -16,17 +16,17 @@ def fade(overlap, direction):
   overlap[:, silence_quants:-silence_quants, :] *= np.linspace(start, 1 - start, ramp_quants).reshape(1, -1, 1)
   return overlap
 
-def add_right_overlap(wav, z, chunk_size, overlap_size, i):
+def add_right_overlap(wav, z, level, chunk_size, overlap_size, i):
   right_overlap_z = z[ :, i+chunk_size-overlap_size:i+chunk_size ]
-  right_overlap = decode_short(right_overlap_z)
+  right_overlap = decode_short(right_overlap_z, level)
   right_overlap = fade(right_overlap, 'out')
 
   wav = np.concatenate([ wav, right_overlap ], axis=1)
   return wav
 
-def add_left_overlap(wav, z, overlap_size, i):
+def add_left_overlap(wav, z, level, overlap_size, i):
   left_overlap_z = z[ :, i:i+overlap_size ]
-  left_overlap = decode_short(left_overlap_z)
+  left_overlap = decode_short(left_overlap_z, level)
 
   if wav is not None:
     left_overlap = fade(left_overlap, 'in')

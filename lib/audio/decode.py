@@ -22,14 +22,14 @@ def decode(z, level):
     if is_last_chunk:
       chunk_size -= overflow
 
-    wav = add_left_overlap(wav, z, overlap_size, i)
+    wav = add_left_overlap(wav, z, level, overlap_size, i)
 
     # We'll also won't need right overlap for the last chunk
     main_chunk_z = z[ :, i+overlap_size: i+chunk_size-overlap_size if not is_last_chunk else i+chunk_size ]
     print(f'Main chunk (tokens): {main_chunk_z.shape[1]}')
 
     if main_chunk_z.shape[1] > 0:
-      main_chunk = decode_short(main_chunk_z)
+      main_chunk = decode_short(main_chunk_z, level)
       print(f'Main chunk (quants): {main_chunk.shape[1]}')
 
       # Add the main chunk to the existing wav
@@ -42,7 +42,7 @@ def decode(z, level):
 
     # Fade out the right overlap, unless this is the last chunk
     if not is_last_chunk:
-      wav = add_right_overlap(wav, z, chunk_size, overlap_size, i)
+      wav = add_right_overlap(wav, z, level, chunk_size, overlap_size, i)
 
     else:
       print(f'Last chunk, not adding right overlap')
