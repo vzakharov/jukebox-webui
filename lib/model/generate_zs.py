@@ -3,7 +3,7 @@ from jukebox.sample import sample_partial_window
 
 from lib.utils import seconds_to_tokens
 
-from .calculate_metas import Metas
+from .metas import Metas
 from .model import Model
 from .params import hps, lower_batch_size, lower_level_chunk_size
 

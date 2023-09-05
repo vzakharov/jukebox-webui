@@ -8,7 +8,7 @@ from lib.ui.elements.misc import generation_progress
 from lib.ui.elements.navigation import sample_tree
 from params import total_duration
 
-from .calculate_metas import Metas
+from .metas import Metas
 from .generate_zs import generate_zs
 from .params import (chunk_size, hps, lower_batch_size, lower_level_chunk_size,
                      raw_to_tokens)
