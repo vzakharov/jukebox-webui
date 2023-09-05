@@ -13,12 +13,14 @@ def convert_name(name):
 # else:
 #   print('Settings are the same as loaded settings, not saving.')
 
-def seconds_to_tokens(sec, level = 2):
+def seconds_to_tokens(sec, level = 2, fit_to_chunk = True):
 
   global hps, raw_to_tokens, chunk_size
 
   tokens = sec * hps.sr // raw_to_tokens
-  tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
+
+  if fit_to_chunk:
+    tokens = ( (tokens // chunk_size) + 1 ) * chunk_size
 
   # For levels 1 and 0, multiply by 4 and 16 respectively
   tokens *= 4 ** (2 - level)
