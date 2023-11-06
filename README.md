@@ -1,3 +1,5 @@
+*Note: The project doesn’t currently work on Colab because Google updated its Python version, and Jukebox doesn’t like it. If you’re willing to adapt the notebook to be able to downgrade the Python version in the notebook, PRs are welcome!*
+
 # Jukebox Web UI
 
 This is a web UI for [Jukebox](https://openai.com/blog/jukebox/), a music generation model by OpenAI.
